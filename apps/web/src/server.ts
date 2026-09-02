@@ -20,6 +20,8 @@ const TYPES: Record<string, string> = {
   ".png": "image/png",
   ".ico": "image/x-icon",
   ".txt": "text/plain; charset=utf-8",
+  // Plain text so `curl | sh` works and a browser shows it rather than downloading.
+  ".sh": "text/plain; charset=utf-8",
   ".xml": "application/xml",
   ".json": "application/json",
 };
@@ -42,6 +44,21 @@ const server = Bun.serve({
   port,
   fetch(request) {
     const url = new URL(request.url);
+
+    // One canonical host. www is a permanent redirect to the apex so links,
+    // search results and the install command all agree on one address.
+    const host = request.headers.get("host") ?? "";
+    if (host.toLowerCase().startsWith("www.")) {
+      const target = new URL(url);
+      target.host = host.slice(4);
+      target.protocol = "https:";
+      target.port = "";
+      return new Response(null, {
+        status: 301,
+        headers: { location: target.toString(), "cache-control": "public, max-age=3600" },
+      });
+    }
+
     const file = resolve(url.pathname);
 
     if (!file) {
@@ -54,7 +71,9 @@ const server = Bun.serve({
 
     const type = TYPES[extname(file)] ?? "application/octet-stream";
     // Assets are content-addressed by name; HTML is not, so it revalidates.
-    const cache = type.startsWith("text/html") ? "public, max-age=0, must-revalidate" : "public, max-age=31536000, immutable";
+    // HTML and the installer revalidate; everything else is content-stable.
+    const volatile = type.startsWith("text/html") || file.endsWith("install.sh") || file.endsWith(".txt") || file.endsWith(".xml");
+    const cache = volatile ? "public, max-age=0, must-revalidate" : "public, max-age=31536000, immutable";
 
     return new Response(readFileSync(file), {
       headers: {

@@ -9,3 +9,4 @@ dist/
 apps/desktop/src/core.cjs
 apps/desktop/dist/
 apps/web/public/
+apps/cli/dist/

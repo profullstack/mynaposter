@@ -73,9 +73,15 @@ const page = `<!doctype html>
     to the smallest one.
   </p>
   <div class="install">
-    <code id="install">bun add -g @profullstack/myna</code>
+    <code id="install">curl -fsSL https://mynaposter.com/install.sh | sh</code>
     <button id="copy" type="button" aria-label="Copy install command">Copy</button>
   </div>
+  <p class="fineprint">
+    A single binary with its runtime built in &mdash; no Bun, Node or npm needed.
+    Linux, macOS and Windows. Already have a package manager?
+    <code>bun add -g @profullstack/myna</code>.
+    <a href="/install.sh">Read the script</a> before you pipe it, as you should with any of these.
+  </p>
   <p class="fineprint">${NETWORKS.length} networks. Credentials encrypted on your own machine. MIT.</p>
 </section>
 
@@ -221,7 +227,7 @@ ${networkRows}
     you asked to send.
   </p>
   <div class="install">
-    <code>bun add -g @profullstack/myna</code>
+    <code>curl -fsSL https://mynaposter.com/install.sh | sh</code>
   </div>
 </section>
 
@@ -306,7 +312,7 @@ password or a browser flow and belongs to a person.
 `,
 );
 
-for (const asset of ["site.css", "site.js", "favicon.svg"]) {
+for (const asset of ["site.css", "site.js", "favicon.svg", "install.sh"]) {
   const source = join(root, "assets", asset);
   if (existsSync(source)) copyFileSync(source, join(out, asset));
 }
