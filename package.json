@@ -3,7 +3,10 @@
   "private": true,
   "type": "module",
   "packageManager": "bun@1.4.0",
-  "workspaces": ["packages/*", "apps/*"],
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
   "engines": {
     "bun": ">=1.1",
     "node": ">=22.6"
@@ -13,10 +16,11 @@
     "desktop": "cd apps/desktop && bun run start",
     "api": "bun apps/api/src/server.ts",
     "mcp": "bun packages/mcp/src/server.ts",
-    "test": "bun test packages/core/test",
+    "test": "bun test packages/core/test apps/api/test",
     "typecheck": "bun x tsc --noEmit -p tsconfig.json",
     "db:up": "docker compose up -d postgres",
-    "db:migrate": "bun apps/api/src/db/migrate.ts"
+    "db:migrate": "bun apps/api/src/db/migrate.ts",
+    "db:down": "docker compose down"
   },
   "devDependencies": {
     "@types/bun": "^1.4.0",

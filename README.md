@@ -307,8 +307,17 @@ Set `MYNA_HOME` to keep everything somewhere else.
 ```bash
 bun install
 bun run cli          # the TUI from source
-bun test             # 50 tests
+bun test             # unit tests; no database needed
 bun run typecheck
+```
+
+The cloud tests need a real Postgres and skip themselves without one:
+
+```bash
+bun run db:up
+export DATABASE_URL=postgres://myna:myna@127.0.0.1:5432/myna?sslmode=disable
+bun apps/api/src/db/migrate.ts
+bun test apps/api/test
 ```
 
 The Nostr signing is BIP340 Schnorr implemented over BigInt, because `node:crypto`
