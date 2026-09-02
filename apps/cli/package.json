@@ -1,0 +1,18 @@
+{
+  "name": "@profullstack/myna",
+  "version": "0.1.0",
+  "description": "A terminal social media manager. Log in, compose, schedule and post to every network from one TUI.",
+  "license": "MIT",
+  "type": "module",
+  "bin": { "myna": "./bin/myna.mjs" },
+  "files": ["dist", "bin", "README.md"],
+  "engines": { "bun": ">=1.1", "node": ">=22.6" },
+  "homepage": "https://mynaposter.com",
+  "repository": { "type": "git", "url": "git+https://github.com/profullstack/mynaposter.git", "directory": "apps/cli" },
+  "publishConfig": { "access": "public" },
+  "keywords": ["social", "tui", "cli", "mastodon", "bluesky", "nostr", "scheduler", "crosspost"],
+  "dependencies": {
+    "@profullstack/hqtui": "^0.1.9",
+    "@profullstack/myna-core": "workspace:*"
+  }
+}
