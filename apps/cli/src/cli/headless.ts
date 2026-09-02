@@ -121,24 +121,37 @@ async function ensureUnlocked(): Promise<void> {
  * `myna post all` with piped stdin does what it looks like it does.
  */
 async function resolvePostArgs(positional: string[], flags: Flags): Promise<{ accounts: Account[]; text: string }> {
-  const piped = await readStdin();
-  let targetSpec = flags.to;
-  let words = [...positional];
+  const words = [...positional];
 
-  if (!targetSpec && words.length) {
-    const first = words[0];
-    const looksLikeTarget =
-      first === "all" ||
-      first === "*" ||
-      Boolean(getNetwork(first)) ||
-      listAccounts().some((account) => account.id === first || account.handle === first);
-    // Only treat it as a target when something else supplies the text.
-    if (looksLikeTarget && (words.length > 1 || piped)) {
-      targetSpec = first;
-      words = words.slice(1);
-    }
+  const looksLikeTarget = (word: string): boolean =>
+    word === "all" ||
+    word === "*" ||
+    Boolean(getNetwork(word)) ||
+    listAccounts().some((account) => account.id === word || account.handle === word);
+
+  // Work out what is a target and what is text before touching stdin, because
+  // reading stdin when the text is already on the command line means waiting on
+  // a pipe that, outside a terminal, may never close. That hung `myna post` in
+  // cron and CI with no output and no clue why.
+  let targetSpec = flags.to;
+  let needStdin: boolean;
+
+  if (targetSpec) {
+    // --to settled the target, so every positional is text.
+    needStdin = words.length === 0;
+  } else if (words.length === 0) {
+    needStdin = true;
+  } else if (words.length === 1 && looksLikeTarget(words[0])) {
+    // `myna post all` on its own: the one word is the target and the text is
+    // being piped in. A bare word that is not a target is the text itself.
+    targetSpec = words.shift();
+    needStdin = true;
+  } else {
+    if (looksLikeTarget(words[0])) targetSpec = words.shift();
+    needStdin = words.length === 0;
   }
 
+  const piped = needStdin ? await readStdin() : "";
   const text = words.join(" ").trim() || piped;
   if (!text) throw new Error('Nothing to post. Pass the text, or pipe it: echo "hi" | myna post all');
 

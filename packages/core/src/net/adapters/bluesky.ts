@@ -8,6 +8,7 @@
 import type { Account, Network, PostInput, PostResult, TimelineItem } from "../types.ts";
 import { getJson, normalizeInstance, postJson, request } from "../../util/http.ts";
 import { countChars } from "../../util/text.ts";
+import { buildPostRecord } from "./bluesky-facets.ts";
 
 interface Session {
   accessJwt: string;
@@ -28,33 +29,6 @@ async function session(account: Account): Promise<Session> {
 }
 
 const auth = (token: string) => ({ authorization: `Bearer ${token}` });
-
-/**
- * Bluesky renders links and mentions from byte-offset facets, not from the
- * text itself, so a URL posted without one is inert. Offsets are into UTF-8
- * bytes, which is why this walks the encoded buffer rather than the string.
- */
-function linkFacets(text: string): unknown[] {
-  const encoder = new TextEncoder();
-  const facets: unknown[] = [];
-  for (const match of text.matchAll(/https?:\/\/[^\s<>"]+/g)) {
-    const before = encoder.encode(text.slice(0, match.index)).length;
-    const uri = match[0].replace(/[.,;:!?)]+$/, "");
-    facets.push({
-      index: { byteStart: before, byteEnd: before + encoder.encode(uri).length },
-      features: [{ $type: "app.bsky.richtext.facet#link", uri }],
-    });
-  }
-  for (const match of text.matchAll(/(^|\s)(#[\p{L}\p{N}_]+)/gu)) {
-    const tagStart = (match.index ?? 0) + match[1].length;
-    const before = encoder.encode(text.slice(0, tagStart)).length;
-    facets.push({
-      index: { byteStart: before, byteEnd: before + encoder.encode(match[2]).length },
-      features: [{ $type: "app.bsky.richtext.facet#tag", tag: match[2].slice(1) }],
-    });
-  }
-  return facets;
-}
 
 async function uploadBlob(base: string, token: string, item: { data: Uint8Array; mime: string }): Promise<unknown> {
   const response = await request(`${base}/xrpc/com.atproto.repo.uploadBlob`, {
@@ -99,12 +73,8 @@ export const bluesky: Network = {
     const base = service(account);
     const { accessJwt, did } = await session(account);
 
-    const record: Record<string, unknown> = {
-      $type: "app.bsky.feed.post",
-      text: input.text,
-      createdAt: new Date().toISOString(),
-      facets: linkFacets(input.text),
-    };
+    // buildPostRecord does the facets and both of Bluesky's length limits.
+    const record = buildPostRecord(input.text, new Date().toISOString());
 
     if (input.media?.length) {
       const images = [];

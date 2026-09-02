@@ -10,6 +10,7 @@
  * streamable HTTP that request/response tools need. There is no long-lived
  * stream because nothing here streams: every tool answers once.
  */
+import { VERSION } from "@profullstack/myna-core";
 import { TOOLS, callTool } from "@profullstack/myna-mcp/tools";
 
 const PROTOCOL_VERSION = "2025-06-18";
@@ -41,7 +42,7 @@ export async function handleMcp(message: JsonRpcRequest): Promise<object | null>
       return ok(id, {
         protocolVersion: PROTOCOL_VERSION,
         capabilities: { tools: {} },
-        serverInfo: { name: "myna", version: "0.1.0" },
+        serverInfo: { name: "myna", version: VERSION },
         instructions:
           "myna posts to social networks. Call myna_accounts first to see what is connected; " +
           "posting to an account that is not connected will fail. myna_post publishes immediately " +

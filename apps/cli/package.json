@@ -1,6 +1,6 @@
 {
   "name": "@profullstack/myna",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "A terminal social media manager. Log in, compose, schedule and post to every network from one TUI.",
   "license": "MIT",
   "type": "module",

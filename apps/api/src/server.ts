@@ -12,10 +12,11 @@ import { startScheduler, configDir, availableRasterizers, writerAvailable } from
 import * as service from "./service.ts";
 import { handleMcpBody } from "./mcp.ts";
 import * as cloud from "./cloud.ts";
+import { VERSION } from "@profullstack/myna-core";
 
 const app = new Hono();
 
-const VERSION = "0.1.0";
+
 
 /** Compare without leaking length or position through timing. */
 function sameToken(a: string, b: string): boolean {

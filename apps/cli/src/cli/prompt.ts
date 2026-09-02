@@ -63,16 +63,41 @@ export async function confirm(question: string): Promise<boolean> {
   return /^y(es)?$/i.test(answer.trim());
 }
 
-/** Read piped stdin, or return "" when nothing is piped. */
-export function readStdin(): Promise<string> {
+/**
+ * Read piped stdin, or return "" when nothing is piped.
+ *
+ * `isTTY` alone is not enough. Under cron, in CI, or from a script that
+ * inherited a non-tty stdin nobody will ever write to, waiting for "end" waits
+ * forever -- so `myna post "text"` hung with no output and no way to tell why.
+ * The grace period bounds that: real piped input arrives immediately, and an
+ * idle pipe costs a few milliseconds before myna carries on without it.
+ */
+export function readStdin(graceMs = 150): Promise<string> {
   if (process.stdin.isTTY) return Promise.resolve("");
+
   return new Promise((resolve) => {
     let data = "";
+    let settled = false;
+
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      process.stdin.pause();
+      resolve(data.trim());
+    };
+
+    // Only starts once something actually arrives, so a pipe that is slow to
+    // produce is still read in full rather than cut off at the grace period.
+    const timer = setTimeout(finish, graceMs);
+    timer.unref?.();
+
     process.stdin.setEncoding("utf8");
     process.stdin.on("data", (chunk) => {
       data += chunk;
+      clearTimeout(timer);
     });
-    process.stdin.on("end", () => resolve(data.trim()));
-    process.stdin.on("error", () => resolve(""));
+    process.stdin.on("end", finish);
+    process.stdin.on("error", finish);
   });
 }

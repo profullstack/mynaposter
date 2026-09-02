@@ -1,5 +1,7 @@
 /** Everything the CLI, the desktop app, the API and the MCP server share. */
 
+export { VERSION } from "./version.ts";
+
 export type {
   Account,
   AuthKind,

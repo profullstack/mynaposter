@@ -5,10 +5,11 @@
  *   myna login facebook           connect an account
  *   myna post all "shipping"      post from a script
  */
+import { VERSION } from "@profullstack/myna-core";
 import { runTui } from "./tui/app.ts";
 import { runHeadless, parseFlags } from "./cli/headless.ts";
 
-const VERSION = "0.1.0";
+
 
 const HELP = `myna ${VERSION} - post to every social network from your terminal
 
