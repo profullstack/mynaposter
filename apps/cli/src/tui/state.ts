@@ -16,7 +16,9 @@ export type Mode =
   /** Choosing which accounts to post to. */
   | "targets"
   /** A yes/no dialog is open. */
-  | "confirm";
+  | "confirm"
+  /** A generic modal is asking for values. */
+  | "prompt";
 
 export interface Toast {
   text: string;
@@ -32,6 +34,24 @@ export interface LoginFlow {
   log: string[];
   busy: boolean;
   error?: string;
+}
+
+/**
+ * A generic modal that asks for a few values and hands them back.
+ *
+ * The login dialog is network-shaped; this is for everything else that needs
+ * typed input, which so far is the bundle passphrase.
+ */
+export interface PromptFlow {
+  title: string;
+  /** Shown above the fields, wrapped. */
+  note?: string;
+  fields: Field[];
+  active: number;
+  busy: boolean;
+  error?: string;
+  log: string[];
+  submit(values: Record<string, string>): void | Promise<void>;
 }
 
 export interface ConfirmFlow {
@@ -56,6 +76,7 @@ export interface State {
   targetCursor: number;
 
   login?: LoginFlow;
+  prompt?: PromptFlow;
   confirm?: ConfirmFlow;
 
   feed: TimelineItem[];

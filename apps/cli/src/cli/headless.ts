@@ -8,12 +8,17 @@
  * Every subcommand mirrors a TUI slash command, so what you learn in one works
  * in the other. Output is plain text so it pipes; --json gives machine output.
  */
-import { writeFileSync, mkdtempSync } from "node:fs";
+import { writeFileSync, readFileSync, existsSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   NETWORKS,
+  applyBundle,
   authSummary,
+  collect,
+  describeBundle,
+  openBundle,
+  seal,
   availableRasterizers,
   draft,
   enqueue,
@@ -43,7 +48,7 @@ import {
   type Account,
   type InfographicStyle,
 } from "@profullstack/myna-core";
-import { ask, askSecret, readStdin } from "./prompt.ts";
+import { ask, askSecret, confirm, readStdin } from "./prompt.ts";
 import { parseWhen, describeWhen } from "../tui/when.ts";
 
 export interface Flags {
@@ -503,6 +508,65 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
       target[leaf] = typeof current === "number" ? Number(value) : typeof current === "boolean" ? value === "true" : value;
       saveSettings(store as never);
       out(`${key} = ${target[leaf]}`);
+      return 0;
+    }
+
+    case "save": {
+      await ensureUnlocked();
+      const path = positional[0] ?? `myna-${new Date().toISOString().slice(0, 10)}.myna`;
+      const payload = collect();
+      if (!payload.accounts.length) throw new Error("Nothing to save: no accounts are connected.");
+
+      out("This file will contain a live token for every connected account.");
+      out("Anyone who has it and the passphrase can post as you.");
+      out("");
+      const passphrase =
+        process.env.MYNA_BUNDLE_PASSPHRASE ?? (await askSecret("Passphrase for this bundle"));
+      if (!process.env.MYNA_BUNDLE_PASSPHRASE) {
+        const again = await askSecret("Again");
+        if (again !== passphrase) throw new Error("Those did not match.");
+      }
+
+      writeFileSync(path, `${JSON.stringify(seal(payload, passphrase), null, 2)}\n`, { mode: 0o600 });
+      out("");
+      out(`Wrote ${path} (mode 600)`);
+      out(`  ${payload.accounts.length} accounts, ${payload.queue.length} queued`);
+      out("");
+      out(`Load it elsewhere with:  myna load ${path}`);
+      return 0;
+    }
+
+    case "load": {
+      await ensureUnlocked();
+      const path = positional[0];
+      if (!path) throw new Error("Which file? Usage: myna load <bundle.myna>");
+      if (!existsSync(path)) throw new Error(`No such file: ${path}`);
+
+      const file = JSON.parse(readFileSync(path, "utf8"));
+      out(describeBundle(file));
+      out("");
+
+      const passphrase =
+        process.env.MYNA_BUNDLE_PASSPHRASE ?? (await askSecret("Passphrase"));
+      const payload = openBundle(file, passphrase);
+
+      // Show the effect before causing it, since this writes credentials.
+      const preview = applyBundle(payload, { overwrite: Boolean(flags.overwrite), settings: Boolean(flags.settings), dryRun: true });
+      out(`  add ${preview.accountsAdded.length} account(s)${preview.accountsAdded.length ? `: ${preview.accountsAdded.join(", ")}` : ""}`);
+      if (preview.accountsReplaced.length) out(`  replace ${preview.accountsReplaced.length}: ${preview.accountsReplaced.join(", ")}`);
+      if (preview.accountsKept.length) out(`  keep ${preview.accountsKept.length} already here (use --overwrite to replace): ${preview.accountsKept.join(", ")}`);
+      out(`  queue ${preview.queueAdded} scheduled post(s)`);
+      if (preview.settingsApplied) out("  take the bundle's settings");
+
+      if (flags.dryRun) return 0;
+      if (!flags.yes && !(await confirm("\nApply this?"))) {
+        out("Nothing changed.");
+        return 0;
+      }
+
+      const result = applyBundle(payload, { overwrite: Boolean(flags.overwrite), settings: Boolean(flags.settings) });
+      out("");
+      out(`Added ${result.accountsAdded.length}, replaced ${result.accountsReplaced.length}, kept ${result.accountsKept.length}, queued ${result.queueAdded}.`);
       return 0;
     }
 

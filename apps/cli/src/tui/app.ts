@@ -150,6 +150,7 @@ export async function runTui(options: { theme?: string } = {}): Promise<void> {
     });
 
     if (state.mode === "login" && state.login) drawLogin(ui, state, theme, height);
+    if (state.mode === "prompt" && state.prompt) drawPrompt(ui, state, theme);
     if (state.mode === "targets") drawTargets(ui, state, theme);
   });
 
@@ -216,6 +217,40 @@ function drawLogin(ui: Container, state: State, theme: Theme, height: number): v
   );
 }
 
+function drawPrompt(ui: Container, state: State, theme: Theme): void {
+  const flow = state.prompt!;
+  const noteLines = flow.note ? wrapText(flow.note, 70) : [];
+
+  ui.modal(
+    { title: flow.title, width: 76, height: Math.min(noteLines.length + flow.fields.length * 2 + 8, 22) },
+    (panel) => {
+      for (const line of noteLines) panel.label(line, { size: 1 });
+      if (noteLines.length) panel.spacer(1);
+
+      flow.fields.forEach((field, index) => {
+        panel.textInput({
+          value: field.value,
+          cursor: field.cursor,
+          focused: index === flow.active && !flow.busy,
+          label: field.label,
+          password: field.options.secret,
+          placeholder: field.options.placeholder,
+          size: 1,
+        });
+        if (field.options.help && index === flow.active) panel.label(`  ${field.options.help}`, { size: 1 });
+      });
+
+      if (flow.error) {
+        panel.spacer(1);
+        for (const line of wrapText(flow.error, 70)) panel.text(line, { size: 1, fg: theme.danger });
+      }
+
+      panel.spacer(1);
+      panel.label(flow.busy ? "Working..." : "Tab next field    Enter confirm    Esc cancel", { size: 1 });
+    },
+  );
+}
+
 function drawTargets(ui: Container, state: State, theme: Theme): void {
   ui.modal({ title: "Post to", width: 60, height: Math.min(state.accounts.length + 7, 24) }, (panel) => {
     state.accounts.forEach((account, index) => {
@@ -254,6 +289,7 @@ async function handleKey(app: App, state: State, event: KeyEvent, redraw: () => 
   }
 
   if (state.mode === "login") return handleLoginKey(state, event, redraw);
+  if (state.mode === "prompt") return handlePromptKey(state, event, redraw);
   if (state.mode === "targets") return handleTargetsKey(state, event);
 
   if (state.mode === "compose") {
@@ -355,6 +391,53 @@ async function handleLoginKey(state: State, event: KeyEvent, redraw: () => void)
       return;
     }
     await submitLogin(state, redraw);
+    return;
+  }
+  flow.fields[flow.active]?.handle(event);
+}
+
+async function handlePromptKey(state: State, event: KeyEvent, redraw: () => void): Promise<void> {
+  const flow = state.prompt!;
+  if (flow.busy) return;
+
+  if (event.name === "escape") {
+    state.prompt = undefined;
+    state.mode = "command";
+    return;
+  }
+  if (event.name === "tab" || event.name === "down") {
+    flow.active = (flow.active + (event.shift ? -1 : 1) + flow.fields.length) % flow.fields.length;
+    return;
+  }
+  if (event.name === "up") {
+    flow.active = (flow.active - 1 + flow.fields.length) % flow.fields.length;
+    return;
+  }
+  if (event.name === "enter") {
+    if (flow.active < flow.fields.length - 1) {
+      flow.active++;
+      return;
+    }
+    const values: Record<string, string> = {};
+    for (const field of flow.fields) values[field.key] = field.value;
+
+    flow.busy = true;
+    flow.error = undefined;
+    redraw();
+    try {
+      await flow.submit(values);
+    } catch (error) {
+      // Kept open on failure: a wrong passphrase should mean retype it, not
+      // start the whole command again.
+      flow.busy = false;
+      flow.error = (error as Error).message;
+      for (const field of flow.fields) {
+        if (field.options.secret) field.clear();
+      }
+      flow.active = 0;
+    } finally {
+      redraw();
+    }
     return;
   }
   flow.fields[flow.active]?.handle(event);

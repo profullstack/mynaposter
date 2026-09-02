@@ -29,12 +29,19 @@ import {
   writerAvailable,
   renderInfographic,
   availableRasterizers,
+  collect,
+  seal,
+  openBundle,
+  applyBundle,
+  describeBundle,
   type InfographicStyle,
 } from "@profullstack/myna-core";
-import { writeFileSync, mkdtempSync } from "node:fs";
+import { writeFileSync, readFileSync, existsSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
+import { homedir } from "node:os";
 import { selectedAccounts, toast, type State, SCREENS, type Screen } from "./state.ts";
+import { Field } from "./field.ts";
 import { startLogin } from "./login.ts";
 import { parseWhen, describeWhen } from "./when.ts";
 
@@ -43,6 +50,14 @@ export interface Command {
   args?: string;
   help: string;
   run(state: State, args: string, redraw: () => void): void | Promise<void>;
+}
+
+/** `~` is what people type for a path they are about to scp somewhere. */
+function expand(path: string): string {
+  if (!path) return path;
+  if (path === "~") return homedir();
+  if (path.startsWith("~/")) return join(homedir(), path.slice(2));
+  return resolve(path);
 }
 
 const requireTargets = (state: State) => {
@@ -489,6 +504,77 @@ export const COMMANDS: Command[] = [
       state.media = [];
       state.draftSource = "";
       toast(state, "Cleared", "success");
+    },
+  },
+  {
+    name: "save",
+    args: "[path]",
+    help: "Write an encrypted bundle of accounts, queue and settings",
+    run(state, args, redraw) {
+      const payload = collect();
+      if (!payload.accounts.length) throw new Error("Nothing to save: no accounts are connected.");
+
+      const path = expand(args.trim() || `myna-${new Date().toISOString().slice(0, 10)}.myna`);
+
+      state.prompt = {
+        title: "Save a bundle",
+        note:
+          `${payload.accounts.length} accounts and ${payload.queue.length} queued posts to ${path}. ` +
+          "This file will hold a live token for every connected account, so it is encrypted with " +
+          "a passphrase you choose here. Anyone with both can post as you.",
+        fields: [
+          new Field("passphrase", "Passphrase", { secret: true, help: "At least 8 characters." }),
+          new Field("again", "Again", { secret: true }),
+        ],
+        active: 0,
+        busy: false,
+        log: [],
+        submit(values) {
+          if (values.passphrase !== values.again) throw new Error("Those did not match.");
+          writeFileSync(path, `${JSON.stringify(seal(payload, values.passphrase), null, 2)}\n`, { mode: 0o600 });
+          state.prompt = undefined;
+          state.mode = "command";
+          toast(state, `Wrote ${path} — ${payload.accounts.length} accounts, mode 600`, "success");
+        },
+      };
+      state.mode = "prompt";
+      redraw();
+    },
+  },
+  {
+    name: "load",
+    args: "<path>",
+    help: "Merge a bundle from another machine into this one",
+    run(state, args, redraw) {
+      const path = expand(args.trim());
+      if (!path) throw new Error("Which file? Try /load ~/myna.myna");
+      if (!existsSync(path)) throw new Error(`No such file: ${path}`);
+
+      const file = JSON.parse(readFileSync(path, "utf8"));
+
+      state.prompt = {
+        title: "Load a bundle",
+        note: `${describeBundle(file)}. Accounts already connected here are kept, not replaced.`,
+        fields: [new Field("passphrase", "Passphrase", { secret: true })],
+        active: 0,
+        busy: false,
+        log: [],
+        submit(values) {
+          const payload = openBundle(file, values.passphrase);
+          const result = applyBundle(payload);
+          state.accounts = listAccounts();
+          state.prompt = undefined;
+          state.mode = "command";
+          state.screen = "accounts";
+          toast(
+            state,
+            `Added ${result.accountsAdded.length}, kept ${result.accountsKept.length}, queued ${result.queueAdded}`,
+            "success",
+          );
+        },
+      };
+      state.mode = "prompt";
+      redraw();
     },
   },
   {

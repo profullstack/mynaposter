@@ -41,6 +41,12 @@ Writing (optional, needs an API key):
   link <url>                        Read a link and write a post about it
   infographic <url or topic>        Build an infographic to attach
 
+Moving between machines:
+  save [path]                       Write an encrypted bundle of accounts,
+                                    queue and settings. Asks for a passphrase
+  load <path>                       Merge a bundle into this install. Shows
+                                    what it will change before it changes it
+
 Other:
   config [key] [value]              Show or change settings
   doctor                            Check what is configured and working
@@ -53,6 +59,9 @@ Flags:
   --json            Machine-readable output
   --dry-run         Show what would be posted without sending
   --no-thread       Truncate instead of splitting into a thread
+  --overwrite       On load, replace accounts that already exist here
+  --settings        On load, take the bundle's settings too
+  --yes             Skip the confirmation on load
 
 Examples:
   myna login bluesky
@@ -61,6 +70,8 @@ Examples:
   myna link https://example.com/blog/post --to all
   myna schedule "tomorrow 9am" "good morning" --to mastodon
   myna infographic https://example.com/report --style html
+  myna save ~/myna.myna              # then scp it to the other machine
+  myna load ~/myna.myna
 
 Credentials are encrypted at rest in ~/.config/myna. Nothing leaves this
 machine except the posts you send.

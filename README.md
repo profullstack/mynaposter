@@ -177,6 +177,26 @@ Inkscape. myna finds browsers that Playwright or Puppeteer already downloaded.
 `myna doctor` reports what it found.
 
 
+## Moving between machines
+
+```bash
+myna save ~/myna.myna        # on the laptop
+scp ~/myna.myna server:      # however you like
+myna load ~/myna.myna        # on the server
+```
+
+A bundle holds the connected accounts, the pending queue and the settings. It is
+**always encrypted with a passphrase you type**, never with the local keyfile:
+the keyfile is machine-specific so a bundle sealed with it could not be opened
+anywhere else, and the file holds a live token for every account you have. There
+is no plaintext option for that reason.
+
+`load` is additive and shows you the effect before causing it. An account that
+already exists here is **kept, not replaced**, unless you pass `--overwrite` —
+tokens get refreshed in place, so a bundle taken last week can carry one that has
+since been rotated, and silently clobbering a working account with a stale token
+is the failure that would be hardest to notice.
+
 ## Beyond the terminal
 
 myna is one core with four faces. An account connected in any of them works in

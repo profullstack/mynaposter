@@ -31,6 +31,17 @@ export {
 export { listQueue, enqueue, updateQueued, removeQueued, duePosts, type QueuedPost } from "./store/queue.ts";
 export { listHistory, recordHistory, clearHistory, type HistoryEntry } from "./store/history.ts";
 export { loadSettings, saveSettings, DEFAULT_SETTINGS, type Settings } from "./store/settings.ts";
+export {
+  collect,
+  seal,
+  open as openBundle,
+  apply as applyBundle,
+  describe as describeBundle,
+  BUNDLE_VERSION,
+  type BundleFile,
+  type BundlePayload,
+  type ApplyResult,
+} from "./store/bundle.ts";
 export { vaultExists, vaultMode, rekeyVault, VaultLockedError } from "./util/crypto/vault.ts";
 
 export { postToAll, tailor, charsFor, summarize, type ComposeOptions, type TargetResult } from "./core/poster.ts";
