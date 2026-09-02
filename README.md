@@ -157,6 +157,68 @@ Rendering to PNG needs one of Chrome/Chromium, `rsvg-convert`, ImageMagick or
 Inkscape. myna finds browsers that Playwright or Puppeteer already downloaded.
 `myna doctor` reports what it found.
 
+
+## Beyond the terminal
+
+myna is one core with four faces. An account connected in any of them works in
+all of them, because they read the same vault.
+
+| | |
+|---|---|
+| `apps/cli` | The TUI and the scriptable CLI |
+| `apps/desktop` | An Electron app, same core |
+| `apps/api` | An HTTP API for scripts and cron |
+| `packages/mcp` | An MCP server, so an agent can post for you |
+
+### HTTP API
+
+```bash
+export MYNA_API_TOKEN=$(openssl rand -hex 32)
+bun apps/api/src/server.ts
+
+curl localhost:8787/v1/networks
+curl -X POST localhost:8787/v1/post \
+  -H "authorization: Bearer $MYNA_API_TOKEN" \
+  -H "content-type: application/json" \
+  -d '{"text":"shipping today","to":"all"}'
+```
+
+Reads are open when no token is set; writes are refused outright rather than
+left unauthenticated. `DATABASE_URL` decides the shape: unset means single-user
+against `~/.config/myna`, set means the hosted Postgres schema in
+`apps/api/src/db/schema.sql`.
+
+Postgres runs in a container you control, not a managed add-on:
+
+```bash
+docker compose up -d postgres
+export DATABASE_URL=postgres://myna:myna@127.0.0.1:5432/myna
+bun run db:migrate
+```
+
+### MCP
+
+```json
+{ "mcpServers": { "myna": { "command": "bunx", "args": ["@profullstack/myna-mcp"] } } }
+```
+
+Ten tools: `myna_accounts`, `myna_networks`, `myna_preview`, `myna_post`,
+`myna_schedule`, `myna_queue`, `myna_cancel`, `myna_history`, `myna_draft`,
+`myna_timeline`.
+
+There is deliberately no login tool. Connecting an account means typing a
+password or completing a browser flow, and that belongs to a person. `myna_post`
+publishes immediately and cannot be undone on every network, which its
+description says plainly; `myna_preview` is there to check the targets and the
+per-network tailoring first.
+
+### Deploying
+
+`.railway/railway.ts` defines the two deployable services. One thing to know
+before editing it: the file is declarative for the **whole** Railway project, so
+without `export const partial` it plans to delete every service it does not
+mention. Run `railway config plan` and read the destroy count before applying.
+
 ## Where things are kept
 
 ```
