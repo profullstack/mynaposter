@@ -15,6 +15,18 @@ import { postForm } from "../util/http.ts";
 export const CALLBACK_PORT = 8765;
 export const REDIRECT_URI = `http://127.0.0.1:${CALLBACK_PORT}/callback`;
 
+/**
+ * The redirect for authorizing from a browser that is not on this machine.
+ *
+ * The loopback redirect is better when it works: the code never leaves the
+ * machine and nothing has to be copied. But it only works when the browser and
+ * myna are on the same box, which rules out every SSH session and every "I
+ * approved it on my phone". This page simply shows the code so it can be
+ * carried across by hand; the token exchange still happens here, where the
+ * client secret is.
+ */
+export const HOSTED_REDIRECT_URI = "https://mynaposter.com/oauth/callback";
+
 export interface TokenSet {
   access_token: string;
   refresh_token?: string;
@@ -22,6 +34,13 @@ export interface TokenSet {
   scope?: string;
   [key: string]: unknown;
 }
+
+/** How the authorization code gets back to myna. */
+export type CallbackMode =
+  /** Listen on 127.0.0.1 and catch the redirect. Needs a local browser. */
+  | "loopback"
+  /** Redirect to mynaposter.com, which shows the code to paste back. */
+  | "paste";
 
 export interface OAuth2Config {
   authorizeUrl: string;
@@ -36,6 +55,14 @@ export interface OAuth2Config {
   /** Send the client credentials as a Basic header rather than form fields. */
   basicAuth?: boolean;
   scopeSeparator?: string;
+  /** Defaults to loopback. */
+  mode?: CallbackMode;
+  /**
+   * Asks the person for the code they were shown. Required in paste mode; the
+   * caller supplies it because only the caller knows whether it has a terminal,
+   * a TUI modal or a desktop dialog to ask with.
+   */
+  readCode?: (url: string) => Promise<string>;
 }
 
 const base64url = (input: Buffer): string =>
@@ -125,10 +152,13 @@ export async function authorize(config: OAuth2Config, ctx: LoginContext, timeout
   const verifier = base64url(randomBytes(32));
   const challenge = base64url(createHash("sha256").update(verifier).digest());
 
+  const mode: CallbackMode = config.mode ?? "loopback";
+  const redirectUri = mode === "paste" ? HOSTED_REDIRECT_URI : REDIRECT_URI;
+
   const authorizeUrl = new URL(config.authorizeUrl);
   authorizeUrl.searchParams.set("response_type", "code");
   authorizeUrl.searchParams.set("client_id", config.clientId);
-  authorizeUrl.searchParams.set("redirect_uri", REDIRECT_URI);
+  authorizeUrl.searchParams.set("redirect_uri", redirectUri);
   authorizeUrl.searchParams.set("state", state);
   if (config.scopes.length) authorizeUrl.searchParams.set("scope", config.scopes.join(config.scopeSeparator ?? " "));
   if (config.pkce !== false) {
@@ -137,17 +167,27 @@ export async function authorize(config: OAuth2Config, ctx: LoginContext, timeout
   }
   for (const [key, value] of Object.entries(config.authParams ?? {})) authorizeUrl.searchParams.set(key, value);
 
-  // Listen before opening the browser, or a fast redirect races the server.
-  const callback = awaitCallback(state, timeoutMs);
-  ctx.report("Opening your browser to authorize…");
-  await ctx.openUrl(authorizeUrl.toString());
-  const { code } = await callback;
+  let code: string;
+
+  if (mode === "paste") {
+    if (!config.readCode) throw new Error("Paste mode needs a way to ask for the code.");
+    ctx.report("Open the link, approve it, then paste the code you are shown.");
+    code = (await config.readCode(authorizeUrl.toString())).trim();
+    if (!code) throw new Error("No code was given.");
+  } else {
+    // Listen before opening the browser, or a fast redirect races the server.
+    const callback = awaitCallback(state, timeoutMs);
+    ctx.report("Opening your browser to authorize…");
+    await ctx.openUrl(authorizeUrl.toString());
+    ({ code } = await callback);
+  }
 
   ctx.report("Exchanging the code for a token…");
   const form: Record<string, string> = {
     grant_type: "authorization_code",
     code,
-    redirect_uri: REDIRECT_URI,
+    // Must match the one the code was issued for, exactly.
+    redirect_uri: redirectUri,
     client_id: config.clientId,
   };
   if (config.pkce !== false) form.code_verifier = verifier;
@@ -186,4 +226,35 @@ export const OAUTH_FIELDS = (provider: string, where: string) => [
   { key: "clientSecret", label: "Client secret", secret: true, optional: true },
 ];
 
-export const REDIRECT_NOTE = `Add ${REDIRECT_URI} as an allowed redirect URI on the app first, or the browser step will fail.`;
+export const REDIRECT_NOTE =
+  `Add ${REDIRECT_URI} as an allowed redirect URI on the app. If you will authorize from a ` +
+  `browser on another machine, add ${HOSTED_REDIRECT_URI} too and answer "yes" to pasting a code.`;
+
+/** The field every OAuth adapter offers so a remote browser can be used. */
+export const PASTE_FIELD = {
+  key: "paste",
+  label: "Authorize from another machine?",
+  optional: true,
+  help: 'Answer "yes" if your browser is not on this machine, e.g. over SSH.',
+} as const;
+
+/**
+ * Turn the adapter's inputs and context into the callback half of the config.
+ * Falls back to loopback, which is the better flow when it is available.
+ */
+export function callbackFrom(
+  input: Record<string, string>,
+  ctx: LoginContext,
+): Pick<OAuth2Config, "mode" | "readCode"> {
+  const wantsPaste = /^(y|yes|true|1)$/i.test((input.paste ?? "").trim());
+  if (!wantsPaste) return { mode: "loopback" };
+  if (!ctx.ask) throw new Error("This interface cannot ask for a pasted code yet.");
+  return {
+    mode: "paste",
+    readCode: async (url) => {
+      await ctx.openUrl(url);
+      ctx.report(url);
+      return ctx.ask!("Paste the code you were shown");
+    },
+  };
+}

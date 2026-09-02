@@ -7,7 +7,7 @@
  */
 import type { Account, Network, TimelineItem } from "../types.ts";
 import { getJson, postJson, request } from "../../util/http.ts";
-import { authorize, REDIRECT_NOTE, type OAuth2Config } from "../oauth2.ts";
+import { authorize, callbackFrom, PASTE_FIELD, REDIRECT_NOTE, type OAuth2Config } from "../oauth2.ts";
 
 const GRAPH = "https://graph.facebook.com/v21.0";
 const THREADS = "https://graph.threads.net/v1.0";
@@ -51,18 +51,19 @@ export const facebook: Network = {
       { key: "clientId", label: "App id" },
       { key: "clientSecret", label: "App secret", secret: true },
       { key: "page", label: "Page name or id", optional: true, help: "Leave blank to use the first Page you administer." },
+      PASTE_FIELD,
     ],
   },
   caps: { charLimit: 63206, mediaLimit: 1, threads: false, delete: true, timeline: true, notifications: false, stats: true },
 
   async login(input, ctx) {
     const tokens = await authorize(
-      facebookConfig(input.clientId, input.clientSecret, [
+      { ...facebookConfig(input.clientId, input.clientSecret, [
         "pages_manage_posts",
         "pages_read_engagement",
         "pages_show_list",
         "public_profile",
-      ]),
+      ]), ...callbackFrom(input, ctx) },
       ctx,
     );
     const userToken = await longLived(input.clientId, input.clientSecret, tokens.access_token);
@@ -147,18 +148,19 @@ export const instagram: Network = {
     fields: [
       { key: "clientId", label: "App id" },
       { key: "clientSecret", label: "App secret", secret: true },
+      PASTE_FIELD,
     ],
   },
   caps: { charLimit: 2200, mediaLimit: 1, threads: false, delete: false, timeline: true, notifications: false, stats: true },
 
   async login(input, ctx) {
     const tokens = await authorize(
-      facebookConfig(input.clientId, input.clientSecret, [
+      { ...facebookConfig(input.clientId, input.clientSecret, [
         "instagram_basic",
         "instagram_content_publish",
         "pages_show_list",
         "pages_read_engagement",
-      ]),
+      ]), ...callbackFrom(input, ctx) },
       ctx,
     );
     const userToken = await longLived(input.clientId, input.clientSecret, tokens.access_token);
@@ -239,6 +241,7 @@ export const threads: Network = {
     fields: [
       { key: "clientId", label: "App id" },
       { key: "clientSecret", label: "App secret", secret: true },
+      PASTE_FIELD,
     ],
   },
   caps: { charLimit: 500, mediaLimit: 1, threads: true, delete: false, timeline: true, notifications: false, stats: true },
@@ -253,6 +256,7 @@ export const threads: Network = {
         scopes: ["threads_basic", "threads_content_publish"],
         pkce: false,
         scopeSeparator: ",",
+        ...callbackFrom(input, ctx),
       },
       ctx,
     );

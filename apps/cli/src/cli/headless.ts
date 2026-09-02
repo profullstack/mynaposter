@@ -188,6 +188,7 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
           out(`  ${url}`);
           await openBrowser(url);
         },
+        ask: (prompt) => ask(`  ${prompt}`),
       });
 
       const account: Account = {

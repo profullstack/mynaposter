@@ -1,7 +1,7 @@
 /** LinkedIn, Pinterest and TikTok. All browser OAuth; none accept a password. */
 import type { Network, TimelineItem } from "../types.ts";
 import { getJson, postJson, request } from "../../util/http.ts";
-import { authorize, REDIRECT_NOTE } from "../oauth2.ts";
+import { authorize, callbackFrom, PASTE_FIELD, REDIRECT_NOTE } from "../oauth2.ts";
 
 export const linkedin: Network = {
   id: "linkedin",
@@ -17,6 +17,7 @@ export const linkedin: Network = {
       { key: "clientId", label: "Client id" },
       { key: "clientSecret", label: "Client secret", secret: true },
       { key: "organization", label: "Organization id", optional: true, help: "Post as a company page instead of yourself." },
+      PASTE_FIELD,
     ],
   },
   caps: { charLimit: 3000, mediaLimit: 0, threads: false, delete: true, timeline: false, notifications: false, stats: false },
@@ -30,6 +31,7 @@ export const linkedin: Network = {
         clientSecret: input.clientSecret,
         scopes: ["openid", "profile", "w_member_social"],
         pkce: false,
+        ...callbackFrom(input, ctx),
       },
       ctx,
     );
@@ -94,6 +96,7 @@ export const pinterest: Network = {
       { key: "clientId", label: "App id" },
       { key: "clientSecret", label: "App secret", secret: true },
       { key: "board", label: "Default board", optional: true, help: "Board name or id." },
+      PASTE_FIELD,
     ],
   },
   // Pin analytics need a business account and an explicit date range, so myna
@@ -111,6 +114,7 @@ export const pinterest: Network = {
         pkce: false,
         basicAuth: true,
         scopeSeparator: ",",
+        ...callbackFrom(input, ctx),
       },
       ctx,
     );
@@ -197,6 +201,7 @@ export const tiktok: Network = {
     fields: [
       { key: "clientKey", label: "Client key" },
       { key: "clientSecret", label: "Client secret", secret: true },
+      PASTE_FIELD,
     ],
   },
   caps: { charLimit: 2200, mediaLimit: 1, threads: false, delete: false, timeline: false, notifications: false, stats: false },
@@ -212,6 +217,7 @@ export const tiktok: Network = {
         pkce: true,
         // TikTok names the parameter client_key, not client_id.
         authParams: { client_key: input.clientKey },
+        ...callbackFrom(input, ctx),
       },
       ctx,
     );

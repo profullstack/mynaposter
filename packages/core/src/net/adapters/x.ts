@@ -7,7 +7,7 @@
  */
 import type { Account, Network, TimelineItem } from "../types.ts";
 import { getJson, postJson, request } from "../../util/http.ts";
-import { authorize, refresh, REDIRECT_NOTE, type OAuth2Config } from "../oauth2.ts";
+import { authorize, callbackFrom, refresh, PASTE_FIELD, REDIRECT_NOTE, type OAuth2Config } from "../oauth2.ts";
 
 const API = "https://api.x.com";
 const SCOPES = ["tweet.read", "tweet.write", "users.read", "offline.access"];
@@ -53,12 +53,13 @@ export const x: Network = {
     fields: [
       { key: "clientId", label: "Client id", help: "OAuth 2.0 Client ID from the X developer portal." },
       { key: "clientSecret", label: "Client secret", secret: true, optional: true, help: "Only for confidential clients." },
+      PASTE_FIELD,
     ],
   },
   caps: { charLimit: 280, mediaLimit: 4, threads: true, delete: true, timeline: true, notifications: false, stats: true },
 
   async login(input, ctx) {
-    const tokens = await authorize(config(input.clientId, input.clientSecret || undefined), ctx);
+    const tokens = await authorize({ ...config(input.clientId, input.clientSecret || undefined), ...callbackFrom(input, ctx) }, ctx);
     const me = await getJson<{ data: { id: string; username: string; name: string } }>(`${API}/2/users/me`, {
       headers: auth(tokens.access_token),
     });

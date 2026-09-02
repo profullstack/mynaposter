@@ -9,7 +9,7 @@
  */
 import type { Account, Network, PostInput, PostResult, TimelineItem } from "../types.ts";
 import { getJson, normalizeInstance, postJson, request } from "../../util/http.ts";
-import { authorize, REDIRECT_URI } from "../oauth2.ts";
+import { authorize, callbackFrom, PASTE_FIELD, REDIRECT_URI } from "../oauth2.ts";
 
 const SCOPES = "read write follow";
 
@@ -83,6 +83,7 @@ function make(id: string, name: string, blurb: string, charLimit: number): Netwo
       fields: [
         { key: "instance", label: "Instance", placeholder: id === "pixelfed" ? "pixelfed.social" : "mastodon.social" },
         { key: "token", label: "Access token", secret: true, optional: true, help: "Optional. Leave blank to use the browser." },
+        PASTE_FIELD,
       ],
     },
     caps: {
@@ -126,6 +127,7 @@ function make(id: string, name: string, blurb: string, charLimit: number): Netwo
             // Not every server still in the wild implements PKCE, and the
             // client secret is already in hand from registering just now.
             pkce: false,
+            ...callbackFrom(input, ctx),
           },
           ctx,
         );

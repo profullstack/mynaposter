@@ -67,6 +67,25 @@ export async function submitLogin(state: State, redraw: () => void): Promise<voi
         redraw();
         await openBrowser(url);
       },
+      // Paste-the-code sign-in, for a browser that is not on this machine.
+      ask: (prompt) =>
+        new Promise<string>((resolve) => {
+          state.prompt = {
+            title: prompt,
+            note: flow.log.slice(-2).join("  "),
+            fields: [new Field("value", "Code")],
+            active: 0,
+            busy: false,
+            log: [],
+            submit(values) {
+              state.prompt = undefined;
+              state.mode = "login";
+              resolve(values.value.trim());
+            },
+          };
+          state.mode = "prompt";
+          redraw();
+        }),
     });
 
     const account: Account = {

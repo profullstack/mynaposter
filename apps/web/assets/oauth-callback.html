@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Authorized &mdash; myna</title>
+<meta name="robots" content="noindex">
+<link rel="stylesheet" href="/site.css">
+<link rel="icon" href="/favicon.svg">
+</head>
+<body>
+<header class="top"><a class="wordmark" href="/">myna</a></header>
+<main>
+  <section class="hero" style="padding-top:8px">
+    <h1 id="heading">Copy this code</h1>
+    <p class="lede narrow" id="lede">
+      Paste it back into the terminal where myna is waiting. It is single use and
+      expires in a few minutes.
+    </p>
+
+    <div class="install" style="max-width:100%">
+      <code id="code">reading&hellip;</code>
+      <button id="copy" type="button" aria-label="Copy the code">Copy</button>
+    </div>
+
+    <p class="fineprint" id="detail"></p>
+
+    <p class="fineprint">
+      This page exists because myna normally listens on <code>127.0.0.1</code>, which only
+      works when your browser is on the same machine as myna. When it is not &mdash; over SSH,
+      or authorizing from a phone &mdash; the code comes here instead and you carry it across
+      yourself. Nothing is stored here: the code lives in the URL and never reaches a server log
+      of ours, because the exchange happens on your machine, not this one.
+    </p>
+  </section>
+</main>
+<footer><p><a href="/">mynaposter.com</a></p></footer>
+<script src="/oauth-callback.js"></script>
+</body>
+</html>

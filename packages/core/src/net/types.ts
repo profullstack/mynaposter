@@ -111,6 +111,15 @@ export interface LoginContext {
   report(message: string): void;
   /** Open a URL in the user's browser, falling back to printing it. */
   openUrl(url: string): Promise<void>;
+  /**
+   * Ask the person for a value, showing `prompt`. Supplied by whatever is
+   * driving the login, because only it knows whether it has a terminal, a TUI
+   * modal or a desktop dialog to ask with.
+   *
+   * Used by the paste-the-code sign-in, for browsers that are not on this
+   * machine and so cannot reach a loopback redirect.
+   */
+  ask?(prompt: string): Promise<string>;
 }
 
 export interface Network {

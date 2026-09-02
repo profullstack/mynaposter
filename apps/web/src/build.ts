@@ -267,9 +267,14 @@ writeFileSync(
 <p class="lede">That page does not exist. <a href="/">Back to the start</a>.</p></section></main></body></html>`,
 );
 
+// Served at /oauth/callback, for authorizing from a browser that is not on the
+// same machine as myna. Loopback redirects cannot reach a myna running over SSH.
+mkdirSync(join(out, "oauth"), { recursive: true });
+copyFileSync(join(root, "assets", "oauth-callback.html"), join(out, "oauth", "callback.html"));
+
 writeFileSync(
   join(out, "robots.txt"),
-  "User-agent: *\nAllow: /\n\nSitemap: https://mynaposter.com/sitemap.xml\n",
+  "User-agent: *\nAllow: /\nDisallow: /oauth/\n\nSitemap: https://mynaposter.com/sitemap.xml\n",
 );
 
 writeFileSync(
@@ -322,7 +327,7 @@ password or a browser flow and belongs to a person.
 `,
 );
 
-for (const asset of ["site.css", "site.js", "favicon.svg", "install.sh"]) {
+for (const asset of ["site.css", "site.js", "favicon.svg", "install.sh", "oauth-callback.js"]) {
   const source = join(root, "assets", asset);
   if (existsSync(source)) copyFileSync(source, join(out, asset));
 }
