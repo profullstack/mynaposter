@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'">
+<title>myna</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<div class="shell">
+  <nav class="sidebar">
+    <div class="brand">myna</div>
+    <button class="nav" data-view="compose" aria-current="true">Compose</button>
+    <button class="nav" data-view="accounts">Accounts</button>
+    <button class="nav" data-view="queue">Queue</button>
+    <button class="nav" data-view="history">History</button>
+    <button class="nav" data-view="settings">Settings</button>
+    <div class="grow"></div>
+    <div class="status" id="status"></div>
+  </nav>
+
+  <main>
+    <!-- Compose -->
+    <section class="view" data-view="compose">
+      <header><h1>Compose</h1><div class="spacer"></div>
+        <button id="btn-attach" class="ghost">Attach</button>
+        <button id="btn-schedule" class="ghost">Schedule</button>
+        <button id="btn-post" class="primary">Post</button>
+      </header>
+
+      <div class="split">
+        <div class="pane">
+          <input id="title" class="title-input" placeholder="Title (Reddit, Lemmy and blogs)">
+          <textarea id="text" placeholder="Write something, or use the writer below."></textarea>
+          <div id="attachments" class="attachments"></div>
+
+          <div class="writer">
+            <input id="ai-input" placeholder="A topic, or paste a link to write about">
+            <button id="btn-draft" class="ghost">Draft</button>
+            <button id="btn-link" class="ghost">From link</button>
+            <button id="btn-graphic" class="ghost">Infographic</button>
+            <select id="graphic-style" title="Infographic backend">
+              <option value="svg">svg</option>
+              <option value="html">html</option>
+              <option value="image">image</option>
+            </select>
+          </div>
+          <div id="ai-note" class="note"></div>
+          <img id="graphic-preview" class="graphic" alt="" hidden>
+        </div>
+
+        <aside class="pane targets">
+          <div class="pane-title">Goes to</div>
+          <div id="target-list"></div>
+          <div class="pane-actions">
+            <button id="btn-all" class="link">Select all</button>
+            <button id="btn-none" class="link">Select none</button>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <!-- Accounts -->
+    <section class="view" data-view="accounts" hidden>
+      <header><h1>Accounts</h1><div class="spacer"></div>
+        <button id="btn-add" class="primary">Connect an account</button>
+      </header>
+      <div id="account-list" class="cards"></div>
+    </section>
+
+    <!-- Queue -->
+    <section class="view" data-view="queue" hidden>
+      <header><h1>Queue</h1></header>
+      <div id="queue-list" class="cards"></div>
+    </section>
+
+    <!-- History -->
+    <section class="view" data-view="history" hidden>
+      <header><h1>History</h1></header>
+      <div id="history-list" class="rows"></div>
+    </section>
+
+    <!-- Settings -->
+    <section class="view" data-view="settings" hidden>
+      <header><h1>Settings</h1></header>
+      <div id="settings-form" class="settings"></div>
+      <div class="pane-title">Diagnostics</div>
+      <pre id="doctor" class="doctor"></pre>
+    </section>
+  </main>
+</div>
+
+<!-- Network picker -->
+<dialog id="picker">
+  <h2>Connect an account</h2>
+  <input id="picker-filter" placeholder="Filter networks">
+  <div id="picker-list" class="picker-list"></div>
+  <footer><button data-close class="ghost">Cancel</button></footer>
+</dialog>
+
+<!-- Login form -->
+<dialog id="login">
+  <h2 id="login-title">Connect</h2>
+  <p id="login-note" class="note"></p>
+  <form id="login-form"></form>
+  <div id="login-progress" class="progress"></div>
+  <div id="login-error" class="error"></div>
+  <footer>
+    <button data-close class="ghost">Cancel</button>
+    <button id="login-submit" class="primary">Connect</button>
+  </footer>
+</dialog>
+
+<!-- Schedule -->
+<dialog id="schedule">
+  <h2>Schedule this post</h2>
+  <label>When<input type="datetime-local" id="schedule-at"></label>
+  <footer>
+    <button data-close class="ghost">Cancel</button>
+    <button id="schedule-submit" class="primary">Queue it</button>
+  </footer>
+</dialog>
+
+<script src="app.js"></script>
+</body>
+</html>

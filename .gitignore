@@ -6,3 +6,5 @@ dist/
 dist/
 .env
 .env.*
+apps/desktop/src/core.cjs
+apps/desktop/dist/

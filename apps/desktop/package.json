@@ -1,0 +1,57 @@
+{
+  "name": "@profullstack/myna-desktop",
+  "version": "0.1.0",
+  "description": "The myna desktop app.",
+  "license": "MIT",
+  "private": true,
+  "main": "src/main.cjs",
+  "scripts": {
+    "start": "bun run build:core && electron .",
+    "dist": "electron-builder --publish never",
+    "dist:linux": "electron-builder --linux --publish never",
+    "dist:mac": "electron-builder --mac --publish never",
+    "dist:win": "electron-builder --win --publish never",
+    "build:core": "bun build ../../packages/core/src/index.ts --target=node --format=cjs --outfile src/core.cjs"
+  },
+  "dependencies": {
+    "@profullstack/myna-core": "workspace:*"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.profullstack.myna",
+    "productName": "myna",
+    "files": [
+      "src/**/*",
+      "renderer/**/*",
+      "node_modules/**/*"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "Network"
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "category": "public.app-category.social-networking"
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "deb": {
+      "afterInstall": "resources/after-install.sh",
+      "afterRemove": "resources/after-remove.sh"
+    }
+  }
+}
