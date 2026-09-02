@@ -11,6 +11,7 @@ import { x } from "./adapters/x.ts";
 import { facebook, instagram, threads } from "./adapters/meta.ts";
 import { linkedin, pinterest, tiktok } from "./adapters/professional.ts";
 import { devto, hashnode, ghost, wordpress, microblog, tumblr } from "./adapters/blogs.ts";
+import { tsbb } from "./adapters/tsbb.ts";
 
 export const NETWORKS: Network[] = [
   // The ones people ask for first.
@@ -29,6 +30,7 @@ export const NETWORKS: Network[] = [
   pixelfed,
   lemmy,
   nostr,
+  tsbb,
   // Chat.
   telegram,
   discord,
@@ -70,6 +72,8 @@ const ALIASES: Record<string, string> = {
   wp: "wordpress",
   "micro.blog": "microblog",
   nostril: "nostr",
+  forum: "tsbb",
+  board: "tsbb",
 };
 
 export function getNetwork(id: string): Network | undefined {
@@ -104,5 +108,7 @@ export function authSummary(network: Network): string {
       return "app keys";
     case "oauth2":
       return "browser sign-in";
+    case "device":
+      return "approve a code";
   }
 }

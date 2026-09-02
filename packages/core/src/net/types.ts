@@ -14,7 +14,14 @@ export type AuthKind =
   /** OAuth 2.0 authorization code + PKCE, through the browser. */
   | "oauth2"
   /** OAuth 1.0a signed requests (consumer key/secret + token/secret). */
-  | "oauth1";
+  | "oauth1"
+  /**
+   * A device flow: the service shows a short code, a person approves it in a
+   * browser, and the client polls until it is handed a token. Suits a terminal
+   * better than OAuth2 does — no password crosses the process and no loopback
+   * port has to be free.
+   */
+  | "device";
 
 export interface CredentialField {
   key: string;

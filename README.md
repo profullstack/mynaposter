@@ -64,6 +64,7 @@ part most tools are vague about, so to be plain:
 |---|---|
 | **Real username and password** | Bluesky (app password), Mastodon, Pleroma, Akkoma, GoToSocial, Lemmy, Matrix, Mattermost, WordPress (application password), Reddit (script app) |
 | **A token you paste** | Telegram, Discord, Slack, Misskey, Nostr, dev.to, Hashnode, Ghost, Micro.blog |
+| **Approving a short code** | tsbb (device flow: the board shows a code, you approve it in a browser) |
 | **App keys** | Tumblr |
 | **Browser sign-in (OAuth)** | X, Facebook, Instagram, Threads, LinkedIn, Pinterest, TikTok |
 
@@ -82,12 +83,12 @@ Two more things worth knowing before you plan a posting workflow:
 
 ## Supported networks
 
-25 in total.
+26 in total.
 
 **Major** X, Facebook, Instagram, Threads, Bluesky, Reddit, LinkedIn, Pinterest,
 TikTok
-**Fediverse** Mastodon (and Pleroma, Akkoma, GoToSocial), Misskey (and Sharkey,
-Firefish), Pixelfed, Lemmy, Nostr
+**Fediverse and self-hosted** Mastodon (and Pleroma, Akkoma, GoToSocial),
+Misskey (and Sharkey, Firefish), Pixelfed, Lemmy, Nostr, tsbb
 **Chat** Telegram, Discord, Slack, Matrix, Mattermost
 **Long-form** dev.to, Hashnode, Ghost, WordPress, Micro.blog, Tumblr
 

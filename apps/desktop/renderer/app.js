@@ -284,6 +284,7 @@ const AUTH_LABEL = {
   token: "paste a token",
   oauth1: "app keys",
   oauth2: "browser sign-in",
+  device: "approve a code",
 };
 
 function renderPicker(filter) {

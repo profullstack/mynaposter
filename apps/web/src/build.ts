@@ -24,6 +24,7 @@ const byCategory = (category: string) => NETWORKS.filter((network) => network.ca
 
 const passwordNetworks = NETWORKS.filter((network) => network.auth.kind === "password");
 const oauthNetworks = NETWORKS.filter((network) => network.auth.kind === "oauth2");
+const deviceNetworks = NETWORKS.filter((network) => network.auth.kind === "device");
 
 const networkRows = NETWORKS.map(
   (network) => `<tr>
@@ -132,6 +133,14 @@ const page = `<!doctype html>
       <p class="small">
         You type a username and a password and you are in. Use an app password where the network
         offers one.
+      </p>
+    </div>
+    <div class="card good">
+      <h3>${deviceNetworks.length} show you a code to approve</h3>
+      <p>${deviceNetworks.map((network) => escape(network.name)).join(", ")}.</p>
+      <p class="small">
+        The board prints a short code, you approve it in a browser, and it hands myna a token.
+        No password crosses the terminal and no local port has to be free.
       </p>
     </div>
     <div class="card">
@@ -291,6 +300,7 @@ ${NETWORKS.map((network) => `- ${network.id} (${network.name}): ${authSummary(ne
 ## How logging in works
 
 ${passwordNetworks.length} networks accept a real username and password: ${passwordNetworks.map((n) => n.id).join(", ")}.
+${deviceNetworks.length} use a device flow, where you approve a short code in a browser: ${deviceNetworks.map((n) => n.id).join(", ")}.
 ${oauthNetworks.length} require a browser OAuth flow because they removed password APIs: ${oauthNetworks.map((n) => n.id).join(", ")}.
 The rest take a token or app keys you paste in.
 
