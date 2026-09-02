@@ -1,0 +1,12 @@
+# railway up uploads the local working directory, so everything that should be
+# rebuilt on the server rather than shipped from here is excluded.
+node_modules
+**/node_modules
+.git
+dist
+**/dist
+apps/web/public
+apps/desktop/src/core.cjs
+*.log
+.env
+.env.*
