@@ -23,6 +23,8 @@ machine and nothing is sent anywhere except the posts you make.
   sends it while the TUI is open, or run `myna run` as a daemon.
 - **Read back.** Home timelines, mentions, per-post engagement, and a history of
   what landed and what failed.
+- **See how it did.** A performance screen with volume over time, delivery rate,
+  per-network breakdown, the hours you actually post, and your best posts.
 - **Write, optionally.** Paste a link and get a drafted post with hashtags that
   suit each network. The writer never posts on its own; drafts land in the
   compose box for you to edit.

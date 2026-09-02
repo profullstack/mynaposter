@@ -2,9 +2,9 @@
 import type { Account, Network, TimelineItem } from "@profullstack/myna-core";
 import { Field, TextArea } from "./field.ts";
 
-export type Screen = "compose" | "accounts" | "queue" | "history" | "feed" | "networks" | "help";
+export type Screen = "compose" | "accounts" | "queue" | "history" | "performance" | "feed" | "networks" | "help";
 
-export const SCREENS: Screen[] = ["compose", "accounts", "queue", "history", "feed", "networks", "help"];
+export const SCREENS: Screen[] = ["compose", "accounts", "queue", "history", "performance", "feed", "networks", "help"];
 
 export type Mode =
   /** Typing a slash command in the bar at the bottom. */

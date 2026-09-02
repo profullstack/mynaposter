@@ -30,6 +30,21 @@ export {
 } from "./store/accounts.ts";
 export { listQueue, enqueue, updateQueued, removeQueued, duePosts, type QueuedPost } from "./store/queue.ts";
 export { listHistory, recordHistory, clearHistory, type HistoryEntry } from "./store/history.ts";
+export { listEngagement, recordEngagement, clearEngagement } from "./store/engagement.ts";
+export {
+  postsPerDay,
+  postsPerHour,
+  byNetwork,
+  totals,
+  topPosts,
+  needsRefresh,
+  type DayBucket,
+  type NetworkBreakdown,
+  type Totals,
+  type RankedPost,
+  type EngagementRecord,
+} from "./core/analytics.ts";
+export { refreshEngagement, type RefreshResult } from "./core/refresh.ts";
 export { loadSettings, saveSettings, DEFAULT_SETTINGS, type Settings } from "./store/settings.ts";
 export {
   collect,

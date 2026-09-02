@@ -46,6 +46,11 @@ import {
   unlock,
   writerAvailable,
   cloud,
+  listEngagement,
+  refreshEngagement,
+  byNetwork,
+  totals,
+  topPosts,
   type Account,
   type InfographicStyle,
 } from "@profullstack/myna-core";
@@ -669,6 +674,67 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
         default:
           throw new Error(`Unknown: myna cloud ${sub}. Try signup, login, logout, push, pull, status or forget.`);
       }
+    }
+
+    case "stats": {
+      await ensureUnlocked();
+      const history = listHistory();
+
+      if (flags.refresh !== undefined || positional[0] === "refresh") {
+        const result = await refreshEngagement({ limit: Number(flags.limit ?? 25) });
+        out(`Measured ${result.updated} of ${result.checked} posts.`);
+        if (result.skipped.length) out(`  ${result.skipped.join(", ")} report no engagement.`);
+        for (const error of result.errors.slice(0, 5)) out(`  ${error}`);
+      }
+
+      const engagement = listEngagement();
+      const summary = totals(history, engagement);
+
+      if (flags.json) {
+        out(JSON.stringify({ totals: summary, networks: byNetwork(history, engagement), top: topPosts(history, engagement, 10) }, null, 2));
+        return 0;
+      }
+
+      if (!history.length) {
+        out("Nothing posted yet, so there is nothing to measure.");
+        return 0;
+      }
+
+      out(`${summary.sent} sent, ${summary.failed} failed across ${summary.networks} network(s)` +
+        (summary.rate === null ? "" : ` — ${Math.round(summary.rate * 100)}% delivered`));
+      out(summary.measured
+        ? `${summary.likes} likes, ${summary.reposts} reposts, ${summary.replies} replies over ${summary.measured} measured post(s)`
+        : "No engagement measured yet. Run: myna stats refresh");
+      out("");
+
+      table(
+        byNetwork(history, engagement).map((row) => ({
+          network: row.network,
+          sent: String(row.sent),
+          failed: String(row.failed),
+          rate: row.rate === null ? "-" : `${Math.round(row.rate * 100)}%`,
+          likes: String(row.likes),
+          reposts: String(row.reposts),
+        })),
+        [
+          { key: "network", title: "NETWORK" },
+          { key: "sent", title: "SENT" },
+          { key: "failed", title: "FAILED" },
+          { key: "rate", title: "RATE" },
+          { key: "likes", title: "LIKES" },
+          { key: "reposts", title: "REPOSTS" },
+        ],
+      );
+
+      const best = topPosts(history, engagement, 5);
+      if (best.length) {
+        out("");
+        out("Best posts:");
+        for (const post of best) {
+          out(`  ${String(post.total).padStart(5)}  ${post.accountId}  ${post.text.replace(/\s+/g, " ").slice(0, 50)}`);
+        }
+      }
+      return 0;
     }
 
     case "doctor": {

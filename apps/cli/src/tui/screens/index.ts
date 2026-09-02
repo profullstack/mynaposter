@@ -9,6 +9,14 @@ import {
   loadSettings,
   type Account,
 } from "@profullstack/myna-core";
+import {
+  byNetwork,
+  listEngagement,
+  postsPerDay,
+  postsPerHour,
+  topPosts,
+  totals,
+} from "@profullstack/myna-core";
 import { selectedAccounts, type State } from "../state.ts";
 import { COMMANDS, networkRows } from "../commands.ts";
 import { describeWhen } from "../when.ts";
@@ -289,6 +297,147 @@ export function helpScreen(ui: Container, state: State, theme: Theme): void {
       panel.spacer(1);
       panel.label("Nothing leaves this machine except", { size: 1 });
       panel.label("the posts you send.", { size: 1 });
+    });
+  });
+}
+
+
+/**
+ * Performance.
+ *
+ * Volume, success rate and timing come from the local history and are always
+ * there. Engagement needs an API call per post, so it comes from the cache that
+ * `/stats` fills, and the screen says so rather than showing zeros as if they
+ * were measurements.
+ */
+export function performanceScreen(ui: Container, state: State, theme: Theme): void {
+  const history = listHistory();
+  const engagement = listEngagement();
+  const summary = totals(history, engagement);
+
+  if (!history.length) {
+    ui.panel({ title: "Performance", size: "1fr" }, (panel) => {
+      panel.label("Nothing posted yet, so there is nothing to measure.", { size: 1 });
+      panel.spacer(1);
+      panel.label("Post something, then come back. /stats fetches engagement", { size: 1 });
+      panel.label("from the networks that report it.", { size: 1 });
+    });
+    return;
+  }
+
+  ui.column({ size: "1fr", gap: 1 }, (root) => {
+    // Headline numbers.
+    root.row({ size: 5, gap: 1 }, (row) => {
+      row.panel({ title: "Posts" }, (panel) => {
+        panel.keyValues([
+          { label: "sent", value: String(summary.sent), color: theme.success },
+          { label: "failed", value: String(summary.failed), color: summary.failed ? theme.danger : theme.muted },
+          { label: "networks", value: String(summary.networks) },
+        ]);
+      });
+      row.panel({ title: "Delivered" }, (panel) => {
+        panel.gauge({
+          value: summary.rate ?? 0,
+          label: summary.rate === null ? "-" : `${Math.round(summary.rate * 100)}%`,
+          color: (summary.rate ?? 1) > 0.95 ? theme.success : theme.warning,
+        });
+      });
+      row.panel({ title: "Engagement" }, (panel) => {
+        if (!summary.measured) {
+          panel.label("not measured yet", { size: 1, fg: theme.muted });
+          panel.label("/stats to fetch", { size: 1, fg: theme.accent });
+          return;
+        }
+        panel.keyValues([
+          { label: "likes", value: String(summary.likes), color: theme.accent },
+          { label: "reposts", value: String(summary.reposts), color: theme.primary },
+          { label: "replies", value: String(summary.replies) },
+        ]);
+      });
+      row.panel({ title: "Per post" }, (panel) => {
+        panel.text(summary.perPost === null ? "-" : summary.perPost.toFixed(1), { size: 1, fg: theme.accent });
+        panel.label(summary.measured ? `over ${summary.measured} measured` : "nothing measured", { size: 1 });
+      });
+    });
+
+    // Volume over the last month.
+    root.panel({ title: "Posts per day, last 30 days", size: 10 }, (panel) => {
+      const days = postsPerDay(history, 30);
+      // A histogram, not an area graph: these are 30 discrete daily counts, and
+      // interpolating between them draws values on days that never happened.
+      panel.histogram({ values: days.map((day) => day.sent), color: theme.success });
+      const failed = days.reduce((sum, day) => sum + day.failed, 0);
+      panel.label(
+        failed
+          ? `${days.reduce((sum, day) => sum + day.sent, 0)} sent, ${failed} failed in this window`
+          : `${days.reduce((sum, day) => sum + day.sent, 0)} sent, none failed`,
+        { size: 1, fg: failed ? theme.danger : theme.muted },
+      );
+    });
+
+    root.row({ size: "1fr", gap: 1 }, (row) => {
+      // Where it went, and how it did.
+      row.panel({ title: "By network", size: "3fr" }, (panel) => {
+        const rows = byNetwork(history, engagement);
+        panel.table({
+          rows: rows.map((entry) => ({
+            network: entry.network,
+            sent: String(entry.sent),
+            failed: entry.failed ? String(entry.failed) : "",
+            rate: entry.rate === null ? "-" : `${Math.round(entry.rate * 100)}%`,
+            likes: entry.likes || "",
+            reposts: entry.reposts || "",
+            replies: entry.replies || "",
+          })),
+          columns: [
+            { key: "network", title: "Network", width: 14 },
+            { key: "sent", title: "Sent", width: 6, align: "right" },
+            { key: "failed", title: "Failed", width: 7, align: "right" },
+            { key: "rate", title: "Rate", width: 6, align: "right" },
+            { key: "likes", title: "Likes", width: 7, align: "right" },
+            { key: "reposts", title: "Reposts", width: 8, align: "right" },
+            { key: "replies", title: "Replies", width: 8, align: "right" },
+          ],
+        });
+      });
+
+      // When you post, by hour.
+      row.panel({ title: "By hour", size: "2fr" }, (panel) => {
+        const hours = postsPerHour(history);
+        panel.histogram({ values: hours, color: theme.primary });
+        const busiest = hours.indexOf(Math.max(...hours));
+        panel.label(
+          Math.max(...hours) > 0 ? `busiest at ${String(busiest).padStart(2, "0")}:00` : "no successful posts yet",
+          { size: 1, fg: theme.muted },
+        );
+      });
+    });
+
+    // What actually landed.
+    root.panel({ title: "Best posts", size: 10 }, (panel) => {
+      const best = topPosts(history, engagement, 6);
+      if (!best.length) {
+        panel.label("No engagement measured yet. /stats fetches it for recent posts", { size: 1 });
+        panel.label("from the networks that report it: X, Bluesky, Mastodon, Reddit,", { size: 1 });
+        panel.label("Facebook, Instagram, Threads, Misskey, Lemmy and dev.to.", { size: 1 });
+        return;
+      }
+      panel.table({
+        rows: best.map((post) => ({
+          total: String(post.total),
+          account: post.accountId.length > 22 ? `${post.accountId.slice(0, 21)}\u2026` : post.accountId,
+          likes: String(post.likes),
+          reposts: String(post.reposts),
+          text: post.text.replace(/\s+/g, " ").slice(0, 52),
+        })),
+        columns: [
+          { key: "total", title: "Total", width: 6, align: "right" },
+          { key: "likes", title: "Likes", width: 6, align: "right" },
+          { key: "reposts", title: "Rep", width: 5, align: "right" },
+          { key: "account", title: "Account", width: 23 },
+          { key: "text", title: "Post" },
+        ],
+      });
     });
   });
 }

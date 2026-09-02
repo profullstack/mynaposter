@@ -24,6 +24,7 @@ import {
   helpScreen,
   historyScreen,
   networksScreen,
+  performanceScreen,
   queueScreen,
 } from "./screens/index.ts";
 
@@ -113,6 +114,9 @@ export async function runTui(options: { theme?: string } = {}): Promise<void> {
           break;
         case "history":
           historyScreen(root, state, theme);
+          break;
+        case "performance":
+          performanceScreen(root, state, theme);
           break;
         case "feed":
           feedScreen(root, state, theme);

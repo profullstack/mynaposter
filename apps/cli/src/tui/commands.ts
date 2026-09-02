@@ -34,6 +34,7 @@ import {
   openBundle,
   applyBundle,
   describeBundle,
+  refreshEngagement,
   type InfographicStyle,
 } from "@profullstack/myna-core";
 import { writeFileSync, readFileSync, existsSync, mkdtempSync } from "node:fs";
@@ -507,6 +508,33 @@ export const COMMANDS: Command[] = [
     },
   },
   {
+    name: "stats",
+    args: "[count]",
+    help: "Fetch engagement for recent posts, then show performance",
+    async run(state, args, redraw) {
+      const limit = Number(args.trim()) || 25;
+      state.screen = "performance";
+      state.busy = `Asking the networks about ${limit} recent posts...`;
+      redraw();
+      try {
+        const result = await refreshEngagement({ limit });
+        const parts = [`measured ${result.updated}/${result.checked}`];
+        if (result.skipped.length) parts.push(`${result.skipped.join(", ")} report none`);
+        if (result.errors.length) parts.push(`${result.errors.length} failed`);
+        toast(state, parts.join("  ·  "), result.updated ? "success" : "info");
+      } finally {
+        state.busy = "";
+      }
+    },
+  },
+  {
+    name: "performance",
+    help: "Show post performance",
+    run(state) {
+      state.screen = "performance";
+    },
+  },
+  {
     name: "save",
     args: "[path]",
     help: "Write an encrypted bundle of accounts, queue and settings",
@@ -603,6 +631,8 @@ const ALIASES: Record<string, string> = {
   attach: "media",
   rm: "cancel",
   notifs: "notifications",
+  perf: "performance",
+  analytics: "performance",
   mentions: "notifications",
 };
 
