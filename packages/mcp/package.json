@@ -7,7 +7,10 @@
   "bin": {
     "myna-mcp": "./src/server.ts"
   },
-  "files": ["src", "README.md"],
+  "files": [
+    "src",
+    "README.md"
+  ],
   "homepage": "https://mynaposter.com",
   "repository": {
     "type": "git",
@@ -20,5 +23,9 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
     "@profullstack/myna-core": "workspace:*"
+  },
+  "exports": {
+    ".": "./src/server.ts",
+    "./tools": "./src/tools.ts"
   }
 }

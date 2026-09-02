@@ -47,6 +47,15 @@ Moving between machines:
   load <path>                       Merge a bundle into this install. Shows
                                     what it will change before it changes it
 
+Cloud backup (optional; myna works fully without it):
+  cloud signup [email]              Create an account
+  cloud login [email]               Sign in on this machine
+  cloud push                        Encrypt a bundle here, then upload it
+  cloud pull                        Fetch it and merge it in
+  cloud status                      What is stored, and when
+  cloud forget                      Delete the stored backup
+  cloud logout                      Sign out. The local vault is untouched
+
 Other:
   config [key] [value]              Show or change settings
   doctor                            Check what is configured and working
@@ -72,6 +81,7 @@ Examples:
   myna infographic https://example.com/report --style html
   myna save ~/myna.myna              # then scp it to the other machine
   myna load ~/myna.myna
+  myna cloud push                    # same bundle, encrypted here, stored there
 
 Credentials are encrypted at rest in ~/.config/myna. Nothing leaves this
 machine except the posts you send.

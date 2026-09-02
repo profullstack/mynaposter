@@ -197,6 +197,30 @@ tokens get refreshed in place, so a bundle taken last week can carry one that ha
 since been rotated, and silently clobbering a working account with a stale token
 is the failure that would be hardest to notice.
 
+## Cloud backup, if you want it
+
+Optional. myna never contacts a server unless you run a `cloud` command.
+
+```bash
+myna cloud signup you@example.com
+myna cloud push        # encrypts here, then uploads
+myna cloud pull        # on the other machine
+```
+
+What goes up is the same bundle `save` writes: **sealed on your machine with a
+passphrase that never leaves it.** The server stores ciphertext it cannot read
+and refuses to store anything that is not already sealed. That is the only
+arrangement under which keeping tokens for 26 social networks on somebody
+else's computer is a reasonable thing to do — a full compromise of the server
+yields nothing.
+
+Sign-in is email and password. The house pattern is magic link and passkey, with
+an optional password for devices those cannot reach; a terminal has no mail
+client to open a link in and no authenticator to hold a passkey, which is that
+exception exactly.
+
+Self-host it by pointing `MYNA_SERVER` at your own instance.
+
 ## Beyond the terminal
 
 myna is one core with four faces. An account connected in any of them works in

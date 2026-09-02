@@ -77,3 +77,27 @@ create table if not exists post_history (
 );
 
 create index if not exists post_history_user_idx on post_history(user_id, created_at desc);
+
+-- Cloud backup.
+--
+-- The blob is a myna bundle, already sealed on the client with a passphrase
+-- that never leaves that machine. The server stores ciphertext it cannot read,
+-- so a full compromise here leaks no social token. That is the whole design:
+-- "cloud backup" must not mean "trust the server with every account you have".
+create table if not exists backups (
+  user_id     uuid primary key references users(id) on delete cascade,
+  -- The sealed bundle, verbatim. Opaque to this side.
+  blob        text not null,
+  -- Readable header the client also stores in the clear, so `cloud status`
+  -- can say what is up there without the passphrase.
+  meta        jsonb not null default '{}'::jsonb,
+  bytes       integer not null,
+  updated_at  timestamptz not null default now()
+);
+
+-- Passwords, for the devices magic links and passkeys cannot reach.
+-- scrypt with a per-user salt; the parameters travel with the row so they can
+-- be raised later without invalidating every existing password.
+alter table users add column if not exists password_hash text;
+alter table users add column if not exists password_salt text;
+alter table users add column if not exists password_params jsonb;

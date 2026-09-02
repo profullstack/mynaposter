@@ -43,6 +43,7 @@ export {
   type ApplyResult,
 } from "./store/bundle.ts";
 export { vaultExists, vaultMode, rekeyVault, VaultLockedError } from "./util/crypto/vault.ts";
+export * as cloud from "./store/cloud.ts";
 
 export { postToAll, tailor, charsFor, summarize, type ComposeOptions, type TargetResult } from "./core/poster.ts";
 export { loadMedia, loadAllMedia } from "./core/media.ts";

@@ -76,6 +76,16 @@ export async function runTui(options: { theme?: string } = {}): Promise<void> {
           tabs: [...SCREENS],
           active: SCREENS.indexOf(state.screen),
           size: "fill",
+          // Without onSelect the tabs register no hit region, so clicking one
+          // does nothing at all. They look interactive either way.
+          onSelect: (index) => {
+            const screen = SCREENS[index];
+            if (!screen) return;
+            state.screen = screen;
+            // A click is a navigation, not an edit: leave the compose box.
+            if (state.mode === "compose") state.mode = "command";
+            app.invalidate();
+          },
         });
         const targets = selectedAccounts(state);
         header.badge({
@@ -151,7 +161,7 @@ export async function runTui(options: { theme?: string } = {}): Promise<void> {
 
     if (state.mode === "login" && state.login) drawLogin(ui, state, theme, height);
     if (state.mode === "prompt" && state.prompt) drawPrompt(ui, state, theme);
-    if (state.mode === "targets") drawTargets(ui, state, theme);
+    if (state.mode === "targets") drawTargets(ui, state, app, theme);
   });
 
   try {
@@ -251,7 +261,7 @@ function drawPrompt(ui: Container, state: State, theme: Theme): void {
   );
 }
 
-function drawTargets(ui: Container, state: State, theme: Theme): void {
+function drawTargets(ui: Container, state: State, app: App, theme: Theme): void {
   ui.modal({ title: "Post to", width: 60, height: Math.min(state.accounts.length + 7, 24) }, (panel) => {
     state.accounts.forEach((account, index) => {
       panel.checkbox({
@@ -260,11 +270,31 @@ function drawTargets(ui: Container, state: State, theme: Theme): void {
         focused: index === state.targetCursor,
         color: theme.success,
         size: 1,
+        // Same trap as the tabs: a checkbox with no handler is a picture of a
+        // checkbox. Clicking one has to do what Space does.
+        onToggle: () => {
+          state.targetCursor = index;
+          toggleTarget(state, account.id);
+          app.invalidate();
+        },
       });
     });
     panel.spacer(1);
     panel.label("Space toggles    a selects every account    Enter confirms", { size: 1 });
   });
+}
+
+/**
+ * Flip one target on or off.
+ *
+ * An empty set means "everything", so the first toggle has to materialise the
+ * full list before removing from it, or turning one account off would turn
+ * every other account off with it.
+ */
+function toggleTarget(state: State, id: string): void {
+  if (!state.targets.size) state.targets = new Set(state.accounts.map((entry) => entry.id));
+  if (state.targets.has(id)) state.targets.delete(id);
+  else state.targets.add(id);
 }
 
 function wrapText(text: string, width: number): string[] {
@@ -463,13 +493,7 @@ function handleTargetsKey(state: State, event: KeyEvent): void {
   }
   if (event.name === "space") {
     const account = state.accounts[state.targetCursor];
-    if (!account) return;
-    // An empty set means "everything", so the first toggle has to materialise it.
-    if (!state.targets.size) {
-      state.targets = new Set(state.accounts.map((entry) => entry.id));
-    }
-    if (state.targets.has(account.id)) state.targets.delete(account.id);
-    else state.targets.add(account.id);
+    if (account) toggleTarget(state, account.id);
     return;
   }
   if (event.name === "enter") {

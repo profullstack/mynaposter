@@ -45,6 +45,7 @@ import {
   summarize,
   unlock,
   writerAvailable,
+  cloud,
   type Account,
   type InfographicStyle,
 } from "@profullstack/myna-core";
@@ -568,6 +569,106 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
       out("");
       out(`Added ${result.accountsAdded.length}, replaced ${result.accountsReplaced.length}, kept ${result.accountsKept.length}, queued ${result.queueAdded}.`);
       return 0;
+    }
+
+    case "cloud": {
+      const sub = positional[0] ?? "status";
+      const server = flags.server as string | undefined;
+
+      switch (sub) {
+        case "signup":
+        case "login": {
+          const email = positional[1] ?? (await ask("Email"));
+          const password = await askSecret("Password");
+          if (sub === "signup") {
+            const again = await askSecret("Again");
+            if (again !== password) throw new Error("Those did not match.");
+          }
+          const created = sub === "signup"
+            ? await cloud.signup(email, password, server)
+            : await cloud.login(email, password, server);
+          out(`Signed in as ${created.email} on ${created.server}`);
+          out("");
+          out("Backups are encrypted here before they are uploaded, with a passphrase");
+          out("that never leaves this machine. Push one with:  myna cloud push");
+          return 0;
+        }
+
+        case "logout":
+          await cloud.logout();
+          out("Signed out. The local vault is untouched.");
+          return 0;
+
+        case "push": {
+          await ensureUnlocked();
+          const payload = collect();
+          if (!payload.accounts.length) throw new Error("Nothing to back up: no accounts are connected.");
+
+          const passphrase =
+            process.env.MYNA_BUNDLE_PASSPHRASE ?? (await askSecret("Passphrase to encrypt this backup"));
+          if (!process.env.MYNA_BUNDLE_PASSPHRASE) {
+            const again = await askSecret("Again");
+            if (again !== passphrase) throw new Error("Those did not match.");
+          }
+
+          const saved = await cloud.push(seal(payload, passphrase));
+          out(`Pushed ${(saved.bytes / 1024).toFixed(1)} KB — ${payload.accounts.length} accounts, ${payload.queue.length} queued.`);
+          out("The server holds ciphertext it cannot read.");
+          return 0;
+        }
+
+        case "pull": {
+          await ensureUnlocked();
+          const file = await cloud.pull();
+          out(describeBundle(file));
+          out("");
+          const passphrase = process.env.MYNA_BUNDLE_PASSPHRASE ?? (await askSecret("Passphrase"));
+          const payload = openBundle(file, passphrase);
+
+          const preview = applyBundle(payload, { overwrite: Boolean(flags.overwrite), dryRun: true });
+          out(`  add ${preview.accountsAdded.length}${preview.accountsAdded.length ? `: ${preview.accountsAdded.join(", ")}` : ""}`);
+          if (preview.accountsKept.length) out(`  keep ${preview.accountsKept.length} already here (--overwrite to replace)`);
+          out(`  queue ${preview.queueAdded}`);
+
+          if (flags.dryRun) return 0;
+          if (!flags.yes && !(await confirm("\nApply this?"))) {
+            out("Nothing changed.");
+            return 0;
+          }
+          const result = applyBundle(payload, { overwrite: Boolean(flags.overwrite) });
+          out(`Added ${result.accountsAdded.length}, kept ${result.accountsKept.length}, queued ${result.queueAdded}.`);
+          return 0;
+        }
+
+        case "forget":
+          if (!flags.yes && !(await confirm("Delete the stored backup from the server?"))) return 0;
+          out(await cloud.forget() ? "Deleted." : "There was nothing stored.");
+          return 0;
+
+        case "status": {
+          const current = cloud.session();
+          if (!current) {
+            out("Not signed in. Cloud backup is optional; myna works fully without it.");
+            out("");
+            out("  myna cloud signup <email>");
+            out("  myna cloud login <email>");
+            return 0;
+          }
+          const remote = await cloud.status();
+          out(`${remote.email} on ${current.server}`);
+          if (remote.backup) {
+            const meta = remote.backup.meta;
+            out(`  backup: ${(remote.backup.bytes / 1024).toFixed(1)} KB, updated ${new Date(remote.backup.updatedAt).toLocaleString()}`);
+            if (meta) out(`  contents: ${meta.accounts} accounts, ${meta.queue} queued, saved by ${meta.savedBy}`);
+          } else {
+            out("  no backup stored yet — myna cloud push");
+          }
+          return 0;
+        }
+
+        default:
+          throw new Error(`Unknown: myna cloud ${sub}. Try signup, login, logout, push, pull, status or forget.`);
+      }
     }
 
     case "doctor": {

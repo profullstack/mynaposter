@@ -11,6 +11,7 @@
   "dependencies": {
     "@profullstack/myna-core": "workspace:*",
     "hono": "^4.13.5",
-    "postgres": "^3.4.9"
+    "postgres": "^3.4.9",
+    "@profullstack/myna-mcp": "workspace:*"
   }
 }
