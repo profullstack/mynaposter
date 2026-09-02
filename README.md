@@ -64,16 +64,23 @@ part most tools are vague about, so to be plain:
 
 | How you log in | Networks |
 |---|---|
-| **Real username and password** | Bluesky (app password), Mastodon, Pleroma, Akkoma, GoToSocial, Lemmy, Matrix, Mattermost, WordPress (application password), Reddit (script app) |
+| **Real username and password** | Bluesky (app password), Lemmy, Matrix, Mattermost, WordPress (application password), Reddit (script app) |
 | **A token you paste** | Telegram, Discord, Slack, Misskey, Nostr, dev.to, Hashnode, Ghost, Micro.blog |
 | **Approving a short code** | tsbb (device flow: the board shows a code, you approve it in a browser) |
+| **One click in a browser, no setup** | Mastodon, Pleroma, Akkoma, GoToSocial, Pixelfed. myna registers itself on the instance and opens an Authorize page. Nothing to type but the instance, and no developer account anywhere |
 | **App keys** | Tumblr |
 | **Browser sign-in (OAuth)** | X, Facebook, Instagram, Threads, LinkedIn, Pinterest, TikTok |
 
-The last row is not a limitation of myna. X, Meta and LinkedIn removed password
-APIs years ago, and scraping a login session is both against their terms and
-fragile enough to break without warning. For those, myna registers your own app
-and does a normal OAuth round trip through your browser.
+Two of those rows are browser sign-ins for opposite reasons. Mastodon and its
+relatives let *any* client register itself, so the browser flow needs no setup
+at all: you type the instance and click Authorize. X, Meta, LinkedIn, Pinterest
+and TikTok require you to register an app on their developer portal first,
+because they removed password APIs years ago and scraping a login session is
+both against their terms and fragile enough to break without warning.
+
+**Mastodon no longer accepts a password at all.** `grant_type=password` was
+removed; a current server answers `unsupported_grant_type`. myna used to offer
+the field and produced a confusing failure, so it does not any more.
 
 Two more things worth knowing before you plan a posting workflow:
 
@@ -234,6 +241,18 @@ all of them, because they read the same vault.
 | `apps/desktop` | An Electron app, same core |
 | `apps/api` | An HTTP API for scripts and cron |
 | `packages/mcp` | An MCP server, so an agent can post for you |
+
+### Several accounts on one network
+
+Accounts are keyed by `network:handle`, so as many as you like can coexist:
+
+```bash
+myna post bluesky "goes to every Bluesky account"
+myna post bluesky:work.bsky.social "just the work one"
+myna post bluesky,mastodon:@me@example.com "mix and match"
+```
+
+Naming a network and one of its accounts together still posts once to each.
 
 ### HTTP API
 

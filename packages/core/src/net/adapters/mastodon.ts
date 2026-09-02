@@ -9,6 +9,7 @@
  */
 import type { Account, Network, PostInput, PostResult, TimelineItem } from "../types.ts";
 import { getJson, normalizeInstance, postJson, request } from "../../util/http.ts";
+import { authorize, REDIRECT_URI } from "../oauth2.ts";
 
 const SCOPES = "read write follow";
 
@@ -75,13 +76,13 @@ function make(id: string, name: string, blurb: string, charLimit: number): Netwo
     category: id === "mastodon" ? "fediverse" : "fediverse",
     blurb,
     auth: {
-      kind: "password",
-      note: "Username and password work on most instances. If the instance has 2FA, create a token at Preferences → Development → New application (scopes: read, write) and paste it instead.",
+      kind: "oauth2",
+      note:
+        "The instance is all myna needs: it registers itself there and opens your browser to an Authorize " +
+        "button. Paste a token only if you would rather not use a browser (Preferences, Development, New application).",
       fields: [
         { key: "instance", label: "Instance", placeholder: id === "pixelfed" ? "pixelfed.social" : "mastodon.social" },
-        { key: "username", label: "Email or username", optional: true, help: "Leave blank if pasting a token." },
-        { key: "password", label: "Password", secret: true, optional: true },
-        { key: "token", label: "Access token", secret: true, optional: true, help: "Use instead of a password when 2FA is on." },
+        { key: "token", label: "Access token", secret: true, optional: true, help: "Optional. Leave blank to use the browser." },
       ],
     },
     caps: {
@@ -96,33 +97,38 @@ function make(id: string, name: string, blurb: string, charLimit: number): Netwo
 
     async login(input, ctx) {
       const instance = normalizeInstance(input.instance);
+      const host = new URL(instance).host;
       let token = input.token?.trim();
 
       if (!token) {
-        if (!input.username || !input.password) {
-          throw new Error("Enter a username and password, or paste an access token.");
-        }
-        ctx.report(`Registering myna on ${new URL(instance).host}…`);
+        // Any client may register itself on a Mastodon server, so myna runs the
+        // normal browser flow with no setup at all: no developer portal, no
+        // client id to copy, nothing typed but the instance.
+        //
+        // There is deliberately no password path. Mastodon removed
+        // grant_type=password; a 4.7 server answers `unsupported_grant_type`,
+        // and offering the field only produces a confusing failure.
+        ctx.report(`Registering myna on ${host}...`);
         const app = await postJson<AppRegistration>(`${instance}/api/v1/apps`, {
           client_name: "myna",
-          redirect_uris: "urn:ietf:wg:oauth:2.0:oob",
+          redirect_uris: REDIRECT_URI,
           scopes: SCOPES,
-          website: "https://mynapost.com",
+          website: "https://mynaposter.com",
         });
 
-        ctx.report("Exchanging your password for a token…");
-        const granted = await postJson<TokenResponse>(`${instance}/oauth/token`, {
-          grant_type: "password",
-          client_id: app.client_id,
-          client_secret: app.client_secret,
-          username: input.username,
-          password: input.password,
-          scope: SCOPES,
-        }).catch(() => {
-          throw new Error(
-            "The instance refused the password grant. That usually means 2FA is enabled — paste an access token instead.",
-          );
-        });
+        const granted = await authorize(
+          {
+            authorizeUrl: `${instance}/oauth/authorize`,
+            tokenUrl: `${instance}/oauth/token`,
+            clientId: app.client_id,
+            clientSecret: app.client_secret,
+            scopes: SCOPES.split(" "),
+            // Not every server still in the wild implements PKCE, and the
+            // client secret is already in hand from registering just now.
+            pkce: false,
+          },
+          ctx,
+        );
         token = granted.access_token;
       }
 
