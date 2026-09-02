@@ -1,0 +1,24 @@
+{
+  "name": "@profullstack/myna-mcp",
+  "version": "0.1.0",
+  "description": "MCP server for myna. Lets an agent post, schedule and read across every connected social account.",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "myna-mcp": "./src/server.ts"
+  },
+  "files": ["src", "README.md"],
+  "homepage": "https://mynaposter.com",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/profullstack/mynaposter.git",
+    "directory": "packages/mcp"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@profullstack/myna-core": "workspace:*"
+  }
+}

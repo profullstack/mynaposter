@@ -8,3 +8,4 @@ dist/
 .env.*
 apps/desktop/src/core.cjs
 apps/desktop/dist/
+apps/web/public/

@@ -1,0 +1,14 @@
+{
+  "name": "@profullstack/myna-web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "bun src/server.ts",
+    "build:shots": "bun src/shots.ts"
+  },
+  "dependencies": {
+    "@profullstack/hqtui": "^0.1.9",
+    "@profullstack/myna-core": "workspace:*"
+  }
+}

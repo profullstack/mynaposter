@@ -1,0 +1,221 @@
+/* mynaposter.com */
+
+:root {
+  --bg: #080d1a;
+  --surface: #0f1729;
+  --line: #1e2b45;
+  --text: #e8eef6;
+  --muted: #8fa1bd;
+  --accent: #5eead4;
+  --accent-dim: #2dd4bf;
+  --warm: #fbbf24;
+  --measure: 62ch;
+  --max: 1080px;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font: 16px/1.65 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+a { color: var(--accent); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+code, pre:not(.hqtui) { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace; }
+code { font-size: 0.9em; color: var(--accent); }
+
+/* ---------------------------------------------------------------- chrome */
+
+.top {
+  display: flex;
+  align-items: center;
+  gap: 26px;
+  max-width: var(--max);
+  margin: 0 auto;
+  padding: 22px 24px;
+}
+.wordmark { font-size: 20px; font-weight: 700; color: var(--accent); letter-spacing: -0.02em; }
+.top nav { display: flex; gap: 22px; margin-left: auto; font-size: 14px; }
+.top nav a { color: var(--muted); }
+.top nav a:hover { color: var(--text); text-decoration: none; }
+
+main { max-width: var(--max); margin: 0 auto; padding: 0 24px 80px; }
+
+section { margin: 84px 0; }
+section:first-child { margin-top: 40px; }
+
+h1 {
+  font-size: clamp(34px, 6vw, 54px);
+  line-height: 1.08;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  margin-bottom: 22px;
+}
+h2 {
+  font-size: clamp(24px, 3.4vw, 32px);
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  margin-bottom: 16px;
+}
+h3 { font-size: 17px; font-weight: 650; margin-bottom: 8px; letter-spacing: -0.01em; }
+
+p { margin-bottom: 14px; max-width: var(--measure); }
+p:last-child { margin-bottom: 0; }
+
+.lede { font-size: 18px; color: var(--muted); }
+.lede.narrow { max-width: var(--measure); }
+.small { font-size: 14px; color: var(--muted); }
+.fineprint { font-size: 13px; color: var(--muted); margin-top: 16px; }
+
+/* ------------------------------------------------------------------ hero */
+
+.hero { padding-top: 24px; }
+
+.install {
+  display: inline-flex;
+  align-items: stretch;
+  gap: 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--surface);
+  margin-top: 26px;
+}
+.install code {
+  padding: 13px 18px;
+  color: var(--text);
+  font-size: 14px;
+  white-space: nowrap;
+  overflow-x: auto;
+}
+.install button {
+  border: 0;
+  border-left: 1px solid var(--line);
+  background: transparent;
+  color: var(--muted);
+  padding: 0 16px;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.install button:hover { background: var(--line); color: var(--text); }
+.install button.done { color: var(--accent); }
+
+/* ------------------------------------------------------------ screenshots */
+
+.shot-wrap { margin: 56px 0; }
+.shot-wrap.tight { margin: 32px 0 0; }
+
+/* hqtui's HTML renderer emits a <pre class="hqtui">. */
+.hqtui {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow-x: auto;
+  font-size: 12.5px;
+  line-height: 1.32;
+  box-shadow: 0 24px 60px -30px rgba(0, 0, 0, 0.9);
+}
+
+.caption {
+  color: var(--muted);
+  font-size: 14px;
+  margin-top: 16px;
+  max-width: var(--measure);
+}
+
+/* ----------------------------------------------------------------- layout */
+
+.grid-3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 32px; }
+.grid-3 p { font-size: 15px; color: var(--muted); }
+
+.split-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 28px; margin-top: 26px; }
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 22px;
+}
+.card.good { border-color: color-mix(in srgb, var(--accent) 35%, var(--line)); }
+.card h3 { color: var(--text); }
+.card p { font-size: 15px; color: var(--muted); }
+
+.notice {
+  margin-top: 30px;
+  padding: 18px 20px;
+  border-left: 3px solid var(--warm);
+  background: color-mix(in srgb, var(--warm) 7%, transparent);
+  border-radius: 0 8px 8px 0;
+  font-size: 15px;
+  color: var(--muted);
+  max-width: 78ch;
+}
+.notice strong { color: var(--text); display: block; margin-bottom: 4px; }
+
+.code {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 20px 22px;
+  overflow-x: auto;
+  font-size: 13.5px;
+  line-height: 1.75;
+  margin-top: 20px;
+}
+.code code { color: var(--text); }
+.code .c { color: var(--muted); }
+
+/* --------------------------------------------------------------- networks */
+
+.cats { display: flex; flex-wrap: wrap; gap: 22px; margin-bottom: 24px; font-size: 14px; color: var(--muted); }
+.cats strong { color: var(--accent); font-weight: 600; }
+
+table.networks {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14.5px;
+}
+table.networks th {
+  text-align: left;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--muted);
+  font-weight: 600;
+  padding: 0 14px 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+table.networks td { padding: 9px 14px 9px 0; border-bottom: 1px solid var(--line); }
+table.networks tr:hover td { background: color-mix(in srgb, var(--surface) 70%, transparent); }
+.num { text-align: right; font-variant-numeric: tabular-nums; padding-right: 0 !important; }
+
+/* ---------------------------------------------------------------- closing */
+
+.closing {
+  border-top: 1px solid var(--line);
+  padding-top: 60px;
+  text-align: center;
+}
+.closing p { margin-left: auto; margin-right: auto; }
+
+footer {
+  border-top: 1px solid var(--line);
+  padding: 26px 24px 50px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 14px;
+}
+footer a { color: var(--muted); }
+footer a:hover { color: var(--accent); }
+
+@media (max-width: 640px) {
+  section { margin: 60px 0; }
+  .top nav { gap: 14px; font-size: 13px; }
+  .hqtui { font-size: 9px; }
+}

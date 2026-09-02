@@ -1,0 +1,16 @@
+{
+  "name": "@profullstack/myna-api",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "bun src/server.ts",
+    "dev": "bun --watch src/server.ts",
+    "migrate": "bun src/db/migrate.ts"
+  },
+  "dependencies": {
+    "@profullstack/myna-core": "workspace:*",
+    "hono": "^4.13.5",
+    "postgres": "^3.4.9"
+  }
+}

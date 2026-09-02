@@ -1,0 +1,33 @@
+# Postgres for myna, self-hosted.
+#
+#   docker compose up -d postgres
+#   export DATABASE_URL=postgres://myna:myna@127.0.0.1:5432/myna
+#   bun run db:migrate
+#
+# Deliberately not a managed database add-on: the data here is account metadata
+# and scheduled posts, it is small, and keeping it in a container you control
+# means the connection string is yours and the backups are a pg_dump.
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: myna-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: myna
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-myna}
+      POSTGRES_DB: myna
+      # Deterministic collation, so index order does not shift under a libc bump.
+      POSTGRES_INITDB_ARGS: "--locale-provider=icu --icu-locale=en-US --encoding=UTF8"
+    ports:
+      # Bound to loopback. Expose it further only behind a firewall you trust.
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - myna-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U myna -d myna"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  myna-pgdata:
