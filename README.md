@@ -32,10 +32,28 @@ machine and nothing is sent anywhere except the posts you make.
 ## Install
 
 ```bash
+curl -fsSL https://mynaposter.com/install.sh | sh
+```
+
+A single binary with the runtime compiled in, for Linux, macOS and Windows.
+Nothing else needs to be installed first.
+
+The script checks the download against the published `SHA256SUMS` before it
+writes anything, stages the binary beside the target and renames over it so a
+running `myna` is never half-replaced, and picks the AVX2-free build on older
+CPUs. `MYNA_BIN` chooses the directory, `MYNA_VERSION` pins a version. Read it
+first if you would rather not pipe a script — it is at
+[mynaposter.com/install.sh](https://mynaposter.com/install.sh), and the binaries
+are on the [releases page](https://github.com/profullstack/mynaposter/releases)
+if you want to verify them yourself.
+
+Already have a package manager:
+
+```bash
 bun add -g @profullstack/myna     # or: npm i -g @profullstack/myna
 ```
 
-Needs Bun 1.1+ or Node 22.6+.
+That route needs Bun 1.1+ or Node 22.6+.
 
 ## Logging in
 

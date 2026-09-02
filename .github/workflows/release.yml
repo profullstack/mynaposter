@@ -1,0 +1,55 @@
+name: Release
+
+# Tagging is the whole release process: push a v* tag and the binaries build,
+# get checksummed and attach themselves to the release. install.sh reads the
+# latest release, so nothing else has to be updated by hand.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to build and attach binaries to"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  binaries:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install
+        run: bun install --frozen-lockfile
+
+      - name: Typecheck
+        run: bun x tsc --noEmit -p tsconfig.json
+
+      - name: Test
+        run: bun test packages/core/test
+
+      # Bun cross-compiles every target from one runner, so there is no build
+      # matrix and no per-platform runner to keep in step.
+      - name: Build binaries
+        working-directory: apps/cli
+        run: bun build-binaries.ts
+
+      - name: Attach to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.inputs.tag || github.ref_name }}
+        working-directory: apps/cli/dist/bin
+        run: |
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 \
+            || gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --title "myna ${TAG#v}" --generate-notes
+          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber \
+            myna-linux-x86_64 myna-linux-x86_64-baseline myna-linux-aarch64 \
+            myna-darwin-x86_64 myna-darwin-arm64 myna-windows-x86_64.exe SHA256SUMS
