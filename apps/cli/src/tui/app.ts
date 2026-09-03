@@ -184,10 +184,10 @@ export async function runTui(options: { theme?: string } = {}): Promise<void> {
 }
 
 function hint(state: State): string {
-  if (state.mode === "compose") return "Ctrl+S posts    Esc back to the command bar";
+  if (state.mode === "compose") return "Ctrl+S or F2 posts    Esc back to the command bar";
   if (state.mode === "targets") return "Space toggles    Enter confirms    Esc cancels";
   if (!state.accounts.length) return "No accounts yet, try /login bluesky";
-  return "/ for commands    Enter to edit the post    Ctrl+S to send";
+  return "/ for commands    Enter to edit the post    Ctrl+S or F2 to send";
 }
 
 function drawLogin(ui: Container, state: State, theme: Theme, height: number): void {
@@ -339,7 +339,7 @@ async function handleKey(app: App, state: State, event: KeyEvent, redraw: () => 
       state.mode = "command";
       return;
     }
-    if (event.ctrl && event.name === "s") {
+    if ((event.ctrl && event.name === "s") || event.name === "f2") {
       await runCommand(state, "/post", redraw);
       return;
     }
@@ -361,7 +361,7 @@ async function handleKey(app: App, state: State, event: KeyEvent, redraw: () => 
     state.command.clear();
     return;
   }
-  if (event.ctrl && event.name === "s") {
+  if ((event.ctrl && event.name === "s") || event.name === "f2") {
     await runCommand(state, "/post", redraw);
     return;
   }

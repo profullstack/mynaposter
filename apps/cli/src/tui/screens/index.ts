@@ -57,7 +57,7 @@ export function composeScreen(ui: Container, state: State, theme: Theme): void {
         panel.label("  /link https://example.com/blog/post", { size: 1 });
         panel.label("  /infographic https://example.com/report", { size: 1 });
         panel.spacer(1);
-        panel.label("  Enter edits the box. Ctrl+S posts.", { size: 1 });
+        panel.label("  Enter edits the box. Ctrl+S or F2 posts, or type /post.", { size: 1 });
       } else {
         const { line } = state.compose.position();
         const lines = state.compose.lines;
@@ -283,7 +283,7 @@ export function helpScreen(ui: Container, state: State, theme: Theme): void {
       panel.keyValues([
         { label: "/", value: "command bar" },
         { label: "Enter", value: "edit the post" },
-        { label: "Ctrl+S", value: "post now" },
+        { label: "Ctrl+S / F2", value: "post now (F2 if your terminal eats Ctrl+S)" },
         { label: "Esc", value: "back to the command bar" },
         { label: "Tab", value: "next tab, or complete a half-typed command" },
         { label: "Shift+Tab", value: "previous tab" },
