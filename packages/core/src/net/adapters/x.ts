@@ -80,7 +80,11 @@ export const x: Network = {
       "access token and secret) and myna signs each request, with no browser at all. Otherwise give the " +
       `OAuth 2.0 client id and sign in through the browser. ${REDIRECT_NOTE}`,
     fields: [
-      { key: "apiKey", label: "API key", optional: true, help: "OAuth 1.0a. Fill these four to skip the browser." },
+      // Masked even though it is the public half of the OAuth 1.0a pair. The
+      // rule that every *_key field is masked is worth more than the small
+      // convenience of reading this one back, and apiKey on other networks
+      // (dev.to) is a real secret, so exempting the name would unmask that too.
+      { key: "apiKey", label: "API key", secret: true, optional: true, help: "OAuth 1.0a. Fill these four to skip the browser." },
       { key: "apiSecret", label: "API key secret", secret: true, optional: true },
       { key: "accessToken", label: "Access token", secret: true, optional: true },
       { key: "accessSecret", label: "Access token secret", secret: true, optional: true },
