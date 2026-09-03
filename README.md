@@ -125,7 +125,8 @@ The right pane counts each network as that network counts, so `x` reads 140 whil
 the others read 139: X bills every URL at 23 characters regardless of length.
 
 **Keys.** `/` command bar, `Enter` edit the post, `Ctrl+S` send, `Ctrl+T` pick
-targets, `Esc` back, `Tab` complete, `1`–`7` switch screen, `Ctrl+C` quit.
+targets, `Esc` back, `Tab` next tab (or complete a half-typed command), `Shift+Tab`
+previous tab, `1`–`8` switch screen, `Ctrl+C` quit. Pasting works in every field.
 
 ## Commands
 

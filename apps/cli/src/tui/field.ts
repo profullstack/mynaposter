@@ -79,6 +79,16 @@ export class Field {
     this.cursor += text.length;
   }
 
+  /**
+   * Insert pasted text. A field is one line, so line breaks inside the paste
+   * become spaces and the trailing newline most copies carry is dropped rather
+   * than kept as a stray space.
+   */
+  paste(text: string): void {
+    const oneLine = text.replace(/[\r\n]+$/, "").replace(/\r\n|\r|\n/g, " ");
+    if (oneLine) this.insert(oneLine);
+  }
+
   set(text: string): void {
     this.value = text;
     this.cursor = text.length;
@@ -165,6 +175,12 @@ export class TextArea {
   insert(text: string): void {
     this.value = this.value.slice(0, this.cursor) + text + this.value.slice(this.cursor);
     this.cursor += text.length;
+  }
+
+  /** Insert pasted text, keeping its line breaks but normalising CRLF. */
+  paste(text: string): void {
+    const normalised = text.replace(/\r\n|\r/g, "\n");
+    if (normalised) this.insert(normalised);
   }
 
   set(text: string): void {

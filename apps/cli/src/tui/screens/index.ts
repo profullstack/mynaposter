@@ -285,9 +285,10 @@ export function helpScreen(ui: Container, state: State, theme: Theme): void {
         { label: "Enter", value: "edit the post" },
         { label: "Ctrl+S", value: "post now" },
         { label: "Esc", value: "back to the command bar" },
-        { label: "Tab", value: "complete a command" },
+        { label: "Tab", value: "next tab, or complete a half-typed command" },
+        { label: "Shift+Tab", value: "previous tab" },
         { label: "↑ ↓", value: "command history" },
-        { label: "1-7", value: "switch screen" },
+        { label: "1-8", value: "switch screen" },
         { label: "Ctrl+C", value: "quit" },
       ]);
       panel.spacer(1);
