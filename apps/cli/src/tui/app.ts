@@ -70,6 +70,14 @@ export async function runTui(options: { theme?: string } = {}): Promise<void> {
     });
   });
 
+  // A paste is not a run of keystrokes. hqtui turns the terminal's bracketed
+  // paste into one "paste" event and emits no keys for it, so without this
+  // listener a pasted URL vanishes without a trace.
+  app.on("paste", (event) => {
+    handlePaste(state, event.text);
+    app.invalidate();
+  });
+
   app.render(({ ui, theme, height }) => {
     ui.column({ size: "1fr" }, (root) => {
       root.row({ size: 1 }, (header) => {
@@ -339,6 +347,12 @@ async function handleKey(app: App, state: State, event: KeyEvent, redraw: () => 
       state.mode = "targets";
       return;
     }
+    if (event.name === "tab") {
+      // Same as clicking a tab: a navigation, so leave the compose box.
+      cycleScreen(state, event.shift ? -1 : 1);
+      state.mode = "command";
+      return;
+    }
     state.compose.handle(event);
     return;
   }
@@ -366,6 +380,14 @@ async function handleKey(app: App, state: State, event: KeyEvent, redraw: () => 
     return;
   }
   if (event.name === "tab") {
+    // With the bar empty, Tab walks the tabs along the top and Shift+Tab walks
+    // them back. With a command half typed it completes the command instead,
+    // the same split the number keys make below.
+    if (!state.command.value) {
+      cycleScreen(state, event.shift ? -1 : 1);
+      return;
+    }
+    if (event.shift) return;
     const matches = completions(state.command.value);
     if (matches.length === 1) state.command.set(`/${matches[0]} `);
     else if (matches.length > 1) toast(state, matches.map((name) => `/${name}`).join("  "), "info");
@@ -400,6 +422,37 @@ async function handleKey(app: App, state: State, event: KeyEvent, redraw: () => 
   }
 
   state.command.handle(event);
+}
+
+/** Move to the next (or previous) screen, wrapping at either end. */
+function cycleScreen(state: State, delta: number): void {
+  const index = SCREENS.indexOf(state.screen);
+  state.screen = SCREENS[(index + delta + SCREENS.length) % SCREENS.length] as Screen;
+}
+
+/** Route pasted text to whichever field has the cursor. */
+function handlePaste(state: State, text: string): void {
+  switch (state.mode) {
+    case "compose":
+      state.compose.paste(text);
+      return;
+    case "login": {
+      const flow = state.login;
+      if (flow && !flow.busy) flow.fields[flow.active]?.paste(text);
+      return;
+    }
+    case "prompt": {
+      const flow = state.prompt;
+      if (flow && !flow.busy) flow.fields[flow.active]?.paste(text);
+      return;
+    }
+    case "command":
+      state.command.paste(text);
+      return;
+    default:
+      // A dialog with nothing to type into: the paste has nowhere to go.
+      return;
+  }
 }
 
 async function handleLoginKey(state: State, event: KeyEvent, redraw: () => void): Promise<void> {
