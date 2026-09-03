@@ -60,6 +60,7 @@ Cloud backup (optional; myna works fully without it):
 Other:
   config [key] [value]              Show or change settings
   doctor                            Check what is configured and working
+  keys                              Show which keypresses actually reach myna
 
 Flags:
   --to <spec>       Where to post: all, a network, an account id, comma separated
@@ -102,6 +103,14 @@ async function main(): Promise<void> {
   }
   if (first === "--version" || first === "-v" || first === "version") {
     process.stdout.write(`${VERSION}\n`);
+    return;
+  }
+  if (first === "keys") {
+    // A key echo, for when a binding appears to do nothing. Ctrl+S is the
+    // usual suspect: it is XOFF, and a terminal with flow control still on
+    // swallows it before any program sees it.
+    const { runKeyProbe } = await import("./tui/keys.ts");
+    await runKeyProbe();
     return;
   }
   if (first === "tui") {

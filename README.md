@@ -124,7 +124,7 @@ Misskey (and Sharkey, Firefish), Pixelfed, Lemmy, Nostr, tsbb
 The right pane counts each network as that network counts, so `x` reads 140 while
 the others read 139: X bills every URL at 23 characters regardless of length.
 
-**Keys.** `/` command bar, `Enter` edit the post, `Ctrl+S` send, `Ctrl+T` pick
+**Keys.** `/` command bar, `Enter` edit the post, `Ctrl+S` or `F2` send, `Ctrl+T` pick
 targets, `Esc` back, `Tab` next tab (or complete a half-typed command), `Shift+Tab`
 previous tab, `1`–`8` switch screen, `Ctrl+C` quit. Pasting works in every field.
 
@@ -142,6 +142,7 @@ myna feed [network]               myna delete <account> <id>
 myna draft "<topic>"              myna link <url>
 myna infographic <url|topic>      myna run
 myna config [key] [value]         myna doctor
+myna keys
 ```
 
 Flags: `--to`, `--title`, `--media`, `--style`, `--json`, `--dry-run`,
