@@ -113,3 +113,19 @@ test("the link ends in state, so a clipped copy cannot damage the scope", async 
   expect(keys[keys.length - 1]).toBe("state");
   expect(link.searchParams.get("scope")).toBe("openid profile w_member_social");
 });
+
+test("LinkedIn asks for the organization scope only when a page is named", async () => {
+  // A token with w_member_social alone posts as the member; an organization
+  // author is refused at post time with an opaque "/author" validation error.
+  const scopesFor = async (input: Record<string, string>): Promise<string | null> => {
+    let link = "";
+    await linkedin
+      .login(input, ctx({ ask: async () => { throw new Error("stop"); }, openUrl: async (url) => { link = url; } }))
+      .catch(() => {});
+    return new URL(link).searchParams.get("scope");
+  };
+  expect(await scopesFor({ clientId: "id", clientSecret: "s" })).toBe("openid profile w_member_social");
+  expect(await scopesFor({ clientId: "id", clientSecret: "s", organization: "80868393" })).toBe(
+    "openid profile w_member_social w_organization_social",
+  );
+});

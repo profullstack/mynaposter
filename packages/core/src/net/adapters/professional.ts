@@ -25,7 +25,14 @@ export const linkedin: Network = {
     fields: [
       { key: "clientId", label: "Client id" },
       { key: "clientSecret", label: "Client secret", secret: true },
-      { key: "organization", label: "Organization id", optional: true, help: "Post as a company page instead of yourself." },
+      {
+        key: "organization",
+        label: "Organization id",
+        optional: true,
+        help:
+          "Post as a company page instead of yourself. Needs the Community Management API product on the app " +
+          "(scope w_organization_social) and admin rights on the page; Share on LinkedIn alone only posts as you.",
+      },
     ],
   },
   caps: { charLimit: 3000, mediaLimit: 0, threads: false, delete: true, timeline: false, notifications: false, stats: false },
@@ -37,7 +44,11 @@ export const linkedin: Network = {
         tokenUrl: "https://www.linkedin.com/oauth/v2/accessToken",
         clientId: input.clientId,
         clientSecret: input.clientSecret,
-        scopes: ["openid", "profile", "w_member_social"],
+        // A company page needs its own scope, from a product LinkedIn has to
+        // approve. Asking for it here makes a missing product fail at sign-in
+        // ("Invalid scope") instead of at the first post, where the API only
+        // says that the author field failed validation.
+        scopes: ["openid", "profile", "w_member_social", ...(input.organization ? ["w_organization_social"] : [])],
         pkce: false,
         // Paste mode whatever was answered: there is no loopback option here.
         ...callbackFrom({ paste: "yes" }, ctx),
@@ -55,6 +66,7 @@ export const linkedin: Network = {
       meta: {
         // The API addresses people and companies as URNs, not ids.
         author: input.organization ? `urn:li:organization:${input.organization}` : `urn:li:person:${me.sub}`,
+        person: `urn:li:person:${me.sub}`,
       },
     };
   },
