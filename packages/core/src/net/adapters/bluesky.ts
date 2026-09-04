@@ -53,7 +53,7 @@ export const bluesky: Network = {
       { key: "service", label: "PDS", optional: true, default: DEFAULT_SERVICE, help: "Only change this for a self-hosted PDS." },
     ],
   },
-  caps: { charLimit: 300, mediaLimit: 4, threads: true, delete: true, timeline: true, notifications: true, stats: true },
+  caps: { charLimit: 300, mediaLimit: 4, threads: true, delete: true, timeline: true, notifications: true, stats: true, repost: true },
 
   async login(input) {
     const base = input.service ? normalizeInstance(input.service) : DEFAULT_SERVICE;
@@ -166,7 +166,64 @@ export const bluesky: Network = {
     const post = result.posts[0] ?? {};
     return { likes: post.likeCount, reposts: post.repostCount, replies: post.replyCount };
   },
+
+  async repost(account, ref) {
+    const base = service(account);
+    const { accessJwt, did } = await session(account);
+    const target = blueskyPostRef(ref);
+
+    // A bsky.app URL names the author by handle; the record needs their DID.
+    let uri = target.uri;
+    if (!uri) {
+      const resolved = await getJson<{ did: string }>(
+        `${base}/xrpc/com.atproto.identity.resolveHandle?handle=${encodeURIComponent(target.actor)}`,
+        { headers: auth(accessJwt) },
+      );
+      uri = `at://${resolved.did}/app.bsky.feed.post/${target.rkey}`;
+    }
+
+    // A repost record points at a specific version of the post, so it needs
+    // the cid as well as the uri.
+    let cid = target.cid;
+    if (!cid) {
+      const found = await getJson<{ posts: { cid: string }[] }>(
+        `${base}/xrpc/app.bsky.feed.getPosts?uris=${encodeURIComponent(uri)}`,
+        { headers: auth(accessJwt) },
+      );
+      cid = found.posts[0]?.cid;
+      if (!cid) throw new Error(`Bluesky could not find that post: ${ref}`);
+    }
+
+    const created = await postJson<{ uri: string; cid: string }>(
+      `${base}/xrpc/com.atproto.repo.createRecord`,
+      {
+        repo: did,
+        collection: "app.bsky.feed.repost",
+        record: { $type: "app.bsky.feed.repost", subject: { uri, cid }, createdAt: new Date().toISOString() },
+      },
+      { headers: auth(accessJwt) },
+    );
+    return { id: `${created.uri}|${created.cid}`, url: `https://bsky.app/profile/${target.actor}/post/${target.rkey}` };
+  },
 };
+
+/**
+ * Where a post lives, from what a person pastes: the bsky.app URL, an at://
+ * uri, or the `uri|cid` composite that `post` returns.
+ */
+export function blueskyPostRef(ref: string): { uri: string; cid?: string; actor: string; rkey: string } {
+  const trimmed = ref.trim();
+  if (trimmed.startsWith("at://")) {
+    const [uri, cid] = trimmed.split("|");
+    const [actor, collection, rkey] = uri.slice("at://".length).split("/");
+    if (collection !== "app.bsky.feed.post" || !rkey) throw new Error(`Not a Bluesky post: ${ref}`);
+    return { uri, cid: cid || undefined, actor, rkey };
+  }
+  const match = /^https?:\/\/(?:www\.)?bsky\.app\/profile\/([^/]+)\/post\/([^/?#]+)/i.exec(trimmed);
+  if (!match) throw new Error(`Not a Bluesky post: ${ref}`);
+  const [, actor, rkey] = match;
+  return { uri: actor.startsWith("did:") ? `at://${actor}/app.bsky.feed.post/${rkey}` : "", actor, rkey };
+}
 
 /** Exported for the compose screen's live counter. */
 export const blueskyLength = (text: string): number => countChars(text);

@@ -94,6 +94,7 @@ function make(id: string, name: string, blurb: string, charLimit: number): Netwo
       timeline: true,
       notifications: true,
       stats: true,
+      repost: true,
     },
 
     async login(input, ctx) {
@@ -201,7 +202,47 @@ function make(id: string, name: string, blurb: string, charLimit: number): Netwo
       const status = await getJson<Status>(`${base(account)}/api/v1/statuses/${statusId}`, { headers: auth(account) });
       return { likes: status.favourites_count, reposts: status.reblogs_count, replies: status.replies_count };
     },
+
+    async repost(account, ref) {
+      const target = mastodonStatusRef(ref, base(account));
+      let id: string;
+      if ("id" in target) {
+        id = target.id;
+      } else {
+        // A post on another instance has no id here until this instance has
+        // fetched it. The search endpoint with resolve does exactly that.
+        const found = await getJson<{ statuses: Status[] }>(
+          `${base(account)}/api/v2/search?type=statuses&resolve=true&limit=1&q=${encodeURIComponent(target.url)}`,
+          { headers: auth(account) },
+        );
+        const status = found.statuses[0];
+        if (!status) throw new Error(`${name} could not find that post: ${ref}`);
+        id = status.id;
+      }
+      const boost = await postJson<Status & { reblog?: Status }>(`${base(account)}/api/v1/statuses/${id}/reblog`, {}, { headers: auth(account) });
+      return { id: boost.id, url: boost.reblog?.url ?? boost.url };
+    },
   };
+}
+
+/**
+ * What to boost, from a bare status id or a URL. A URL on the account's own
+ * instance ending in a numeric id can be used directly; anything else is a
+ * remote post that the instance has to resolve first.
+ */
+export function mastodonStatusRef(ref: string, instance: string): { id: string } | { url: string } {
+  const trimmed = ref.trim();
+  if (/^\d+$/.test(trimmed)) return { id: trimmed };
+  let url: URL;
+  try {
+    url = new URL(trimmed);
+  } catch {
+    throw new Error(`Not a Fediverse post: ${ref}`);
+  }
+  const local = new URL(instance).host === url.host;
+  const tail = /\/(\d+)\/?$/.exec(url.pathname);
+  if (local && tail) return { id: tail[1] };
+  return { url: url.toString() };
 }
 
 export const mastodon = make("mastodon", "Mastodon", "Fediverse microblogging. Also covers Pleroma, Akkoma and GoToSocial.", 500);

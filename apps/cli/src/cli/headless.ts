@@ -487,6 +487,21 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
       return 0;
     }
 
+    case "repost": {
+      // Share someone else's post from one of your accounts: a retweet, a
+      // boost, a Bluesky repost. Takes the URL as copied from the network.
+      await ensureUnlocked();
+      const [accountId, ref] = positional;
+      if (!accountId || !ref) throw new Error("Usage: myna repost <account> <post url or id>");
+      const account = listAccounts().find((entry) => entry.id === accountId);
+      if (!account) throw new Error(`No account "${accountId}"`);
+      const network = requireNetwork(account.network);
+      if (!network.repost) throw new Error(`${network.name} has no repost API.`);
+      const result = await network.repost(account, ref);
+      out(`Reposted from ${accountId}${result.url ? `  ${result.url}` : ""}`);
+      return 0;
+    }
+
     case "run": {
       // The scheduler as a daemon, for a systemd unit or a container.
       await ensureUnlocked();

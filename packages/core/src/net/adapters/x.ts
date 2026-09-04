@@ -93,7 +93,7 @@ export const x: Network = {
       PASTE_FIELD,
     ],
   },
-  caps: { charLimit: 280, mediaLimit: 4, threads: true, delete: true, timeline: true, notifications: false, stats: true },
+  caps: { charLimit: 280, mediaLimit: 4, threads: true, delete: true, timeline: true, notifications: false, stats: true, repost: true },
 
   async login(input, ctx) {
     // The four OAuth 1.0a values, if given, are enough on their own.
@@ -181,6 +181,15 @@ export const x: Network = {
     });
   },
 
+  async repost(account, ref) {
+    const id = xPostId(ref);
+    const url = `${API}/2/users/${account.meta.userId}/retweets`;
+    await postJson<{ data: { retweeted: boolean } }>(url, { tweet_id: id }, {
+      headers: await authorizeRequest(account, "POST", url),
+    });
+    return { id, url: `https://x.com/i/status/${id}` };
+  },
+
   async timeline(account, limit) {
     const url =
       `${API}/2/users/${account.meta.userId}/timelines/reverse_chronological?max_results=${Math.min(Math.max(limit, 5), 100)}` +
@@ -221,3 +230,15 @@ export const x: Network = {
     };
   },
 };
+
+/**
+ * The tweet id behind what a person pastes: a bare id, or the post URL from
+ * x.com or twitter.com (`/<user>/status/<id>`, with or without a query string).
+ */
+export function xPostId(ref: string): string {
+  const trimmed = ref.trim();
+  if (/^\d+$/.test(trimmed)) return trimmed;
+  const match = /^https?:\/\/(?:www\.|mobile\.)?(?:x|twitter)\.com\/(?:[^/]+\/status(?:es)?|i\/(?:web\/)?status)\/(\d+)/i.exec(trimmed);
+  if (!match) throw new Error(`Not an X post: ${ref}`);
+  return match[1];
+}

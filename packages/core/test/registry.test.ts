@@ -22,6 +22,7 @@ test("a network that declares a capability implements it", () => {
     if (network.caps.timeline) expect(network.timeline, `${network.id} claims timeline`).toBeDefined();
     if (network.caps.notifications) expect(network.notifications, `${network.id} claims notifications`).toBeDefined();
     if (network.caps.stats) expect(network.stats, `${network.id} claims stats`).toBeDefined();
+    if (network.caps.repost) expect(network.repost, `${network.id} claims repost`).toBeDefined();
   }
 });
 

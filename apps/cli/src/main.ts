@@ -34,6 +34,7 @@ Posting:
   cancel <id>                       Remove a scheduled post
   history                           What was posted, and what failed
   delete <account> <post id>        Delete a post you made
+  repost <account> <post url>       Share someone's post from one account
   feed [network]                    Read a home timeline
   run                               Run the scheduler in the foreground
 

@@ -142,7 +142,7 @@ myna feed [network]               myna delete <account> <id>
 myna draft "<topic>"              myna link <url>
 myna infographic <url|topic>      myna run
 myna config [key] [value]         myna doctor
-myna keys
+myna keys                         myna repost <account> <post url>
 ```
 
 Flags: `--to`, `--title`, `--media`, `--style`, `--json`, `--dry-run`,
