@@ -6,7 +6,7 @@
  * removed. The screenshots are real frames rendered through hqtui's HTML
  * renderer, not mockups.
  */
-import { mkdirSync, writeFileSync, copyFileSync, existsSync } from "node:fs";
+import { mkdirSync, writeFileSync, copyFileSync, existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { renderToHtml } from "@profullstack/hqtui";
@@ -48,7 +48,20 @@ const page = `<!doctype html>
 <link rel="stylesheet" href="/site.css">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="icon" href="/favicon.png" type="image/png" sizes="512x512">
+<link rel="icon" href="/icons/favicon-32.png" type="image/png" sizes="32x32">
+<link rel="icon" href="/icons/favicon-16.png" type="image/png" sizes="16x16">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon-180x180.png">
+<link rel="apple-touch-icon" sizes="152x152" href="/icons/apple-touch-icon-152x152.png">
+<link rel="apple-touch-icon" sizes="144x144" href="/icons/apple-touch-icon-144x144.png">
+<link rel="apple-touch-icon" sizes="120x120" href="/icons/apple-touch-icon-120x120.png">
+<link rel="apple-touch-icon" sizes="76x76" href="/icons/apple-touch-icon-76x76.png">
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#080d1a">
+<meta name="apple-mobile-web-app-title" content="myna">
+<meta name="msapplication-TileColor" content="#080d1a">
+<meta name="msapplication-config" content="/browserconfig.xml">
+<meta name="msapplication-TileImage" content="/icons/apple-touch-icon-144x144.png">
 <meta property="og:title" content="myna">
 <meta property="og:description" content="Post to ${NETWORKS.length} social networks from your terminal.">
 <meta property="og:url" content="https://mynaposter.com">
@@ -334,7 +347,12 @@ password or a browser flow and belongs to a person.
 );
 
 mkdirSync(join(out, "brand"), { recursive: true });
+mkdirSync(join(out, "icons"), { recursive: true });
 for (const asset of [
+  "manifest.json", "browserconfig.xml",
+  // The icon set for every platform, generated from favicon.png with
+  // @profullstack/favicon-generator.
+  ...readdirSync(join(root, "assets", "icons")).map((name) => `icons/${name}`),
   "site.css", "site.js", "favicon.svg", "favicon.png", "apple-touch-icon.png", "og.png", "install.sh", "oauth-callback.js",
   // The logo in every form someone might need to reuse it: the bare mark,
   // and the mark with the wordmark for dark and light backgrounds.
