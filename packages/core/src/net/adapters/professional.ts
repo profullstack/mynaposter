@@ -3,6 +3,14 @@ import type { Network, TimelineItem } from "../types.ts";
 import { getJson, postJson, request } from "../../util/http.ts";
 import { authorize, callbackFrom, PASTE_FIELD, REDIRECT_NOTE } from "../oauth2.ts";
 
+/**
+ * LinkedIn only accepts absolute HTTPS redirect URLs, so the loopback address
+ * every other network can use is out. Every LinkedIn sign-in therefore goes
+ * through this page, which shows the code to paste back, whatever machine the
+ * browser is on. The token exchange still happens here, with the secret.
+ */
+export const LINKEDIN_REDIRECT_URI = "https://mynaposter.com/api/linkedin/callback";
+
 export const linkedin: Network = {
   id: "linkedin",
   name: "LinkedIn",
@@ -12,12 +20,12 @@ export const linkedin: Network = {
     kind: "oauth2",
     note:
       "Create an app at linkedin.com/developers, add the 'Share on LinkedIn' and 'Sign In with OpenID Connect' products, " +
-      `then request w_member_social. ${REDIRECT_NOTE}`,
+      `then request w_member_social. Under Auth, add ${LINKEDIN_REDIRECT_URI} as a redirect URL: LinkedIn only ` +
+      "accepts HTTPS redirects, so the sign-in always ends on that page and you paste the code it shows back here.",
     fields: [
       { key: "clientId", label: "Client id" },
       { key: "clientSecret", label: "Client secret", secret: true },
       { key: "organization", label: "Organization id", optional: true, help: "Post as a company page instead of yourself." },
-      PASTE_FIELD,
     ],
   },
   caps: { charLimit: 3000, mediaLimit: 0, threads: false, delete: true, timeline: false, notifications: false, stats: false },
@@ -31,7 +39,9 @@ export const linkedin: Network = {
         clientSecret: input.clientSecret,
         scopes: ["openid", "profile", "w_member_social"],
         pkce: false,
-        ...callbackFrom(input, ctx),
+        // Paste mode whatever was answered: there is no loopback option here.
+        ...callbackFrom({ paste: "yes" }, ctx),
+        redirectUri: LINKEDIN_REDIRECT_URI,
       },
       ctx,
     );

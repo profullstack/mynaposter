@@ -6,7 +6,8 @@
  * unclicked before this existed.
  */
 import { test, expect } from "bun:test";
-import { callbackFrom, HOSTED_REDIRECT_URI, REDIRECT_URI, PASTE_FIELD } from "../src/net/oauth2.ts";
+import { authorize, callbackFrom, HOSTED_REDIRECT_URI, REDIRECT_URI, PASTE_FIELD } from "../src/net/oauth2.ts";
+import { linkedin, LINKEDIN_REDIRECT_URI } from "../src/net/adapters/professional.ts";
 import type { LoginContext } from "../src/net/types.ts";
 
 const ctx = (over: Partial<LoginContext> = {}): LoginContext => ({
@@ -53,4 +54,53 @@ test("the two redirects are different, and the hosted one is https", () => {
 test("the field is optional, so it never blocks a normal login", () => {
   expect(PASTE_FIELD.optional).toBe(true);
   expect(PASTE_FIELD.key).toBe("paste");
+});
+
+/** Run authorize() up to the moment it hands over the link, then stop. */
+async function authorizeLink(over: Record<string, unknown>): Promise<URL> {
+  let link = "";
+  await authorize(
+    {
+      authorizeUrl: "https://provider.test/authorize",
+      tokenUrl: "https://provider.test/token",
+      clientId: "id",
+      scopes: [],
+      mode: "paste",
+      readCode: async (url) => { link = url; throw new Error("stop here"); },
+      ...over,
+    },
+    ctx(),
+  ).catch(() => {});
+  return new URL(link);
+}
+
+test("paste mode sends the shared hosted redirect by default", async () => {
+  const link = await authorizeLink({});
+  expect(link.searchParams.get("redirect_uri")).toBe(HOSTED_REDIRECT_URI);
+});
+
+test("a provider can name its own redirect", async () => {
+  const link = await authorizeLink({ redirectUri: "https://mynaposter.com/api/other/callback" });
+  expect(link.searchParams.get("redirect_uri")).toBe("https://mynaposter.com/api/other/callback");
+});
+
+test("LinkedIn always goes through its HTTPS callback", async () => {
+  // LinkedIn rejects http://127.0.0.1, so there is no loopback choice to offer
+  // and the note has to say which URL to register.
+  expect(LINKEDIN_REDIRECT_URI).toBe("https://mynaposter.com/api/linkedin/callback");
+  expect(linkedin.auth.fields.map((field) => field.key)).not.toContain(PASTE_FIELD.key);
+  expect(linkedin.auth.note).toContain(LINKEDIN_REDIRECT_URI);
+
+  let link = "";
+  await linkedin
+    .login(
+      { clientId: "id", clientSecret: "secret" },
+      ctx({ ask: async (prompt) => { throw new Error(`stop at: ${prompt}`); }, openUrl: async (url) => { link = url; } }),
+    )
+    .catch(() => {});
+  const url = new URL(link);
+  expect(url.origin + url.pathname).toBe("https://www.linkedin.com/oauth/v2/authorization");
+  expect(url.searchParams.get("redirect_uri")).toBe(LINKEDIN_REDIRECT_URI);
+  expect(url.searchParams.get("code_challenge")).toBeNull();
+  expect(url.searchParams.get("scope")).toBe("openid profile w_member_social");
 });
