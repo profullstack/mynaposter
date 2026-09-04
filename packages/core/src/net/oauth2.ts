@@ -75,6 +75,12 @@ export async function openBrowser(url: string): Promise<void> {
   const args = process.platform === "win32" ? ["/c", "start", "", url] : [url];
   try {
     const child = spawn(command, args, { stdio: "ignore", detached: true });
+    // A missing opener (a server with no xdg-open) is reported here, on a
+    // later tick, not by throwing. Unhandled, that event ends the process
+    // right after the authorize link has been printed.
+    child.on("error", () => {
+      /* the caller prints the URL too */
+    });
     child.unref();
   } catch {
     /* the caller prints the URL too */
