@@ -15,7 +15,11 @@ const copy = document.getElementById("copy");
 if (error) {
   heading.textContent = "That did not work";
   lede.textContent = "The provider refused the authorization.";
-  codeEl.textContent = error;
+  // LinkedIn HTML-escapes its error text ("Unknown scope &quot;x&quot;");
+  // decode it so the message reads the way the provider meant it.
+  const decoder = document.createElement("textarea");
+  decoder.innerHTML = error;
+  codeEl.textContent = decoder.value;
   copy.hidden = true;
 } else if (!code) {
   heading.textContent = "Nothing to copy";
