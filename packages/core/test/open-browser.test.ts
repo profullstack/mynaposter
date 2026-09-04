@@ -8,6 +8,7 @@
  * only needed the process to stay alive.
  */
 import { test, expect } from "bun:test";
+import { EventEmitter } from "node:events";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -25,7 +26,8 @@ test("a missing browser opener is not fatal", async () => {
     await new Promise((resolve) => setTimeout(resolve, 100));
   } finally {
     process.env.PATH = path;
-    process.removeListener("uncaughtException", catchAll);
+    // Bun types process.removeListener more narrowly than process.on.
+    (process as unknown as EventEmitter).removeListener("uncaughtException", catchAll);
   }
   expect(uncaught).toEqual([]);
 });
