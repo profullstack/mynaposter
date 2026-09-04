@@ -290,6 +290,10 @@ writeFileSync(
 // same machine as myna. Loopback redirects cannot reach a myna running over SSH.
 mkdirSync(join(out, "oauth"), { recursive: true });
 copyFileSync(join(root, "assets", "oauth-callback.html"), join(out, "oauth", "callback.html"));
+// LinkedIn only accepts absolute HTTPS redirect URLs, so its app is registered
+// with this path and every LinkedIn sign-in lands here. Same page, same job.
+mkdirSync(join(out, "api", "linkedin"), { recursive: true });
+copyFileSync(join(root, "assets", "oauth-callback.html"), join(out, "api", "linkedin", "callback.html"));
 
 writeFileSync(
   join(out, "robots.txt"),

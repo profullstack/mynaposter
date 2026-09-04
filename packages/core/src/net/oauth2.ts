@@ -58,6 +58,12 @@ export interface OAuth2Config {
   /** Defaults to loopback. */
   mode?: CallbackMode;
   /**
+   * The redirect to register with the provider and send on every request,
+   * in place of the mode's default. For providers that insist on one exact
+   * HTTPS URL per app, so the loopback address can never be used.
+   */
+  redirectUri?: string;
+  /**
    * Asks the person for the code they were shown. Required in paste mode; the
    * caller supplies it because only the caller knows whether it has a terminal,
    * a TUI modal or a desktop dialog to ask with.
@@ -159,7 +165,7 @@ export async function authorize(config: OAuth2Config, ctx: LoginContext, timeout
   const challenge = base64url(createHash("sha256").update(verifier).digest());
 
   const mode: CallbackMode = config.mode ?? "loopback";
-  const redirectUri = mode === "paste" ? HOSTED_REDIRECT_URI : REDIRECT_URI;
+  const redirectUri = config.redirectUri ?? (mode === "paste" ? HOSTED_REDIRECT_URI : REDIRECT_URI);
 
   const authorizeUrl = new URL(config.authorizeUrl);
   authorizeUrl.searchParams.set("response_type", "code");
