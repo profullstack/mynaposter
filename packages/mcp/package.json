@@ -1,6 +1,6 @@
 {
   "name": "@profullstack/myna-mcp",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "MCP server for myna. Lets an agent post, schedule and read across every connected social account.",
   "license": "MIT",
   "type": "module",
