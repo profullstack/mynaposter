@@ -104,3 +104,12 @@ test("LinkedIn always goes through its HTTPS callback", async () => {
   expect(url.searchParams.get("code_challenge")).toBeNull();
   expect(url.searchParams.get("scope")).toBe("openid profile w_member_social");
 });
+
+test("the link ends in state, so a clipped copy cannot damage the scope", async () => {
+  // A real failure: the link copied out of a terminal one character short
+  // sent LinkedIn scope=w_member_socia, which it refused as unknown.
+  const link = await authorizeLink({ scopes: ["openid", "profile", "w_member_social"], pkce: true, authParams: { prompt: "consent" } });
+  const keys = [...link.searchParams.keys()];
+  expect(keys[keys.length - 1]).toBe("state");
+  expect(link.searchParams.get("scope")).toBe("openid profile w_member_social");
+});

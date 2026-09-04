@@ -171,13 +171,18 @@ export async function authorize(config: OAuth2Config, ctx: LoginContext, timeout
   authorizeUrl.searchParams.set("response_type", "code");
   authorizeUrl.searchParams.set("client_id", config.clientId);
   authorizeUrl.searchParams.set("redirect_uri", redirectUri);
-  authorizeUrl.searchParams.set("state", state);
   if (config.scopes.length) authorizeUrl.searchParams.set("scope", config.scopes.join(config.scopeSeparator ?? " "));
   if (config.pkce !== false) {
     authorizeUrl.searchParams.set("code_challenge", challenge);
     authorizeUrl.searchParams.set("code_challenge_method", "S256");
   }
   for (const [key, value] of Object.entries(config.authParams ?? {})) authorizeUrl.searchParams.set(key, value);
+  // Last on purpose. In paste mode the link is copied out of a terminal by
+  // hand, and a selection that stops one character short clips whatever
+  // parameter comes last. A clipped scope is refused by the provider
+  // ("Unknown scope w_member_socia"); a clipped state costs nothing here,
+  // and in loopback mode nobody copies the link at all.
+  authorizeUrl.searchParams.set("state", state);
 
   let code: string;
 
