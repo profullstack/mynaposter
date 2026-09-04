@@ -471,6 +471,28 @@ export const COMMANDS: Command[] = [
     },
   },
   {
+    name: "repost",
+    args: "<account> <post url>",
+    help: "Share someone's post from one account",
+    async run(state, args, redraw) {
+      const [accountId, ref] = args.trim().split(/\s+/);
+      if (!accountId || !ref) throw new Error("Usage: /repost <account> <post url or id>");
+      const account = state.accounts.find((entry) => entry.id === accountId);
+      if (!account) throw new Error(`No account "${accountId}".`);
+      const network = requireNetwork(account.network);
+      if (!network.repost) throw new Error(`${network.name} has no repost API.`);
+
+      state.busy = "Reposting…";
+      redraw();
+      try {
+        const result = await network.repost(account, ref);
+        toast(state, `Reposted from ${accountId}${result.url ? ` ${result.url}` : ""}`, "success");
+      } finally {
+        state.busy = "";
+      }
+    },
+  },
+  {
     name: "set",
     args: "<key> <value>",
     help: "Change a setting, e.g. /set ai.provider ollama",

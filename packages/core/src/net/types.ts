@@ -49,6 +49,8 @@ export interface NetworkCapabilities {
   stats: boolean;
   /** A title is required, not optional (link/blog networks). */
   needsTitle?: boolean;
+  /** Can share someone else's post as-is (retweet, boost, repost). */
+  repost?: boolean;
 }
 
 export interface Account {
@@ -147,6 +149,11 @@ export interface Network {
   timeline?(account: Account, limit: number): Promise<TimelineItem[]>;
   notifications?(account: Account, limit: number): Promise<TimelineItem[]>;
   stats?(account: Account, id: string): Promise<PostStats>;
+  /**
+   * Share another post from this account. `ref` is whatever a person has to
+   * hand: the post's URL as copied from the network, or its native id.
+   */
+  repost?(account: Account, ref: string): Promise<PostResult>;
 }
 
 export const NO_CAPS: NetworkCapabilities = {
