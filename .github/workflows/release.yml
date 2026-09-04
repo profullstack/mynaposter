@@ -23,9 +23,12 @@ jobs:
         with:
           ref: ${{ github.event.inputs.tag || github.ref }}
 
+      # Pinned to the version package.json names. "latest" broke the 0.3.0
+      # build the day Bun 1.4.1 shipped: `bun build --compile` downloads the
+      # cross-compile targets for its own version, and those lag the release.
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: latest
+          bun-version-file: package.json
 
       - name: Install
         run: bun install --frozen-lockfile
