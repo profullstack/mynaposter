@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="apps/web/assets/brand/myna-logo-dark.svg">
+    <img alt="myna" src="apps/web/assets/brand/myna-logo-light.svg" width="356" height="128">
+  </picture>
+</p>
+
 # myna
 
 A terminal social media manager. One place to log in, write, schedule and post

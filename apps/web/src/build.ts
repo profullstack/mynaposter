@@ -46,16 +46,22 @@ const page = `<!doctype html>
 <title>myna &mdash; post to every social network from your terminal</title>
 <meta name="description" content="A terminal social media manager. Log in, write, schedule and post to ${NETWORKS.length} networks from one TUI, one CLI or a desktop app.">
 <link rel="stylesheet" href="/site.css">
-<link rel="icon" href="/favicon.svg">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="/favicon.png" type="image/png" sizes="512x512">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <meta property="og:title" content="myna">
 <meta property="og:description" content="Post to ${NETWORKS.length} social networks from your terminal.">
 <meta property="og:url" content="https://mynaposter.com">
 <meta property="og:type" content="website">
+<meta property="og:image" content="https://mynaposter.com/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
 </head>
 <body>
 
 <header class="top">
-  <a class="wordmark" href="/">myna</a>
+  <a class="wordmark" href="/"><img src="/brand/myna-mark.svg" alt="" width="28" height="28">myna</a>
   <nav>
     <a href="#networks">Networks</a>
     <a href="#cli">CLI</a>
@@ -262,7 +268,7 @@ writeFileSync(
   `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Not found &mdash; myna</title><link rel="stylesheet" href="/site.css"></head>
-<body><header class="top"><a class="wordmark" href="/">myna</a></header>
+<body><header class="top"><a class="wordmark" href="/"><img src="/brand/myna-mark.svg" alt="" width="28" height="28">myna</a></header>
 <main><section class="hero"><h1>Not here.</h1>
 <p class="lede">That page does not exist. <a href="/">Back to the start</a>.</p></section></main></body></html>`,
 );
@@ -327,7 +333,14 @@ password or a browser flow and belongs to a person.
 `,
 );
 
-for (const asset of ["site.css", "site.js", "favicon.svg", "install.sh", "oauth-callback.js"]) {
+mkdirSync(join(out, "brand"), { recursive: true });
+for (const asset of [
+  "site.css", "site.js", "favicon.svg", "favicon.png", "apple-touch-icon.png", "og.png", "install.sh", "oauth-callback.js",
+  // The logo in every form someone might need to reuse it: the bare mark,
+  // and the mark with the wordmark for dark and light backgrounds.
+  "brand/myna-mark.svg", "brand/myna-mark-1024.png", "brand/myna-mark-512.png", "brand/myna-mark-256.png",
+  "brand/myna-logo-dark.svg", "brand/myna-logo-dark-1424.png", "brand/myna-logo-light.svg", "brand/myna-logo-light-1424.png",
+]) {
   const source = join(root, "assets", asset);
   if (existsSync(source)) copyFileSync(source, join(out, asset));
 }

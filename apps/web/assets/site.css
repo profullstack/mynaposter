@@ -40,7 +40,8 @@ code { font-size: 0.9em; color: var(--accent); }
   margin: 0 auto;
   padding: 22px 24px;
 }
-.wordmark { font-size: 20px; font-weight: 700; color: var(--accent); letter-spacing: -0.02em; }
+.wordmark { display: inline-flex; align-items: center; gap: 9px; font-size: 20px; font-weight: 700; color: var(--accent); letter-spacing: -0.02em; }
+.wordmark img { display: block; }
 .top nav { display: flex; gap: 22px; margin-left: auto; font-size: 14px; }
 .top nav a { color: var(--muted); }
 .top nav a:hover { color: var(--text); text-decoration: none; }
