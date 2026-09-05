@@ -44,7 +44,6 @@ import {
   callbackFrom,
   refresh,
   PASTE_FIELD,
-  REDIRECT_NOTE,
   getJson,
   postJson,
   request,
@@ -68,6 +67,10 @@ export const SCHEDULED_POST_EVENT_MS = 15 * 60_000;
 const SUMMARY_LIMIT = 120;
 /** The private extended property that ties an event to a queue entry. */
 export const QUEUE_KEY = "mynaQueue";
+/** Where Google sends the code when the browser is not on this machine; register it on the OAuth client. */
+export const GOOGLE_HOSTED_REDIRECT = "https://mynaposter.com/google/oauth/callback";
+/** The loopback redirect for a browser on the same machine. */
+export const GOOGLE_LOCAL_REDIRECT = "http://127.0.0.1:8765/callback";
 
 const config = (clientId: string, clientSecret?: string): OAuth2Config => ({
   authorizeUrl: "https://accounts.google.com/o/oauth2/v2/auth",
@@ -255,7 +258,8 @@ const gcal: Network = {
     note:
       "Create a project at console.cloud.google.com, enable the Google Calendar API, and add an OAuth client id of " +
       "type 'Web application'. While the app's consent screen is still in testing, Google expires the sign-in after " +
-      `seven days; publishing it makes the sign-in permanent. ${REDIRECT_NOTE}`,
+      `seven days; publishing it makes the sign-in permanent. Add ${GOOGLE_LOCAL_REDIRECT} as an authorized redirect ` +
+      `URI, and ${GOOGLE_HOSTED_REDIRECT} too if you will authorize from a browser on another machine (answer "yes" to pasting a code).`,
     fields: [
       { key: "clientId", label: "Client id", placeholder: "….apps.googleusercontent.com" },
       { key: "clientSecret", label: "Client secret", secret: true },
@@ -275,7 +279,16 @@ const gcal: Network = {
   },
 
   async login(input, ctx) {
-    const tokens = await authorize({ ...config(input.clientId.trim(), input.clientSecret.trim()), ...callbackFrom(input, ctx) }, ctx);
+    const callback = callbackFrom(input, ctx);
+    const tokens = await authorize(
+      {
+        ...config(input.clientId.trim(), input.clientSecret.trim()),
+        ...callback,
+        // Google's redirect list is per client, so the hosted page is the one named for it.
+        ...(callback.mode === "paste" ? { redirectUri: GOOGLE_HOSTED_REDIRECT } : {}),
+      },
+      ctx,
+    );
     const primary = await getJson<CalendarListEntry>(`${API}/users/me/calendarList/primary`, { headers: auth(tokens.access_token) });
     const chosen = input.calendar?.trim() || primary.id;
     return {
@@ -336,7 +349,7 @@ const when = (event: CalendarEvent): string => {
 const plugin: MynaPlugin = {
   id: "calendar",
   name: "Calendar",
-  version: "0.8.1",
+  version: "0.8.2",
   description: "Google Calendar as a network, and a calendar entry for every post myna schedules.",
 
   networks: [gcal],
