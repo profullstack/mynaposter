@@ -632,8 +632,22 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
       const extras = listPlugins().filter((entry) => entry.plugin?.tasks?.length || entry.plugin?.seeds?.length).map((entry) => entry.plugin!.id);
       out(`Daemon running: ${[jobs, ...extras].join(", ")}. Ctrl+C to stop.`);
       if (!settings.graph.enabled) out("The follow graph is off. Turn it on with: myna graph on");
-      startDaemon({ tickMs: Number(flags.interval ?? 30) * 1000, log });
-      await new Promise(() => {});
+      const stop = startDaemon({ tickMs: Number(flags.interval ?? 30) * 1000, log });
+      // The daemon's own timer is unref'd so a host that embeds it can exit
+      // freely; here the process *is* the daemon, and with no TTY on stdin
+      // (systemd, a container) nothing else keeps the event loop alive. Hold
+      // a referenced timer until a signal says stop.
+      await new Promise<void>((resolve) => {
+        const keepAlive = setInterval(() => {}, 60_000);
+        const quit = (signal: string) => {
+          log(`${signal}, stopping`);
+          stop();
+          clearInterval(keepAlive);
+          resolve();
+        };
+        process.once("SIGINT", () => quit("SIGINT"));
+        process.once("SIGTERM", () => quit("SIGTERM"));
+      });
       return 0;
     }
 
