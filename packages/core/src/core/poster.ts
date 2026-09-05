@@ -11,6 +11,7 @@ import type { Account, MediaItem, PostInput, PostResult } from "../net/types.ts"
 import { requireNetwork } from "../net/registry.ts";
 import { splitThread, truncateTo, appendHashtags, countChars } from "../util/text.ts";
 import { recordHistory } from "../store/history.ts";
+import { postedEvent, runAfterPost, type HookOutcome } from "../plugins/hooks.ts";
 
 export interface ComposeOptions {
   text: string;
@@ -108,8 +109,14 @@ async function postOne(account: Account, options: ComposeOptions): Promise<Targe
   }
 }
 
+/**
+ * One result per target, plus what every plugin's `afterPost` hook said.
+ * Still an array, so a caller that only reads the results sees no change.
+ */
+export type PostOutcome = TargetResult[] & { hooks: HookOutcome[] };
+
 /** Post to every target at once and return one result per target. */
-export async function postToAll(accounts: Account[], options: ComposeOptions): Promise<TargetResult[]> {
+export async function postToAll(accounts: Account[], options: ComposeOptions): Promise<PostOutcome> {
   if (!accounts.length) throw new Error("No targets. Run /login <network> first, or check your --to value.");
 
   const results = await Promise.all(accounts.map((account) => postOne(account, options)));
@@ -128,7 +135,9 @@ export async function postToAll(accounts: Account[], options: ComposeOptions): P
     })),
   );
 
-  return results;
+  // Hooks run after the history is written: a hook that reads it sees this post.
+  const hooks = await runAfterPost(postedEvent(results, options));
+  return Object.assign(results, { hooks });
 }
 
 export function summarize(results: TargetResult[]): string {

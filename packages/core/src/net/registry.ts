@@ -13,6 +13,7 @@ import { linkedin, pinterest, tiktok } from "./adapters/professional.ts";
 import { youtube } from "./adapters/youtube.ts";
 import { devto, hashnode, ghost, wordpress, microblog, tumblr } from "./adapters/blogs.ts";
 import { tsbb } from "./adapters/tsbb.ts";
+import { gitblog, htmlblog } from "./adapters/ownblogs.ts";
 
 export const NETWORKS: Network[] = [
   // The ones people ask for first.
@@ -46,6 +47,9 @@ export const NETWORKS: Network[] = [
   wordpress,
   microblog,
   tumblr,
+  // Blogs you host yourself: a repository, or a directory of pages.
+  gitblog,
+  htmlblog,
 ];
 
 const BY_ID = new Map(NETWORKS.map((network) => [network.id, network]));
@@ -92,6 +96,10 @@ const ALIASES: Record<string, string> = {
   nostril: "nostr",
   forum: "tsbb",
   board: "tsbb",
+  repo: "gitblog",
+  github: "gitblog",
+  html: "htmlblog",
+  static: "htmlblog",
 };
 
 export function getNetwork(id: string): Network | undefined {
@@ -128,5 +136,7 @@ export function authSummary(network: Network): string {
       return "browser sign-in";
     case "device":
       return "approve a code";
+    case "local":
+      return "files on this machine";
   }
 }

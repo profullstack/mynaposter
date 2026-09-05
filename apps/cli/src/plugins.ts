@@ -7,12 +7,14 @@
  */
 import { loadPlugins, registerPlugin, type LoadedPlugin } from "@profullstack/myna-core";
 import outreachgraph from "@profullstack/myna-plugin-outreachgraph";
+import crawlproof from "@profullstack/myna-plugin-crawlproof";
 
 let prepared: Promise<LoadedPlugin[]> | undefined;
 
 export function preparePlugins(): Promise<LoadedPlugin[]> {
   if (!prepared) {
     registerPlugin(outreachgraph, "bundled");
+    registerPlugin(crawlproof, "bundled");
     prepared = loadPlugins();
   }
   return prepared;

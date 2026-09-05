@@ -66,7 +66,9 @@ export {
 export { vaultExists, vaultMode, rekeyVault, VaultLockedError } from "./util/crypto/vault.ts";
 export * as cloud from "./store/cloud.ts";
 
-export { postToAll, tailor, charsFor, summarize, type ComposeOptions, type TargetResult } from "./core/poster.ts";
+export { postToAll, tailor, charsFor, summarize, type ComposeOptions, type TargetResult, type PostOutcome } from "./core/poster.ts";
+export { runAfterPost, postedEvent, type HookOutcome } from "./plugins/hooks.ts";
+export { renderMarkdown, renderInline, firstParagraph, slugify, escapeHtml } from "./util/markdown.ts";
 export { loadMedia, loadAllMedia } from "./core/media.ts";
 export { runDuePosts, startScheduler } from "./core/scheduler.ts";
 export { startDaemon, runDaemonOnce, builtinJobs, type DaemonJob, type DaemonOptions } from "./core/daemon.ts";
@@ -104,7 +106,7 @@ export {
   resetPlugins,
 } from "./plugins/loader.ts";
 export { pluginContext, type HostOptions } from "./plugins/context.ts";
-export type { MynaPlugin, PluginContext, PluginCommand, DaemonTask, SeedProvider, LoadedPlugin } from "./plugins/types.ts";
+export type { MynaPlugin, PluginContext, PluginCommand, DaemonTask, SeedProvider, LoadedPlugin, PostedEvent, PostedTarget } from "./plugins/types.ts";
 
 export { countChars, splitThread, appendHashtags, toHashtag, extractHashtags, truncateTo } from "./util/text.ts";
 export { configDir, configPath } from "./util/paths.ts";

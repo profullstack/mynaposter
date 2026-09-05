@@ -45,6 +45,12 @@ export default {
       },
     },
   ],
+
+  async afterPost(event, ctx) {
+    // Runs once a post is out, with where it landed. Return a line to show.
+    const pages = event.targets.filter((t) => t.ok && t.category === "blog");
+    return pages.length ? `noticed ${pages.length} new page(s)` : undefined;
+  },
 };
 ```
 
@@ -113,6 +119,19 @@ order, on the daemon's tick (30 s by default), each when its `everyMs` has
 elapsed. Throwing is logged as `<plugin>.<task>  failed: …` and the task runs
 again next time; it never stops the loop.
 
+## After a post
+
+`afterPost(event, ctx)` is called once after every post has been sent to its
+targets — from `myna post`, the TUI, the scheduler and the daemon alike. The
+event carries the text, the title, the per-network `extra` flags, and one
+entry per target with the network's category (`blog`, `major`, `fediverse`,
+…), whether it succeeded, and the URL the network reported. Return a line to
+show the person, or nothing. Throwing is reported next to the results and
+never undoes the post; by the time the hook runs, the post is already out.
+
+The bundled `crawlproof` plugin is the example: it takes every URL a blog
+target published and opens a CrawlProof ad campaign for it.
+
 ## Secrets
 
 Use `ctx.secrets`, never a file of your own, for anything a person would not
@@ -130,4 +149,6 @@ dependency only.
 
 The bundled `packages/plugin-outreachgraph` is the reference: a login command
 that stores credentials in the vault, a read command, a sync command, and a
-seed provider the daemon runs every six hours.
+seed provider the daemon runs every six hours. `packages/plugin-crawlproof`
+is the reference for a plugin that reacts to posting: a token in the vault,
+an `afterPost` hook, and commands to do the same by hand.

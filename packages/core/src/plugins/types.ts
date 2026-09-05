@@ -59,6 +59,26 @@ export interface DaemonTask {
   run(ctx: PluginContext): Promise<string | void>;
 }
 
+/** One target's outcome, as a plugin sees it after a post went out. */
+export interface PostedTarget {
+  account: Account;
+  /** The network's category: "blog", "major", "fediverse"… */
+  category: string;
+  ok: boolean;
+  /** Where the post lives now, when the network said. */
+  url?: string;
+  id?: string;
+  error?: string;
+}
+
+/** What `afterPost` receives: everything that was sent and where it landed. */
+export interface PostedEvent {
+  text: string;
+  title?: string;
+  extra?: Record<string, string>;
+  targets: PostedTarget[];
+}
+
 /** A source of seeds. The daemon calls it on its own schedule and feeds the result to the graph. */
 export interface SeedProvider {
   id: string;
@@ -76,6 +96,12 @@ export interface MynaPlugin {
   commands?: PluginCommand[];
   tasks?: DaemonTask[];
   seeds?: SeedProvider[];
+  /**
+   * Called once after every post has been sent to its targets — from the
+   * CLI, the TUI, the scheduler and the daemon alike. Return a line to show
+   * the person, or nothing. Throwing is reported and never undoes the post.
+   */
+  afterPost?(event: PostedEvent, ctx: PluginContext): Promise<string | void>;
 }
 
 /** What the loader knows about one plugin, including one that failed to load. */

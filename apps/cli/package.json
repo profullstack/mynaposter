@@ -1,6 +1,6 @@
 {
   "name": "@profullstack/myna",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "A terminal social media manager. Log in, compose, schedule and post to every network from one TUI.",
   "license": "MIT",
   "type": "module",
@@ -38,7 +38,8 @@
   "dependencies": {
     "@profullstack/hqtui": "^0.1.9",
     "@profullstack/myna-core": "workspace:*",
-    "@profullstack/myna-plugin-outreachgraph": "workspace:*"
+    "@profullstack/myna-plugin-outreachgraph": "workspace:*",
+    "@profullstack/myna-plugin-crawlproof": "workspace:*"
   },
   "scripts": {
     "build:binaries": "bun build-binaries.ts"

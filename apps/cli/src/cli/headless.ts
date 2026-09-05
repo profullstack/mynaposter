@@ -362,9 +362,15 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
           null,
           2,
         ));
+        if (results.hooks.length) out(JSON.stringify(results.hooks, null, 2));
       } else {
         for (const result of results) {
           out(result.ok ? `ok    ${result.account.id}  ${result.posts[0]?.url ?? result.posts[0]?.id ?? ""}` : `FAIL  ${result.account.id}  ${result.error}`);
+        }
+        // What plugins did with the post once it was out: an ad, a note.
+        for (const hook of results.hooks) {
+          if (hook.error) out(`FAIL  ${hook.plugin}  ${hook.error}`);
+          else if (hook.line) out(`ok    ${hook.plugin}  ${hook.line}`);
         }
         out(`\n${summarize(results)}`);
       }
