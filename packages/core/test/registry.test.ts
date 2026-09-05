@@ -23,6 +23,7 @@ test("a network that declares a capability implements it", () => {
     if (network.caps.notifications) expect(network.notifications, `${network.id} claims notifications`).toBeDefined();
     if (network.caps.stats) expect(network.stats, `${network.id} claims stats`).toBeDefined();
     if (network.caps.repost) expect(network.repost, `${network.id} claims repost`).toBeDefined();
+    if (network.caps.search) expect(network.search, `${network.id} claims search`).toBeDefined();
   }
 });
 
@@ -44,6 +45,7 @@ test("common aliases resolve", () => {
   expect(getNetwork("bsky")?.id).toBe("bluesky");
   expect(getNetwork("fb")?.id).toBe("facebook");
   expect(getNetwork("masto")?.id).toBe("mastodon");
+  expect(getNetwork("yt")?.id).toBe("youtube");
   expect(getNetwork("nope")).toBeUndefined();
   expect(() => requireNetwork("nope")).toThrow(/Unknown network/);
 });

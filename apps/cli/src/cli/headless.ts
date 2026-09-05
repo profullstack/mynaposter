@@ -97,6 +97,25 @@ export function parseFlags(argv: string[]): { positional: string[]; flags: Flags
   return { positional, flags };
 }
 
+/** The flags myna itself reads. Anything else belongs to a network. */
+const OWN_FLAGS = new Set([
+  "to", "title", "media", "json", "yes", "style", "at", "thread", "dryRun", "limit", "output",
+  "keepSvg", "server", "overwrite", "settings", "once", "interval", "refresh", "theme",
+]);
+
+/**
+ * `--video`, `--subreddit`, `--privacy`: the per-network options each adapter
+ * reads out of `extra`. Every flag myna does not recognise is passed through,
+ * so an adapter can document a flag without the CLI having to know it exists.
+ */
+export function extraFrom(flags: Flags): Record<string, string> | undefined {
+  const extra: Record<string, string> = {};
+  for (const [key, value] of Object.entries(flags)) {
+    if (!OWN_FLAGS.has(key) && typeof value === "string") extra[key] = value;
+  }
+  return Object.keys(extra).length ? extra : undefined;
+}
+
 const out = (line = "") => process.stdout.write(`${line}\n`);
 
 function table(rows: Record<string, string>[], columns: { key: string; title: string }[]): void {
@@ -272,10 +291,12 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
     case "post": {
       await ensureUnlocked();
       const { accounts, text } = await resolvePostArgs(positional, flags);
+      const extra = extraFrom(flags);
 
       if (flags.dryRun) {
         out(`Would post to ${accounts.length} account${accounts.length === 1 ? "" : "s"}:`);
         for (const account of accounts) out(`  ${account.id}`);
+        if (extra) out(`with ${Object.entries(extra).map(([key, value]) => `--${key} ${value}`).join(" ")}`);
         out(`\n${text}`);
         return 0;
       }
@@ -286,6 +307,7 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
         media: flags.media?.length ? loadAllMedia(flags.media) : undefined,
         thread: flags.thread ?? settings.threadByDefault,
         signature: settings.signature || undefined,
+        extra,
       });
 
       if (flags.json) {
@@ -324,6 +346,7 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
         text,
         title: flags.title,
         mediaPaths: flags.media,
+        extra: extraFrom(flags),
         thread: flags.thread ?? settings.threadByDefault,
       });
       out(`Queued ${entry.id} for ${describeWhen(at)} to ${accounts.length} account${accounts.length === 1 ? "" : "s"}`);
@@ -471,6 +494,40 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
         if (item.url) out(item.url);
         out();
       }
+      return 0;
+    }
+
+    case "search": {
+      // Find something to reply to: `myna search youtube "terminal social media"`.
+      // Each result's id is what --video (or the network's equivalent) takes.
+      await ensureUnlocked();
+      const words = [...positional];
+      let spec = flags.to;
+      if (!spec && words.length > 1 && (getNetwork(words[0]) || listAccounts().some((account) => account.id === words[0]))) {
+        spec = words.shift();
+      }
+      const query = words.join(" ").trim();
+      if (!query) throw new Error('Search for what? Try: myna search youtube "terminal social media"');
+
+      const account = resolveTargets(spec ?? settings.defaultTargets).find((entry) => requireNetwork(entry.network).search);
+      if (!account) throw new Error("None of those accounts can search. Try: myna search youtube <query>");
+      const items = await requireNetwork(account.network).search!(account, query, Number(flags.limit ?? 10));
+
+      if (flags.json) {
+        out(JSON.stringify({ account: account.id, items }, null, 2));
+        return 0;
+      }
+      if (!items.length) {
+        out(`Nothing on ${account.id} matches "${query}".`);
+        return 0;
+      }
+      for (const item of items) {
+        out(`${item.id}  ${item.handle || item.author}  ${new Date(item.createdAt).toLocaleDateString()}`);
+        out(`  ${item.text.split("\n")[0]}`);
+        if (item.url) out(`  ${item.url}`);
+        out();
+      }
+      if (account.network === "youtube") out(`Comment on one with:  myna post ${account.id} "your comment" --video <id>`);
       return 0;
     }
 

@@ -240,6 +240,7 @@ export function feedScreen(ui: Container, state: State, theme: Theme): void {
         item.replies !== undefined && `${item.replies} replies`,
       ].filter(Boolean);
       if (stats.length) panel.label(stats.join("  "), { size: 1 });
+      if (item.url) panel.label(item.url, { size: 1, fg: theme.muted });
       panel.spacer(1);
     }
   });

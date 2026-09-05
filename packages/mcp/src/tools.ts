@@ -80,6 +80,11 @@ export const TOOLS = [
         to: { type: "string", description: TARGET_DESCRIPTION },
         title: { type: "string", description: "Title, required by Reddit, Lemmy and the blog targets." },
         thread: { type: "boolean", description: "Split over-limit text into a reply chain instead of truncating." },
+        video: {
+          type: "string",
+          description: "YouTube only: the video id or URL to comment on. Get ids from myna_search. Without it a YouTube target fails.",
+        },
+        reply_to: { type: "string", description: "YouTube only: the id of a comment to answer instead of commenting on the video." },
         dry_run: { type: "boolean", description: "Resolve the targets and show the text without sending." },
       },
       required: ["text"],
@@ -100,6 +105,23 @@ export const TOOLS = [
         title: { type: "string" },
       },
       required: ["text", "at"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "myna_search",
+    description:
+      "Search a network for public posts matching a query, where the network supports it. Today that is " +
+      "YouTube, where it returns videos: id, title, channel and URL. Pair it with myna_post and its `video` " +
+      "argument to comment on one. Reads only; sends nothing.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "What to search for." },
+        to: { type: "string", description: 'Which account or network to search with, e.g. "youtube".' },
+        limit: { type: "number", description: "How many results. Default 10, at most 50." },
+      },
+      required: ["query"],
       additionalProperties: false,
     },
   },
@@ -219,11 +241,16 @@ export async function callTool(name: string, args_: Record<string, unknown> = {}
         const targets = resolveTargets(args.to ?? loadSettings().defaultTargets);
         if (!targets.length) throw new Error("No accounts connected.");
 
+        const extra: Record<string, string> = {};
+        if (args.video) extra.video = args.video;
+        if (args.reply_to) extra.replyTo = args.reply_to;
+
         if (args.dry_run) {
           return text({
             dryRun: true,
             wouldPostTo: targets.map((account) => account.id),
             text: args.text,
+            ...(Object.keys(extra).length ? { extra } : {}),
           });
         }
 
@@ -232,6 +259,7 @@ export async function callTool(name: string, args_: Record<string, unknown> = {}
           title: args.title,
           thread: args.thread ?? loadSettings().threadByDefault,
           signature: loadSettings().signature || undefined,
+          extra: Object.keys(extra).length ? extra : undefined,
         });
 
         return text({
@@ -274,6 +302,16 @@ export async function callTool(name: string, args_: Record<string, unknown> = {}
         if (!args.prompt && !args.url) throw new Error("Give either a prompt or a url.");
         const networks = args.to ? [...new Set(resolveTargets(args.to).map((account) => account.network))] : [];
         return text(await draft({ prompt: args.prompt, url: args.url, networks }));
+      }
+
+      case "myna_search": {
+        if (!args.query) throw new Error("Give a query.");
+        const account = resolveTargets(args.to ?? loadSettings().defaultTargets).find(
+          (entry) => requireNetwork(entry.network).search,
+        );
+        if (!account) throw new Error("None of those accounts can search. Connect YouTube with `myna login youtube`.");
+        const items = await requireNetwork(account.network).search!(account, args.query, Number(args.limit ?? 10));
+        return text({ account: account.id, items });
       }
 
       case "myna_timeline": {

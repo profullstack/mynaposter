@@ -51,6 +51,8 @@ export interface NetworkCapabilities {
   needsTitle?: boolean;
   /** Can share someone else's post as-is (retweet, boost, repost). */
   repost?: boolean;
+  /** Can look up public posts by keyword, so a reply target can be found. */
+  search?: boolean;
 }
 
 export interface Account {
@@ -154,6 +156,11 @@ export interface Network {
    * hand: the post's URL as copied from the network, or its native id.
    */
   repost?(account: Account, ref: string): Promise<PostResult>;
+  /**
+   * Find public posts matching `query`. What comes back is the same shape as
+   * a timeline, and each item's id is what `post` accepts as a reply target.
+   */
+  search?(account: Account, query: string, limit: number): Promise<TimelineItem[]>;
 }
 
 export const NO_CAPS: NetworkCapabilities = {

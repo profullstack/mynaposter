@@ -344,8 +344,8 @@ myna run                   run the scheduler as a daemon
 ## MCP
 
 The package @profullstack/myna-mcp exposes myna_accounts, myna_networks, myna_preview,
-myna_post, myna_schedule, myna_queue, myna_cancel, myna_history, myna_draft and
-myna_timeline. There is deliberately no login tool: connecting an account needs a
+myna_post, myna_schedule, myna_queue, myna_cancel, myna_history, myna_draft,
+myna_timeline and myna_search. There is deliberately no login tool: connecting an account needs a
 password or a browser flow and belongs to a person.
 `,
 );

@@ -36,6 +36,8 @@ Posting:
   delete <account> <post id>        Delete a post you made
   repost <account> <post url>       Share someone's post from one account
   feed [network]                    Read a home timeline
+  search [network] <query>          Find posts to reply to. On YouTube this
+                                    lists videos; comment with post --video
   run                               Run the scheduler in the foreground
 
 Writing (optional, needs an API key):
@@ -67,6 +69,8 @@ Flags:
   --to <spec>       Where to post: all, a network, an account id, comma separated
   --title <text>    Title for Reddit, Lemmy and blogs
   --media <path>    Attach a file. Repeatable
+  --video <id|url>  YouTube: comment on this video rather than uploading
+  --reply-to <id>   YouTube: answer this comment
   --style <kind>    Infographic backend: svg, html or image
   --json            Machine-readable output
   --dry-run         Show what would be posted without sending
@@ -81,6 +85,8 @@ Examples:
   echo "shipping today" | myna post bluesky,mastodon
   myna link https://example.com/blog/post --to all
   myna schedule "tomorrow 9am" "good morning" --to mastodon
+  myna search youtube "terminal social media manager"
+  myna post youtube "myna does this from the terminal" --video dQw4w9WgXcQ
   myna infographic https://example.com/report --style html
   myna save ~/myna.myna              # then scp it to the other machine
   myna load ~/myna.myna

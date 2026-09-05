@@ -76,12 +76,12 @@ part most tools are vague about, so to be plain:
 | **Approving a short code** | tsbb (device flow: the board shows a code, you approve it in a browser) |
 | **One click in a browser, no setup** | Mastodon, Pleroma, Akkoma, GoToSocial, Pixelfed. myna registers itself on the instance and opens an Authorize page. Nothing to type but the instance, and no developer account anywhere |
 | **App keys** | Tumblr |
-| **Browser sign-in (OAuth)** | X, Facebook, Instagram, Threads, LinkedIn, Pinterest, TikTok |
+| **Browser sign-in (OAuth)** | X, Facebook, Instagram, Threads, LinkedIn, Pinterest, TikTok, YouTube |
 
 Two of those rows are browser sign-ins for opposite reasons. Mastodon and its
 relatives let *any* client register itself, so the browser flow needs no setup
-at all: you type the instance and click Authorize. X, Meta, LinkedIn, Pinterest
-and TikTok require you to register an app on their developer portal first,
+at all: you type the instance and click Authorize. X, Meta, LinkedIn, Pinterest,
+TikTok and YouTube require you to register an app on their developer portal first,
 because they removed password APIs years ago and scraping a login session is
 both against their terms and fragile enough to break without warning.
 
@@ -99,16 +99,42 @@ Two more things worth knowing before you plan a posting workflow:
 
 ## Supported networks
 
-26 in total.
+27 in total.
 
 **Major** X, Facebook, Instagram, Threads, Bluesky, Reddit, LinkedIn, Pinterest,
-TikTok
+TikTok, YouTube
 **Fediverse and self-hosted** Mastodon (and Pleroma, Akkoma, GoToSocial),
 Misskey (and Sharkey, Firefish), Pixelfed, Lemmy, Nostr, tsbb
 **Chat** Telegram, Discord, Slack, Matrix, Mattermost
 **Long-form** dev.to, Hashnode, Ghost, WordPress, Micro.blog, Tumblr
 
 `myna networks` prints the current list with each one's login method and limit.
+
+### YouTube: search, then comment
+
+YouTube has no timeline to post into. What it has is videos, and under each
+one a comment thread, so on YouTube a "post" is a comment on a video you name.
+The useful loop is to search for videos on your subject and comment where the
+conversation already is:
+
+```bash
+myna search youtube "terminal social media manager"
+myna post youtube "If you want this from a terminal, myna does it: https://mynaposter.com" --video dQw4w9WgXcQ
+myna post youtube "Thanks, fixed in 0.4" --reply-to UgzQK7s8m1Xf3kR9pL54AaABAg
+myna post youtube "Release walkthrough" --media walkthrough.mp4 --privacy unlisted
+```
+
+`--video` takes an id or any YouTube link. `myna search` lists the id, channel
+and link for each hit, and `--json` gives the same for a script. A plain
+`myna post youtube` with no video and no video file is an error, on purpose:
+there is nothing on YouTube it could sensibly go to.
+
+Two things to know. Uploads from an app that has not passed Google's
+verification are forced to private, which is Google's rule, not myna's. And
+YouTube filters repeated identical comments as spam, so write for the video
+you are commenting on rather than pasting one line everywhere: a comment that
+answers what the video is about, with your link, lands. The same one pasted
+under twenty videos disappears.
 
 ## The TUI
 
@@ -150,10 +176,13 @@ myna draft "<topic>"              myna link <url>
 myna infographic <url|topic>      myna run
 myna config [key] [value]         myna doctor
 myna keys                         myna repost <account> <post url>
+myna search [network] <query>
 ```
 
 Flags: `--to`, `--title`, `--media`, `--style`, `--json`, `--dry-run`,
-`--no-thread`.
+`--no-thread`. Any other `--flag value` is handed to the network as an option:
+`--video` and `--reply-to` for YouTube, `--subreddit` for Reddit, `--privacy`
+for an upload.
 
 `--json` on any read command gives machine output, so `myna accounts --json | jq`
 works the way you would expect.
@@ -295,9 +324,9 @@ bun run db:migrate
 { "mcpServers": { "myna": { "command": "bunx", "args": ["@profullstack/myna-mcp"] } } }
 ```
 
-Ten tools: `myna_accounts`, `myna_networks`, `myna_preview`, `myna_post`,
+Eleven tools: `myna_accounts`, `myna_networks`, `myna_preview`, `myna_post`,
 `myna_schedule`, `myna_queue`, `myna_cancel`, `myna_history`, `myna_draft`,
-`myna_timeline`.
+`myna_timeline`, `myna_search`.
 
 There is deliberately no login tool. Connecting an account means typing a
 password or completing a browser flow, and that belongs to a person. `myna_post`
