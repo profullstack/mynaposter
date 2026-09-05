@@ -22,6 +22,26 @@ export interface Settings {
     background: string;
     footer: string;
   };
+  /** The follow graph: read who your seeds follow, then follow the people they agree on. */
+  graph: {
+    /** Off until a person turns it on. Following people is not something to do by accident. */
+    enabled: boolean;
+    /** Ceiling per account. Networks throttle well below their published limits for new accounts. */
+    followsPerHour: number;
+    followsPerDay: number;
+    /** How many of each seed's follows to read. */
+    perSeed: number;
+    /** Re-read a seed's list after this long. */
+    expandEveryHours: number;
+    /** Follow the seeds themselves as well as who they follow. */
+    followSeeds: boolean;
+    /** A candidate needs this many seeds following them before it is followed. 1 means any. */
+    minSeeds: number;
+    /** Which networks the daemon follows on: "all" or a comma list. */
+    networks: string;
+  };
+  /** Plugin specs: an absolute path, or a package name installed by `myna plugins add`. */
+  plugins: string[];
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -40,6 +60,17 @@ export const DEFAULT_SETTINGS: Settings = {
     background: "#0b1020",
     footer: "",
   },
+  graph: {
+    enabled: false,
+    followsPerHour: 10,
+    followsPerDay: 80,
+    perSeed: 200,
+    expandEveryHours: 168,
+    followSeeds: true,
+    minSeeds: 1,
+    networks: "all",
+  },
+  plugins: [],
 };
 
 export function loadSettings(): Settings {
@@ -49,6 +80,8 @@ export function loadSettings(): Settings {
     ...stored,
     ai: { ...DEFAULT_SETTINGS.ai, ...stored.ai },
     infographic: { ...DEFAULT_SETTINGS.infographic, ...stored.infographic },
+    graph: { ...DEFAULT_SETTINGS.graph, ...stored.graph },
+    plugins: Array.isArray(stored.plugins) ? stored.plugins.filter((entry) => typeof entry === "string") : [],
   };
 }
 

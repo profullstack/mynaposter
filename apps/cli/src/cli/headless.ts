@@ -8,9 +8,9 @@
  * Every subcommand mirrors a TUI slash command, so what you learn in one works
  * in the other. Output is plain text so it pipes; --json gives machine output.
  */
-import { writeFileSync, readFileSync, existsSync, mkdtempSync } from "node:fs";
+import { writeFileSync, readFileSync, existsSync, mkdtempSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import {
   NETWORKS,
   applyBundle,
@@ -38,10 +38,10 @@ import {
   renderInfographic,
   requireNetwork,
   resolveTargets,
-  runDuePosts,
   saveAccount,
   saveSettings,
-  startScheduler,
+  startDaemon,
+  runDaemonOnce,
   summarize,
   unlock,
   writerAvailable,
@@ -51,11 +51,30 @@ import {
   byNetwork,
   totals,
   topPosts,
+  addSeeds,
+  removeSeed,
+  expandSeeds,
+  rankCandidates,
+  skipCandidate,
+  followBudget,
+  followNext,
+  followOne,
+  graphStatus,
+  readGraph,
+  clearGraph,
+  listPlugins,
+  findPluginCommand,
+  pluginContext,
+  pluginsDir,
+  resolvePluginEntry,
+  configDir,
   type Account,
   type InfographicStyle,
 } from "@profullstack/myna-core";
+import { spawnSync } from "node:child_process";
 import { ask, askSecret, confirm, readStdin } from "./prompt.ts";
 import { parseWhen, describeWhen } from "../tui/when.ts";
+import { preparePlugins } from "../plugins.ts";
 
 export interface Flags {
   to?: string;
@@ -84,7 +103,7 @@ export function parseFlags(argv: string[]): { positional: string[]; flags: Flags
     const [rawName, inlineValue] = arg.slice(2).split("=");
     const name = rawName.replace(/-([a-z])/g, (_, letter: string) => letter.toUpperCase());
 
-    if (name === "json" || name === "yes" || name === "thread" || name === "dryRun" || name === "noThread") {
+    if (name === "json" || name === "yes" || name === "thread" || name === "dryRun" || name === "noThread" || name === "force") {
       flags[name === "noThread" ? "thread" : name] = name !== "noThread";
       continue;
     }
@@ -100,7 +119,7 @@ export function parseFlags(argv: string[]): { positional: string[]; flags: Flags
 /** The flags myna itself reads. Anything else belongs to a network. */
 const OWN_FLAGS = new Set([
   "to", "title", "media", "json", "yes", "style", "at", "thread", "dryRun", "limit", "output",
-  "keepSvg", "server", "overwrite", "settings", "once", "interval", "refresh", "theme",
+  "keepSvg", "server", "overwrite", "settings", "once", "interval", "refresh", "theme", "force", "weight", "source", "network",
 ]);
 
 /**
@@ -179,9 +198,30 @@ async function resolvePostArgs(positional: string[], flags: Flags): Promise<{ ac
   return { accounts, text };
 }
 
+/** Accounts that can do `cap`, from a target spec, with a message naming the ones that cannot. */
+function accountsWith(spec: string, cap: "follow" | "following"): Account[] {
+  const accounts = resolveTargets(spec).filter((account) => getNetwork(account.network)?.[cap]);
+  if (!accounts.length) {
+    throw new Error(
+      `No connected account matching "${spec}" can ${cap === "follow" ? "follow" : "read a following list"}. ` +
+        `Networks that can: ${NETWORKS.filter((network) => network.caps.follow).map((network) => network.id).join(", ")}.`,
+    );
+  }
+  return accounts;
+}
+
+const numberFlag = (flags: Flags, key: string, fallback: number): number => {
+  const raw = flags[key];
+  if (raw === undefined) return fallback;
+  const value = Number(raw);
+  if (!Number.isFinite(value) || value < 0) throw new Error(`--${key} needs a number`);
+  return value;
+};
+
 export async function runHeadless(command: string, argv: string[]): Promise<number> {
   const { positional, flags } = parseFlags(argv);
   const settings = loadSettings();
+  await preparePlugins();
 
   switch (command) {
     case "login": {
@@ -560,20 +600,279 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
     }
 
     case "run": {
-      // The scheduler as a daemon, for a systemd unit or a container.
+      // The daemon, for a systemd unit or a container: due posts, the follow
+      // graph when it is on, and every plugin's tasks and seed providers.
       await ensureUnlocked();
-      const once = Boolean(flags.once);
-      if (once) {
-        const runs = await runDuePosts();
-        out(`Sent ${runs.length} queued post${runs.length === 1 ? "" : "s"}`);
+      const log = (line: string) => out(`${new Date().toISOString()}  ${line}`);
+      if (flags.once) {
+        const lines = await runDaemonOnce({ log });
+        if (!lines.length) out("Nothing was due.");
         return 0;
       }
-      out("Scheduler running. Ctrl+C to stop.");
-      startScheduler(Number(flags.interval ?? 30) * 1000, (runs) => {
-        for (const run of runs) out(`${new Date().toISOString()}  ${run.post.id}  ${summarize(run.results)}`);
-      });
+      const jobs = settings.graph.enabled ? "posts, follow graph" : "posts";
+      const extras = listPlugins().filter((entry) => entry.plugin?.tasks?.length || entry.plugin?.seeds?.length).map((entry) => entry.plugin!.id);
+      out(`Daemon running: ${[jobs, ...extras].join(", ")}. Ctrl+C to stop.`);
+      if (!settings.graph.enabled) out("The follow graph is off. Turn it on with: myna graph on");
+      startDaemon({ tickMs: Number(flags.interval ?? 30) * 1000, log });
       await new Promise(() => {});
       return 0;
+    }
+
+    case "follow": {
+      // myna follow <account|network> <handle...>
+      await ensureUnlocked();
+      const [spec, ...handles] = positional;
+      if (!spec || !handles.length) throw new Error("Usage: myna follow <account or network> <handle> [more handles]");
+      const accounts = accountsWith(spec, "follow");
+      let failed = 0;
+      for (const account of accounts) {
+        for (const handle of handles) {
+          const record = await followOne(account, handle);
+          if (record.ok) out(`${account.id}  followed ${handle}`);
+          else {
+            failed++;
+            out(`${account.id}  could not follow ${handle}: ${record.error}`);
+          }
+        }
+      }
+      return failed ? 1 : 0;
+    }
+
+    case "following": {
+      // myna following <account|network> [handle] — who they follow, or who you follow.
+      await ensureUnlocked();
+      const [spec, handle] = positional;
+      if (!spec) throw new Error("Usage: myna following <account or network> [handle] [--limit N]");
+      const account = accountsWith(spec, "following")[0];
+      const network = requireNetwork(account.network);
+      const limit = numberFlag(flags, "limit", 50);
+      const profiles = await network.following!(account, handle ?? account.handle, limit);
+      if (flags.json) {
+        out(JSON.stringify(profiles, null, 2));
+        return 0;
+      }
+      out(`${handle ?? account.handle} follows ${profiles.length}${profiles.length >= limit ? "+" : ""} on ${network.name}:`);
+      for (const profile of profiles) {
+        out(`  ${profile.handle.padEnd(36)} ${profile.displayName ?? ""}${profile.followers !== undefined ? `  (${profile.followers} followers)` : ""}`);
+      }
+      return 0;
+    }
+
+    case "graph": {
+      const [sub = "status", ...rest] = positional;
+      switch (sub) {
+        case "status": {
+          const status = graphStatus();
+          out(`enabled     ${settings.graph.enabled ? "yes" : "no  (myna graph on)"}`);
+          out(`seeds       ${status.seeds} (${status.seedsExpanded} read)`);
+          out(`candidates  ${status.candidates} (${status.ready} ready to follow)`);
+          out(`followed    ${status.followed}${status.failed ? ` (${status.failed} failed)` : ""}${status.lastFollowAt ? `, last ${status.lastFollowAt}` : ""}`);
+          out(`limits      ${settings.graph.followsPerHour}/hour, ${settings.graph.followsPerDay}/day per account, ${settings.graph.minSeeds}+ seeds, networks: ${settings.graph.networks}`);
+          try {
+            for (const account of listAccounts().filter((account) => getNetwork(account.network)?.follow)) {
+              out(`  ${account.id.padEnd(40)} budget ${followBudget(account.id, settings)} more this hour`);
+            }
+          } catch {
+            /* locked vault: the numbers above are still useful */
+          }
+          return 0;
+        }
+        case "on":
+        case "off": {
+          settings.graph.enabled = sub === "on";
+          saveSettings(settings);
+          out(`Follow graph ${sub}. ${sub === "on" ? "It runs inside `myna run`." : ""}`.trim());
+          return 0;
+        }
+        case "seeds": {
+          const graph = readGraph();
+          if (flags.json) {
+            out(JSON.stringify(graph.seeds, null, 2));
+            return 0;
+          }
+          if (!graph.seeds.length) {
+            out("No seeds. Add one with: myna graph seed bluesky alice.bsky.social");
+            return 0;
+          }
+          table(
+            graph.seeds.map((seed) => ({
+              network: seed.network,
+              handle: seed.handle,
+              weight: String(seed.weight),
+              source: seed.source,
+              read: seed.error ? `failed: ${seed.error.slice(0, 40)}` : seed.expandedAt ? seed.expandedAt.slice(0, 16) : "not yet",
+            })),
+            [
+              { key: "network", title: "Network" },
+              { key: "handle", title: "Handle" },
+              { key: "weight", title: "Weight" },
+              { key: "source", title: "Source" },
+              { key: "read", title: "Read" },
+            ],
+          );
+          return 0;
+        }
+        case "seed": {
+          const [network, ...handles] = rest;
+          if (!network || !handles.length) throw new Error("Usage: myna graph seed <network> <handle> [more handles] [--weight N]");
+          requireNetwork(network);
+          const weight = numberFlag(flags, "weight", 1);
+          const result = addSeeds(handles.map((handle) => ({ network, handle, weight, source: String(flags.source ?? "manual") })));
+          out(`${result.added} seed${result.added === 1 ? "" : "s"} added, ${result.updated} updated.`);
+          return 0;
+        }
+        case "unseed": {
+          const [network, handle] = rest;
+          if (!network || !handle) throw new Error("Usage: myna graph unseed <network> <handle>");
+          out(removeSeed(network, handle) ? `Removed ${handle}.` : `${handle} was not a seed.`);
+          return 0;
+        }
+        case "expand": {
+          await ensureUnlocked();
+          const only = rest.length >= 2 ? [{ network: rest[0], handle: rest[1] }] : undefined;
+          const result = await expandSeeds({
+            only,
+            perSeed: flags.limit !== undefined ? numberFlag(flags, "limit", settings.graph.perSeed) : undefined,
+            staleMs: flags.force ? 0 : undefined,
+            log: (line) => out(`  ${line}`),
+          });
+          out(`Read ${result.expanded} seed${result.expanded === 1 ? "" : "s"}, ${result.discovered} new candidate${result.discovered === 1 ? "" : "s"}.`);
+          for (const failure of result.failed) out(`  ${failure.seed.network}:${failure.seed.handle} failed: ${failure.error}`);
+          for (const seed of result.unreadable) out(`  ${seed.network}:${seed.handle} skipped: no connected ${seed.network} account can read a following list`);
+          if (!result.expanded && !result.failed.length && !result.unreadable.length) out("  Every seed was read recently. Use --force to read them again.");
+          return 0;
+        }
+        case "candidates": {
+          const ranked = rankCandidates({ network: flags.network as string | undefined, fresh: !flags.force });
+          const limit = numberFlag(flags, "limit", 30);
+          if (flags.json) {
+            out(JSON.stringify(ranked.slice(0, limit), null, 2));
+            return 0;
+          }
+          if (!ranked.length) {
+            out("No candidates yet. Add seeds, then: myna graph expand");
+            return 0;
+          }
+          out(`${ranked.length} ready to follow, best first:`);
+          for (const candidate of ranked.slice(0, limit)) {
+            out(
+              `  ${String(candidate.score).padStart(5)}  ${candidate.seeds}${candidate.via.includes("seed") ? "*" : " "}  ` +
+                `${candidate.network}:${candidate.handle}`.padEnd(48) +
+                ` ${candidate.displayName ?? ""}${candidate.followers !== undefined ? `  (${candidate.followers})` : ""}`,
+            );
+          }
+          out("  score  seeds (* is a seed itself)  who");
+          return 0;
+        }
+        case "skip": {
+          const [network, handle] = rest;
+          if (!network || !handle) throw new Error("Usage: myna graph skip <network> <handle>");
+          out(skipCandidate(network, handle) ? `Will never follow ${handle}.` : `${handle} is not a candidate.`);
+          return 0;
+        }
+        case "follow": {
+          await ensureUnlocked();
+          const limit = numberFlag(flags, "limit", 5);
+          const sent = await followNext({
+            limit,
+            dryRun: flags.dryRun,
+            ignoreBudget: Boolean(flags.force),
+            networks: flags.network ? [String(flags.network)] : undefined,
+            log: (line) => out(`  ${line}`),
+          });
+          const ok = sent.filter((record) => record.ok).length;
+          if (!sent.length) out("Nothing followed: no candidates within budget. See: myna graph status");
+          else out(`${flags.dryRun ? "Would follow" : "Followed"} ${ok} of ${sent.length}.`);
+          return 0;
+        }
+        case "clear": {
+          if (!flags.yes && !(await confirm("Forget every seed, candidate and the follow ledger?"))) return 1;
+          clearGraph();
+          out("Graph cleared.");
+          return 0;
+        }
+        default:
+          throw new Error(`Unknown graph command "${sub}". Try: status, on, off, seeds, seed, unseed, expand, candidates, skip, follow, clear`);
+      }
+    }
+
+    case "plugins": {
+      const [sub = "list", spec] = positional;
+      switch (sub) {
+        case "list": {
+          const entries = listPlugins();
+          if (flags.json) {
+            out(JSON.stringify(entries.map((entry) => ({ ...entry, plugin: entry.plugin && { ...entry.plugin, networks: entry.plugin.networks?.map((n) => n.id) } })), null, 2));
+            return 0;
+          }
+          if (!entries.length) out("No plugins loaded.");
+          for (const entry of entries) {
+            if (!entry.plugin) {
+              out(`${entry.origin}  FAILED: ${entry.error}`);
+              continue;
+            }
+            const plugin = entry.plugin;
+            const parts = [
+              plugin.networks?.length ? `networks: ${plugin.networks.map((network) => network.id).join(", ")}` : "",
+              plugin.commands?.length ? `commands: ${plugin.commands.map((command) => command.name).join(", ")}` : "",
+              plugin.tasks?.length ? `tasks: ${plugin.tasks.length}` : "",
+              plugin.seeds?.length ? `seed sources: ${plugin.seeds.length}` : "",
+            ].filter(Boolean);
+            out(`${plugin.id} ${plugin.version ?? ""}  ${plugin.name}  [${entry.origin}]`);
+            if (plugin.description) out(`  ${plugin.description}`);
+            if (parts.length) out(`  ${parts.join("; ")}`);
+            for (const command of plugin.commands ?? []) for (const usage of command.usage ?? []) out(`    myna ${usage}`);
+          }
+          out(`\nInstall more: myna plugins add <package or path>   (into ${pluginsDir()})`);
+          return 0;
+        }
+        case "add": {
+          if (!spec) throw new Error("Usage: myna plugins add <npm package or path>");
+          const isPath = /^(\.|\/|~|[A-Za-z]:)/.test(spec) || existsSync(spec);
+          let record: string;
+          if (isPath) {
+            if (!resolvePluginEntry(spec)) throw new Error(`${spec} has no entry module (package.json main, index.ts or index.js).`);
+            record = resolve(spec);
+          } else {
+            // A package name. npm and bun both install into a directory of
+            // our choosing; whichever is on this machine will do.
+            const name = spec.replace(/@[^/@]+$/, "");
+            if (!resolvePluginEntry(name)) {
+              const dir = pluginsDir();
+              const tool = spawnSync("npm", ["--version"], { encoding: "utf8" }).status === 0 ? "npm" : "bun";
+              out(`Installing ${spec} with ${tool} into ${dir}...`);
+              mkdirSync(dir, { recursive: true });
+              if (!existsSync(join(dir, "package.json"))) writeFileSync(join(dir, "package.json"), '{ "name": "myna-plugins", "private": true }\n');
+              const args = tool === "npm" ? ["install", "--prefix", dir, "--no-fund", "--no-audit", spec] : ["add", "--cwd", dir, spec];
+              const result = spawnSync(tool, args, { encoding: "utf8", cwd: dir });
+              if (result.status !== 0) throw new Error(`${tool} failed: ${(result.stderr || result.stdout).trim().slice(-400)}`);
+              if (!resolvePluginEntry(name)) throw new Error(`Installed, but ${name} has no entry module (package.json main, or index.js).`);
+            }
+            record = name;
+          }
+          if (!settings.plugins.includes(record)) {
+            settings.plugins.push(record);
+            saveSettings(settings);
+          }
+          out(`Added ${record}. Run \`myna plugins\` to see what it brought.`);
+          return 0;
+        }
+        case "remove": {
+          if (!spec) throw new Error("Usage: myna plugins remove <package, path or id>");
+          const before = settings.plugins.length;
+          const target = listPlugins().find((entry) => entry.plugin?.id === spec)?.origin ?? spec;
+          settings.plugins = settings.plugins.filter((entry) => entry !== spec && entry !== target);
+          if (settings.plugins.length === before) {
+            if (target === "bundled") throw new Error(`${spec} is built into myna and cannot be removed.`);
+            throw new Error(`No plugin "${spec}" is configured. Installed packages under ${pluginsDir()} load on their own; uninstall with npm there.`);
+          }
+          saveSettings(settings);
+          out(`Removed ${spec}.`);
+          return 0;
+        }
+        default:
+          throw new Error(`Unknown plugins command "${sub}". Try: list, add, remove`);
+      }
     }
 
     case "config": {
@@ -824,8 +1123,11 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
     }
 
     case "doctor": {
-      out(`config      ${(await import("@profullstack/myna-core")).configDir()}`);
+      out(`config      ${configDir()}`);
       out(`networks    ${NETWORKS.length}`);
+      const plugins = listPlugins();
+      out(`plugins     ${plugins.filter((entry) => entry.plugin).map((entry) => entry.plugin!.id).join(", ") || "none"}${plugins.some((entry) => entry.error) ? ` (${plugins.filter((entry) => entry.error).length} failed to load; see myna plugins)` : ""}`);
+      out(`graph       ${settings.graph.enabled ? "on" : "off"}, ${graphStatus().seeds} seeds`);
       let accountCount = "locked";
       try {
         accountCount = String(listAccounts().length);
@@ -838,7 +1140,19 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
       return 0;
     }
 
-    default:
-      throw new Error(`Unknown command "${command}". Run: myna help`);
+    default: {
+      const found = findPluginCommand(command);
+      if (!found) throw new Error(`Unknown command "${command}". Run: myna help`);
+      // A plugin command may need the vault (its secrets live there) and a
+      // person to ask; both come through the context rather than imports.
+      await ensureUnlocked();
+      const ctx = pluginContext(found.plugin, {
+        out,
+        ask: (prompt, options) => (options?.secret ? askSecret(prompt) : ask(prompt)),
+        flags,
+      });
+      const code = await found.command.run(positional, ctx);
+      return typeof code === "number" ? code : 0;
+    }
   }
 }

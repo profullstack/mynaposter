@@ -53,6 +53,8 @@ export interface NetworkCapabilities {
   repost?: boolean;
   /** Can look up public posts by keyword, so a reply target can be found. */
   search?: boolean;
+  /** Can follow an account, and list who a given account follows. */
+  follow?: boolean;
 }
 
 export interface Account {
@@ -109,6 +111,27 @@ export interface PostStats {
   views?: number;
 }
 
+/** Somebody on a network, as the follow graph sees them. */
+export interface Profile {
+  /** What a person would type to name them: `alice.bsky.social`, `alice@mastodon.social`, `@alice`, an npub. */
+  handle: string;
+  /** The network's stable id for them (DID, numeric id, hex pubkey). Handles get renamed; this does not. */
+  id?: string;
+  displayName?: string;
+  url?: string;
+  bio?: string;
+  followers?: number;
+  following?: number;
+}
+
+export interface FollowResult {
+  /** True when the account already followed them and nothing was sent. */
+  already?: boolean;
+  /** The network's id for the follow itself, where one exists. */
+  id?: string;
+  url?: string;
+}
+
 /** Passed to `login` so an adapter can talk to the user mid-flow. */
 export interface LoginContext {
   /** Show a line of progress ("waiting for the browser…"). */
@@ -161,6 +184,13 @@ export interface Network {
    * a timeline, and each item's id is what `post` accepts as a reply target.
    */
   search?(account: Account, query: string, limit: number): Promise<TimelineItem[]>;
+  /**
+   * Who `handle` follows. Public on most networks, so this reads other
+   * people's lists and not only the account's own. Returns at most `limit`.
+   */
+  following?(account: Account, handle: string, limit: number): Promise<Profile[]>;
+  /** Follow `handle` from this account. Following twice is not an error. */
+  follow?(account: Account, handle: string): Promise<FollowResult>;
 }
 
 export const NO_CAPS: NetworkCapabilities = {

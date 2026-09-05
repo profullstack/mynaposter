@@ -16,7 +16,7 @@
     "desktop": "cd apps/desktop && bun run start",
     "api": "bun apps/api/src/server.ts",
     "mcp": "bun packages/mcp/src/server.ts",
-    "test": "bun test packages/core/test apps/api/test apps/cli/test",
+    "test": "bun test packages/core/test packages/plugin-outreachgraph/test apps/api/test apps/cli/test",
     "typecheck": "bun x tsc --noEmit -p tsconfig.json",
     "db:up": "docker compose up -d postgres",
     "db:migrate": "bun apps/api/src/db/migrate.ts",

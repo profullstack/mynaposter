@@ -7,7 +7,7 @@
  * grant. Instances with 2FA enabled reject that grant, so pasting an access
  * token stays available as the other path.
  */
-import type { Account, Network, PostInput, PostResult, TimelineItem } from "../types.ts";
+import type { Account, Network, PostInput, PostResult, Profile, TimelineItem } from "../types.ts";
 import { getJson, normalizeInstance, postJson, request } from "../../util/http.ts";
 import { authorize, callbackFrom, PASTE_FIELD, REDIRECT_URI } from "../oauth2.ts";
 
@@ -30,6 +30,10 @@ interface MastodonAccount {
   username: string;
   acct: string;
   display_name: string;
+  url?: string;
+  note?: string;
+  followers_count?: number;
+  following_count?: number;
 }
 
 interface Status {
@@ -95,6 +99,7 @@ function make(id: string, name: string, blurb: string, charLimit: number): Netwo
       notifications: true,
       stats: true,
       repost: true,
+      follow: true,
     },
 
     async login(input, ctx) {
@@ -222,7 +227,85 @@ function make(id: string, name: string, blurb: string, charLimit: number): Netwo
       const boost = await postJson<Status & { reblog?: Status }>(`${base(account)}/api/v1/statuses/${id}/reblog`, {}, { headers: auth(account) });
       return { id: boost.id, url: boost.reblog?.url ?? boost.url };
     },
+
+    async following(account, handle, limit) {
+      const target = fediverseRef(handle, base(account));
+      // The complete list lives on the person's own instance, and nearly every
+      // server serves it without a token. The account's home instance only
+      // knows the subset it has already fetched, so it is the fallback.
+      try {
+        const remote = `https://${target.host}`;
+        const who = await getJson<MastodonAccount>(`${remote}/api/v1/accounts/lookup?acct=${encodeURIComponent(target.user)}`);
+        return await followingOf(remote, who.id, target.host, limit);
+      } catch {
+        const who = await resolveAccount(account, target);
+        return followingOf(base(account), who.id, new URL(base(account)).host, limit, auth(account));
+      }
+    },
+
+    async follow(account, handle) {
+      const target = fediverseRef(handle, base(account));
+      const who = await resolveAccount(account, target);
+      const relationships = await getJson<{ following: boolean; requested: boolean }[]>(
+        `${base(account)}/api/v1/accounts/relationships?id[]=${encodeURIComponent(who.id)}`,
+        { headers: auth(account) },
+      );
+      if (relationships[0]?.following || relationships[0]?.requested) return { already: true, id: who.id, url: who.url };
+      await postJson(`${base(account)}/api/v1/accounts/${who.id}/follow`, {}, { headers: auth(account) });
+      return { id: who.id, url: who.url };
+    },
   };
+}
+
+/** Find an account, local or remote, as the home instance knows it. `resolve` fetches it if it does not yet. */
+async function resolveAccount(account: Account, target: { user: string; host: string }): Promise<MastodonAccount> {
+  const found = await getJson<{ accounts: MastodonAccount[] }>(
+    `${base(account)}/api/v2/search?type=accounts&resolve=true&limit=1&q=${encodeURIComponent(`${target.user}@${target.host}`)}`,
+    { headers: auth(account) },
+  );
+  const who = found.accounts[0];
+  if (!who) throw new Error(`No account found for ${target.user}@${target.host}`);
+  return who;
+}
+
+/** Page through `/accounts/:id/following`, which paginates by a Link header rather than an offset. */
+async function followingOf(instance: string, id: string, host: string, limit: number, headers?: Record<string, string>): Promise<Profile[]> {
+  const out: Profile[] = [];
+  let url: string | undefined = `${instance}/api/v1/accounts/${id}/following?limit=${Math.min(80, limit)}`;
+  while (url && out.length < limit) {
+    const response = await request(url, { headers });
+    const page = (await response.json()) as MastodonAccount[];
+    for (const item of page) {
+      out.push({
+        handle: item.acct.includes("@") ? item.acct : `${item.acct}@${host}`,
+        id: item.url ?? item.id,
+        displayName: item.display_name || undefined,
+        url: item.url,
+        bio: item.note ? plain(item.note) : undefined,
+        followers: item.followers_count,
+        following: item.following_count,
+      });
+    }
+    if (!page.length) break;
+    const next = /<([^>]+)>;\s*rel="next"/.exec(response.headers.get("link") ?? "");
+    url = next?.[1];
+  }
+  return out.slice(0, limit);
+}
+
+/**
+ * Who a person means, from what they paste: `alice@mastodon.social`,
+ * `@alice@mastodon.social`, a profile URL, or a bare `alice` on the account's
+ * own instance.
+ */
+export function fediverseRef(ref: string, instance: string): { user: string; host: string } {
+  const trimmed = ref.trim();
+  const url = /^https?:\/\/([^/]+)\/(?:@|users\/)([^/?#@]+)/i.exec(trimmed);
+  if (url) return { user: url[2], host: url[1].toLowerCase() };
+  const parts = trimmed.replace(/^@/, "").split("@");
+  if (parts.length === 2 && parts[0] && parts[1]) return { user: parts[0], host: parts[1].toLowerCase() };
+  if (parts.length === 1 && parts[0]) return { user: parts[0], host: new URL(instance).host };
+  throw new Error(`Not a Fediverse account: ${ref}`);
 }
 
 /**

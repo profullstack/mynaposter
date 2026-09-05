@@ -5,7 +5,7 @@
  * handle and a real password. Use an App Password from Settings → App
  * Passwords rather than the account password.
  */
-import type { Account, Network, PostInput, PostResult, TimelineItem } from "../types.ts";
+import type { Account, Network, PostInput, PostResult, Profile, TimelineItem } from "../types.ts";
 import { getJson, normalizeInstance, postJson, request } from "../../util/http.ts";
 import { countChars } from "../../util/text.ts";
 import { buildPostRecord } from "./bluesky-facets.ts";
@@ -53,7 +53,7 @@ export const bluesky: Network = {
       { key: "service", label: "PDS", optional: true, default: DEFAULT_SERVICE, help: "Only change this for a self-hosted PDS." },
     ],
   },
-  caps: { charLimit: 300, mediaLimit: 4, threads: true, delete: true, timeline: true, notifications: true, stats: true, repost: true },
+  caps: { charLimit: 300, mediaLimit: 4, threads: true, delete: true, timeline: true, notifications: true, stats: true, repost: true, follow: true },
 
   async login(input) {
     const base = input.service ? normalizeInstance(input.service) : DEFAULT_SERVICE;
@@ -205,7 +205,67 @@ export const bluesky: Network = {
     );
     return { id: `${created.uri}|${created.cid}`, url: `https://bsky.app/profile/${target.actor}/post/${target.rkey}` };
   },
+
+  async following(account, handle, limit) {
+    const base = service(account);
+    const { accessJwt } = await session(account);
+    const actor = blueskyActor(handle);
+    const out: Profile[] = [];
+    let cursor: string | undefined;
+    // getFollows pages at 100; keep going until the limit or the end.
+    while (out.length < limit) {
+      const page = await getJson<{ follows: Record<string, any>[]; cursor?: string }>(
+        `${base}/xrpc/app.bsky.graph.getFollows?actor=${encodeURIComponent(actor)}&limit=${Math.min(100, limit - out.length)}` +
+          (cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""),
+        { headers: auth(accessJwt) },
+      );
+      for (const item of page.follows) {
+        out.push({
+          handle: item.handle,
+          id: item.did,
+          displayName: item.displayName || undefined,
+          bio: item.description || undefined,
+          url: `https://bsky.app/profile/${item.handle}`,
+        });
+      }
+      if (!page.cursor || !page.follows.length) break;
+      cursor = page.cursor;
+    }
+    return out.slice(0, limit);
+  },
+
+  async follow(account, handle) {
+    const base = service(account);
+    const { accessJwt, did } = await session(account);
+    const actor = blueskyActor(handle);
+    // getProfile answers two questions at once: the DID the follow record
+    // needs, and whether this account already follows them.
+    const profile = await getJson<{ did: string; handle: string; viewer?: { following?: string } }>(
+      `${base}/xrpc/app.bsky.actor.getProfile?actor=${encodeURIComponent(actor)}`,
+      { headers: auth(accessJwt) },
+    );
+    if (profile.viewer?.following) {
+      return { already: true, id: profile.viewer.following, url: `https://bsky.app/profile/${profile.handle}` };
+    }
+    const created = await postJson<{ uri: string }>(
+      `${base}/xrpc/com.atproto.repo.createRecord`,
+      {
+        repo: did,
+        collection: "app.bsky.graph.follow",
+        record: { $type: "app.bsky.graph.follow", subject: profile.did, createdAt: new Date().toISOString() },
+      },
+      { headers: auth(accessJwt) },
+    );
+    return { id: created.uri, url: `https://bsky.app/profile/${profile.handle}` };
+  },
 };
+
+/** An actor from what a person pastes: a handle, a DID, or a bsky.app profile URL. */
+export function blueskyActor(ref: string): string {
+  const trimmed = ref.trim().replace(/^@/, "");
+  const match = /^https?:\/\/(?:www\.)?bsky\.app\/profile\/([^/?#]+)/i.exec(trimmed);
+  return match ? match[1] : trimmed;
+}
 
 /**
  * Where a post lives, from what a person pastes: the bsky.app URL, an at://

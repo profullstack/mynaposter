@@ -1,0 +1,33 @@
+{
+  "name": "@profullstack/myna-plugin-outreachgraph",
+  "version": "0.5.0",
+  "description": "myna plugin: pull the people OutreachGraph ranks for you into the follow graph as seeds.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "keywords": [
+    "myna",
+    "myna-plugin",
+    "outreachgraph",
+    "social",
+    "prospecting"
+  ],
+  "homepage": "https://outreachgraph.com",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/profullstack/mynaposter.git",
+    "directory": "packages/plugin-outreachgraph"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "peerDependencies": {
+    "@profullstack/myna-core": ">=0.5.0"
+  },
+  "devDependencies": {
+    "@profullstack/myna-core": "workspace:*"
+  }
+}

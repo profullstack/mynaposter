@@ -5,7 +5,7 @@
  * event pushed to whichever relays you list. Signing is BIP340 Schnorr, which
  * myna implements in util/crypto/schnorr.ts.
  */
-import type { Network, TimelineItem } from "../types.ts";
+import type { Account, Network, Profile, TimelineItem } from "../types.ts";
 import { bech32Decode, bech32Encode } from "../../util/crypto/bech32.ts";
 import { bigIntTo32Bytes, bytesToHex, hexToBytes, publicKey, sha256Bytes, sign } from "../../util/crypto/schnorr.ts";
 
@@ -134,7 +134,7 @@ export const nostr: Network = {
       { key: "name", label: "Display name", optional: true },
     ],
   },
-  caps: { charLimit: 0, mediaLimit: 0, threads: true, delete: true, timeline: true, notifications: false, stats: false },
+  caps: { charLimit: 0, mediaLimit: 0, threads: true, delete: true, timeline: true, notifications: false, stats: false, follow: true },
 
   async login(input) {
     const secret = parseSecretKey(input.nsec);
@@ -188,6 +188,69 @@ export const nostr: Network = {
     }
     return [];
   },
+
+  /** NIP-02: who someone follows is the `p` tags of their latest kind 3 event. */
+  async following(account, handle, limit) {
+    const list = await contactList(account, nostrPubkey(handle));
+    if (!list) return [];
+    return contactsOf(list).slice(0, limit);
+  },
+
+  /**
+   * A follow is a new kind 3 that replaces the old one on every relay, so it
+   * has to start from the current list or it wipes it. Publishing a list
+   * myna could not find would do exactly that on any relay that did have one,
+   * so an account with no list on its relays is refused rather than reset.
+   */
+  async follow(account, handle) {
+    const target = nostrPubkey(handle);
+    const current = await contactList(account, account.meta.pubkey);
+    if (!current) {
+      throw new Error(
+        "No contact list found on your relays. Follow one person from another Nostr client first, so myna has a list to extend rather than replace.",
+      );
+    }
+    const url = `https://njump.me/${bech32Encode("npub", hexToBytes(target))}`;
+    if (current.tags.some((tag) => tag[0] === "p" && tag[1] === target)) return { already: true, id: target, url };
+
+    const event = buildEvent(hexToBytes(account.creds.secret), 3, current.content, [...current.tags, ["p", target]]);
+    const relays = relaysOf(account);
+    const results = await Promise.all(relays.map((relay) => publishTo(relay, event)));
+    if (!results.some((result) => result.ok)) throw new Error("No relay accepted the updated contact list.");
+    return { id: event.id, url };
+  },
 };
 
-export const nostrInternals = { eventId, buildEvent, parseSecretKey, bigIntTo32Bytes };
+/** The newest kind 3 for a pubkey across every relay, since relays disagree about which is current. */
+async function contactList(account: Account, pubkey: string): Promise<NostrEvent | undefined> {
+  const found = await Promise.all(relaysOf(account).map((relay) => queryRelay(relay, { kinds: [3], authors: [pubkey], limit: 1 })));
+  return found
+    .flat()
+    .filter((event) => event.pubkey === pubkey)
+    .sort((a, b) => b.created_at - a.created_at)[0];
+}
+
+function contactsOf(list: NostrEvent): Profile[] {
+  const seen = new Set<string>();
+  const out: Profile[] = [];
+  for (const tag of list.tags) {
+    if (tag[0] !== "p" || !/^[0-9a-f]{64}$/i.test(tag[1] ?? "") || seen.has(tag[1])) continue;
+    seen.add(tag[1]);
+    const npub = bech32Encode("npub", hexToBytes(tag[1]));
+    out.push({ handle: npub, id: tag[1], displayName: tag[3] || undefined, url: `https://njump.me/${npub}` });
+  }
+  return out;
+}
+
+/** A hex pubkey from an npub, 64 hex characters, or an njump / nostr: link carrying one. */
+export function nostrPubkey(ref: string): string {
+  const trimmed = ref.trim().replace(/^nostr:/, "").replace(/^https?:\/\/[^/]+\//, "");
+  if (/^[0-9a-f]{64}$/i.test(trimmed)) return trimmed.toLowerCase();
+  if (trimmed.startsWith("npub")) {
+    const { prefix, bytes } = bech32Decode(trimmed);
+    if (prefix === "npub" && bytes.length === 32) return bytesToHex(bytes);
+  }
+  throw new Error(`Not a Nostr pubkey: ${ref}`);
+}
+
+export const nostrInternals = { eventId, buildEvent, parseSecretKey, bigIntTo32Bytes, contactsOf };

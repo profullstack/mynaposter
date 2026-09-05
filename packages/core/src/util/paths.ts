@@ -24,3 +24,6 @@ export const VAULT_FILE = "vault.json";
 export const QUEUE_FILE = "queue.json";
 export const HISTORY_FILE = "history.json";
 export const SETTINGS_FILE = "settings.json";
+export const GRAPH_FILE = "graph.json";
+/** Where `myna plugins add <package>` installs to. */
+export const PLUGINS_DIR = "plugins";

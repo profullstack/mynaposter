@@ -1,6 +1,36 @@
 /** Misskey, Sharkey, Firefish and Calckey. Token auth; every call is a POST. */
-import type { Network, TimelineItem } from "../types.ts";
+import type { Account, Network, Profile, TimelineItem } from "../types.ts";
 import { normalizeInstance, postJson } from "../../util/http.ts";
+
+interface MisskeyUser {
+  id: string;
+  username: string;
+  name: string | null;
+  host: string | null;
+  description?: string | null;
+  followersCount?: number;
+  followingCount?: number;
+  isFollowing?: boolean;
+  hasPendingFollowRequestFromYou?: boolean;
+}
+
+/** `users/show` takes a username and a host, where a null host means this instance. */
+function misskeyRef(ref: string, instance: string): { username: string; host: string | null } {
+  const trimmed = ref.trim();
+  const url = /^https?:\/\/([^/]+)\/@([^/?#@]+)(?:@([^/?#]+))?/i.exec(trimmed);
+  if (url) return { username: url[2], host: (url[3] ?? url[1]).toLowerCase() === new URL(instance).host ? null : (url[3] ?? url[1]).toLowerCase() };
+  const parts = trimmed.replace(/^@/, "").split("@");
+  if (!parts[0]) throw new Error(`Not a Misskey account: ${ref}`);
+  const host = parts[1]?.toLowerCase();
+  return { username: parts[0], host: host && host !== new URL(instance).host ? host : null };
+}
+
+async function showUser(account: Account, ref: string): Promise<MisskeyUser> {
+  const { username, host } = misskeyRef(ref, account.meta.instance);
+  return postJson<MisskeyUser>(`${account.meta.instance}/api/users/show`, { i: account.creds.token, username, host });
+}
+
+const misskeyHandle = (user: MisskeyUser, instance: string): string => `@${user.username}@${user.host ?? new URL(instance).host}`;
 
 interface Note {
   id: string;
@@ -24,7 +54,7 @@ export const misskey: Network = {
       { key: "token", label: "Access token", secret: true },
     ],
   },
-  caps: { charLimit: 3000, mediaLimit: 16, threads: true, delete: true, timeline: true, notifications: true, stats: true },
+  caps: { charLimit: 3000, mediaLimit: 16, threads: true, delete: true, timeline: true, notifications: true, stats: true, follow: true },
 
   async login(input) {
     const instance = normalizeInstance(input.instance);
@@ -86,5 +116,41 @@ export const misskey: Network = {
       noteId: id,
     });
     return { likes: note.reactionCount, reposts: note.renoteCount, replies: note.repliesCount };
+  },
+
+  async following(account, handle, limit) {
+    const who = await showUser(account, handle);
+    const out: Profile[] = [];
+    let untilId: string | undefined;
+    while (out.length < limit) {
+      const page = await postJson<{ id: string; followee: MisskeyUser }[]>(`${account.meta.instance}/api/users/following`, {
+        i: account.creds.token,
+        userId: who.id,
+        limit: Math.min(100, limit - out.length),
+        ...(untilId ? { untilId } : {}),
+      });
+      for (const item of page) {
+        out.push({
+          handle: misskeyHandle(item.followee, account.meta.instance),
+          id: item.followee.id,
+          displayName: item.followee.name || undefined,
+          bio: item.followee.description || undefined,
+          followers: item.followee.followersCount,
+          following: item.followee.followingCount,
+          url: `${account.meta.instance}/${misskeyHandle(item.followee, account.meta.instance)}`,
+        });
+      }
+      if (!page.length) break;
+      untilId = page[page.length - 1].id;
+    }
+    return out.slice(0, limit);
+  },
+
+  async follow(account, handle) {
+    const who = await showUser(account, handle);
+    const url = `${account.meta.instance}/${misskeyHandle(who, account.meta.instance)}`;
+    if (who.isFollowing || who.hasPendingFollowRequestFromYou) return { already: true, id: who.id, url };
+    await postJson(`${account.meta.instance}/api/following/create`, { i: account.creds.token, userId: who.id });
+    return { id: who.id, url };
   },
 };

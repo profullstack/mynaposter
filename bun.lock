@@ -13,7 +13,7 @@
     },
     "apps/api": {
       "name": "@profullstack/myna-api",
-      "version": "0.1.0",
+      "version": "0.5.0",
       "dependencies": {
         "@profullstack/myna-core": "workspace:*",
         "@profullstack/myna-mcp": "workspace:*",
@@ -23,18 +23,19 @@
     },
     "apps/cli": {
       "name": "@profullstack/myna",
-      "version": "0.1.0",
+      "version": "0.5.0",
       "bin": {
         "myna": "./bin/myna.mjs",
       },
       "dependencies": {
         "@profullstack/hqtui": "^0.1.9",
         "@profullstack/myna-core": "workspace:*",
+        "@profullstack/myna-plugin-outreachgraph": "workspace:*",
       },
     },
     "apps/desktop": {
       "name": "@profullstack/myna-desktop",
-      "version": "0.1.0",
+      "version": "0.5.0",
       "dependencies": {
         "@profullstack/myna-core": "workspace:*",
       },
@@ -45,7 +46,7 @@
     },
     "apps/web": {
       "name": "@profullstack/myna-web",
-      "version": "0.1.0",
+      "version": "0.5.0",
       "dependencies": {
         "@profullstack/hqtui": "^0.1.9",
         "@profullstack/myna-core": "workspace:*",
@@ -53,20 +54,30 @@
     },
     "packages/core": {
       "name": "@profullstack/myna-core",
-      "version": "0.1.0",
+      "version": "0.5.0",
       "dependencies": {
         "@anthropic-ai/sdk": "^0.123.0",
       },
     },
     "packages/mcp": {
       "name": "@profullstack/myna-mcp",
-      "version": "0.1.0",
+      "version": "0.5.0",
       "bin": {
         "myna-mcp": "./src/server.ts",
       },
       "dependencies": {
         "@modelcontextprotocol/sdk": "^1.30.0",
         "@profullstack/myna-core": "workspace:*",
+      },
+    },
+    "packages/plugin-outreachgraph": {
+      "name": "@profullstack/myna-plugin-outreachgraph",
+      "version": "0.5.0",
+      "devDependencies": {
+        "@profullstack/myna-core": "workspace:*",
+      },
+      "peerDependencies": {
+        "@profullstack/myna-core": ">=0.5.0",
       },
     },
   },
@@ -174,6 +185,8 @@
     "@profullstack/myna-desktop": ["@profullstack/myna-desktop@workspace:apps/desktop"],
 
     "@profullstack/myna-mcp": ["@profullstack/myna-mcp@workspace:packages/mcp"],
+
+    "@profullstack/myna-plugin-outreachgraph": ["@profullstack/myna-plugin-outreachgraph@workspace:packages/plugin-outreachgraph"],
 
     "@profullstack/myna-web": ["@profullstack/myna-web@workspace:apps/web"],
 
