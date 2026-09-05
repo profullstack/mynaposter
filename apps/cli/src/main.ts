@@ -8,7 +8,7 @@
 import { VERSION } from "@profullstack/myna-core";
 import { runTui } from "./tui/app.ts";
 import { runHeadless, parseFlags } from "./cli/headless.ts";
-
+import { preparePlugins } from "./plugins.ts";
 
 
 const HELP = `myna ${VERSION} - post to every social network from your terminal
@@ -38,7 +38,28 @@ Posting:
   feed [network]                    Read a home timeline
   search [network] <query>          Find posts to reply to. On YouTube this
                                     lists videos; comment with post --video
-  run                               Run the scheduler in the foreground
+  run                               The daemon: sends due posts, runs the
+                                    follow graph and every plugin's tasks
+
+Following (Bluesky, Mastodon, Misskey, X, Nostr):
+  follow <account> <handle>         Follow someone from one account
+  following <account> [handle]      Who an account follows. Yours by default
+  graph                             The follow graph: seed it with people
+                                    worth learning from, read who they follow,
+                                    follow the ones they agree on
+    graph seed <network> <handle>   Add a seed (--weight N to count it more)
+    graph expand                    Read who the seeds follow
+    graph candidates                Who to follow next, best first
+    graph follow [--limit N]        Follow the next few, within the limits
+    graph on | off                  Let the daemon do all of this
+    graph status | seeds | skip | unseed | clear
+
+Plugins:
+  plugins                           What is loaded, and what each one adds
+  plugins add <package or path>     Install a plugin
+  plugins remove <package or id>    Forget one
+  outreachgraph login | sync        Pull OutreachGraph's ranked people in as
+                                    seeds (bundled plugin)
 
 Writing (optional, needs an API key):
   draft <what to write about>       Draft a post
@@ -73,7 +94,10 @@ Flags:
   --reply-to <id>   YouTube: answer this comment
   --style <kind>    Infographic backend: svg, html or image
   --json            Machine-readable output
-  --dry-run         Show what would be posted without sending
+  --dry-run         Show what would be posted or followed without doing it
+  --limit <n>       How many: following, graph candidates, graph follow
+  --force           graph follow: ignore the hourly and daily limits.
+                    graph expand: re-read seeds read recently
   --no-thread       Truncate instead of splitting into a thread
   --overwrite       On load, replace accounts that already exist here
   --settings        On load, take the bundle's settings too
@@ -88,6 +112,9 @@ Examples:
   myna search youtube "terminal social media manager"
   myna post youtube "myna does this from the terminal" --video dQw4w9WgXcQ
   myna infographic https://example.com/report --style html
+  myna graph seed bluesky jay.bsky.team --weight 2
+  myna graph expand && myna graph candidates
+  myna graph on && myna run          # follow 10/hour from who your seeds follow
   myna save ~/myna.myna              # then scp it to the other machine
   myna load ~/myna.myna
   myna cloud push                    # same bundle, encrypted here, stored there
@@ -101,6 +128,7 @@ async function main(): Promise<void> {
   const first = argv[0];
 
   if (!first) {
+    await preparePlugins();
     await runTui();
     return;
   }
@@ -122,6 +150,7 @@ async function main(): Promise<void> {
   }
   if (first === "tui") {
     const { flags } = parseFlags(argv.slice(1));
+    await preparePlugins();
     await runTui({ theme: flags.theme as string | undefined });
     return;
   }

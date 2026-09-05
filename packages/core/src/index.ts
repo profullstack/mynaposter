@@ -13,10 +13,12 @@ export type {
   PostInput,
   PostResult,
   PostStats,
+  Profile,
+  FollowResult,
   TimelineItem,
 } from "./net/types.ts";
 
-export { NETWORKS, getNetwork, requireNetwork, networksByCategory, authSummary } from "./net/registry.ts";
+export { NETWORKS, getNetwork, requireNetwork, registerNetwork, networksByCategory, authSummary } from "./net/registry.ts";
 export { CALLBACK_PORT, REDIRECT_URI, openBrowser } from "./net/oauth2.ts";
 
 export {
@@ -29,6 +31,8 @@ export {
   unlock,
   needsPassphrase,
   resetAccountCache,
+  getPluginSecrets,
+  setPluginSecrets,
 } from "./store/accounts.ts";
 export { listQueue, enqueue, updateQueued, removeQueued, duePosts, type QueuedPost } from "./store/queue.ts";
 export { listHistory, recordHistory, clearHistory, type HistoryEntry } from "./store/history.ts";
@@ -65,6 +69,42 @@ export * as cloud from "./store/cloud.ts";
 export { postToAll, tailor, charsFor, summarize, type ComposeOptions, type TargetResult } from "./core/poster.ts";
 export { loadMedia, loadAllMedia } from "./core/media.ts";
 export { runDuePosts, startScheduler } from "./core/scheduler.ts";
+export { startDaemon, runDaemonOnce, builtinJobs, type DaemonJob, type DaemonOptions } from "./core/daemon.ts";
+export {
+  addSeeds,
+  removeSeed,
+  expandSeeds,
+  rankCandidates,
+  skipCandidate,
+  followBudget,
+  followNext,
+  followOne,
+  graphStatus,
+  readGraph,
+  clearGraph,
+  graphPath,
+  type SeedInput,
+  type RankedCandidate,
+  type ExpandResult,
+  type GraphStatus,
+  type Seed,
+  type Candidate,
+  type FollowRecord,
+} from "./core/graph.ts";
+export {
+  registerPlugin,
+  loadPlugins,
+  listPlugins,
+  getPlugin,
+  findPluginCommand,
+  pluginTasks,
+  seedProviders,
+  resolvePluginEntry,
+  pluginsDir,
+  resetPlugins,
+} from "./plugins/loader.ts";
+export { pluginContext, type HostOptions } from "./plugins/context.ts";
+export type { MynaPlugin, PluginContext, PluginCommand, DaemonTask, SeedProvider, LoadedPlugin } from "./plugins/types.ts";
 
 export { countChars, splitThread, appendHashtags, toHashtag, extractHashtags, truncateTo } from "./util/text.ts";
 export { configDir, configPath } from "./util/paths.ts";

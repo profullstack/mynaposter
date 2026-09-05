@@ -50,6 +50,21 @@ export const NETWORKS: Network[] = [
 
 const BY_ID = new Map(NETWORKS.map((network) => [network.id, network]));
 
+/**
+ * Add a network at runtime. This is how a plugin ships an adapter: it is
+ * registered before any command runs, and from then on it is indistinguishable
+ * from a built-in. Registering the same id twice replaces the earlier one, so
+ * a plugin can override a built-in adapter on purpose.
+ */
+export function registerNetwork(network: Network): void {
+  const id = network.id.trim().toLowerCase();
+  if (!id) throw new Error("A network needs an id.");
+  const index = NETWORKS.findIndex((entry) => entry.id === id);
+  if (index >= 0) NETWORKS[index] = network;
+  else NETWORKS.push(network);
+  BY_ID.set(id, network);
+}
+
 /** Names people actually type. */
 const ALIASES: Record<string, string> = {
   twitter: "x",

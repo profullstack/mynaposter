@@ -5,13 +5,15 @@
  * OAuth 2.0 flow, which needs an app from the X developer portal with
  * "Native App / Public client" and the loopback redirect registered.
  */
-import type { Account, Network, TimelineItem } from "../types.ts";
+import type { Account, Network, Profile, TimelineItem } from "../types.ts";
 import { getJson, postJson, request } from "../../util/http.ts";
 import { oauth1Header, type OAuth1Credentials } from "../../util/crypto/sign.ts";
 import { authorize, callbackFrom, refresh, PASTE_FIELD, REDIRECT_NOTE, type OAuth2Config } from "../oauth2.ts";
 
 const API = "https://api.x.com";
-const SCOPES = ["tweet.read", "tweet.write", "users.read", "offline.access"];
+// follows.* are what the follow graph needs. An account signed in before they
+// were added has a token without them; `myna login x` again fixes that.
+const SCOPES = ["tweet.read", "tweet.write", "users.read", "follows.read", "follows.write", "offline.access"];
 
 const config = (clientId: string, clientSecret?: string): OAuth2Config => ({
   authorizeUrl: "https://x.com/i/oauth2/authorize",
@@ -93,7 +95,7 @@ export const x: Network = {
       PASTE_FIELD,
     ],
   },
-  caps: { charLimit: 280, mediaLimit: 4, threads: true, delete: true, timeline: true, notifications: false, stats: true, repost: true },
+  caps: { charLimit: 280, mediaLimit: 4, threads: true, delete: true, timeline: true, notifications: false, stats: true, repost: true, follow: true },
 
   async login(input, ctx) {
     // The four OAuth 1.0a values, if given, are enough on their own.
@@ -229,7 +231,74 @@ export const x: Network = {
       views: metrics.impression_count,
     };
   },
+
+  /**
+   * Reading a following list is not on X's free tier: the free plan exposes
+   * only posting and `users/me`, and anything on this endpoint answers 402 or
+   * 403 until the app is on Basic or above. The error is passed through as X
+   * words it, which names the plan.
+   */
+  async following(account, handle, limit) {
+    const user = await xUser(account, handle);
+    const out: Profile[] = [];
+    let token: string | undefined;
+    while (out.length < limit) {
+      const url =
+        `${API}/2/users/${user.id}/following?max_results=${Math.min(1000, Math.max(limit - out.length, 1))}` +
+        `&user.fields=description,public_metrics,username,name${token ? `&pagination_token=${token}` : ""}`;
+      const page = await getJson<{ data?: Record<string, any>[]; meta?: { next_token?: string } }>(url, {
+        headers: await authorizeRequest(account, "GET", url),
+      });
+      for (const item of page.data ?? []) {
+        out.push({
+          handle: `@${item.username}`,
+          id: item.id,
+          displayName: item.name,
+          bio: item.description || undefined,
+          followers: item.public_metrics?.followers_count,
+          following: item.public_metrics?.following_count,
+          url: `https://x.com/${item.username}`,
+        });
+      }
+      token = page.meta?.next_token;
+      if (!token || !page.data?.length) break;
+    }
+    return out.slice(0, limit);
+  },
+
+  async follow(account, handle) {
+    const user = await xUser(account, handle);
+    const url = `${API}/2/users/${account.meta.userId}/following`;
+    // X answers the same way whether the follow is new or already there, so
+    // "already" cannot be told apart without a second call. Not worth one.
+    await postJson<{ data: { following: boolean; pending_follow: boolean } }>(url, { target_user_id: user.id }, {
+      headers: await authorizeRequest(account, "POST", url),
+    });
+    return { id: user.id, url: `https://x.com/${user.username}` };
+  },
 };
+
+async function xUser(account: Account, ref: string): Promise<{ id: string; username: string }> {
+  const username = xUsername(ref);
+  const url = `${API}/2/users/by/username/${encodeURIComponent(username)}`;
+  const found = await getJson<{ data?: { id: string; username: string } }>(url, { headers: await authorizeRequest(account, "GET", url) });
+  if (!found.data) throw new Error(`No X account named @${username}`);
+  return found.data;
+}
+
+/** Top-level paths on x.com that are pages, not people. */
+const X_RESERVED = new Set(["i", "home", "explore", "search", "settings", "messages", "notifications", "intent", "hashtag", "compose", "login", "signup", "share"]);
+
+/** The username behind `@alice`, `alice`, or an x.com / twitter.com profile URL. */
+export function xUsername(ref: string): string {
+  const trimmed = ref.trim();
+  const match = /^https?:\/\/(?:www\.|mobile\.)?(?:x|twitter)\.com\/@?([A-Za-z0-9_]{1,15})(?:[/?#]|$)/i.exec(trimmed);
+  if (match && !X_RESERVED.has(match[1].toLowerCase())) return match[1];
+  if (match) throw new Error(`Not an X account: ${ref}`);
+  const bare = trimmed.replace(/^@/, "");
+  if (!/^[A-Za-z0-9_]{1,15}$/.test(bare)) throw new Error(`Not an X account: ${ref}`);
+  return bare;
+}
 
 /**
  * The tweet id behind what a person pastes: a bare id, or the post URL from

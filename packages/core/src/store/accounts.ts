@@ -4,6 +4,12 @@ import { readVault, writeVault, vaultExists, vaultMode } from "../util/crypto/va
 
 interface VaultPayload {
   accounts: Account[];
+  /**
+   * Secrets a plugin keeps, by plugin id. In the vault rather than in
+   * settings.json so an API key for a data source is protected exactly like
+   * an account password is.
+   */
+  plugins?: Record<string, Record<string, string>>;
 }
 
 let cache: VaultPayload | null = null;
@@ -48,6 +54,19 @@ export function saveAccount(account: Account): void {
   if (index >= 0) payload.accounts[index] = account;
   else payload.accounts.push(account);
   save(payload);
+}
+
+export function getPluginSecrets(pluginId: string): Record<string, string> {
+  return { ...(load().plugins?.[pluginId] ?? {}) };
+}
+
+/** Replace a plugin's secrets. An empty object removes the entry. */
+export function setPluginSecrets(pluginId: string, values: Record<string, string>): void {
+  const payload = load();
+  const plugins = { ...(payload.plugins ?? {}) };
+  if (Object.keys(values).length) plugins[pluginId] = { ...values };
+  else delete plugins[pluginId];
+  save({ ...payload, plugins });
 }
 
 export function removeAccount(id: string): boolean {

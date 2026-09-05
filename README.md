@@ -37,6 +37,12 @@ machine and nothing is sent anywhere except the posts you make.
   compose box for you to edit.
 - **Infographics.** The model picks the copy, myna renders the graphic. Text on
   the image is exactly the text in the copy.
+- **Grow the right audience.** Seed a follow graph with people worth learning
+  from, let myna read who *they* follow, and follow the accounts they agree
+  on, a few an hour, from `myna run`. See [The follow graph](#the-follow-graph).
+- **Plugins.** A plugin can add a network, a command, a daemon task or a source
+  of people to follow. The bundled one pulls seeds from
+  [OutreachGraph](https://outreachgraph.com). See [Plugins](#plugins).
 
 ## Install
 
@@ -176,16 +182,100 @@ myna draft "<topic>"              myna link <url>
 myna infographic <url|topic>      myna run
 myna config [key] [value]         myna doctor
 myna keys                         myna repost <account> <post url>
-myna search [network] <query>
+myna search [network] <query>     myna follow <account> <handle>
+myna following <account> [handle] myna graph <subcommand>
+myna plugins [add|remove]         myna outreachgraph <subcommand>
 ```
 
 Flags: `--to`, `--title`, `--media`, `--style`, `--json`, `--dry-run`,
-`--no-thread`. Any other `--flag value` is handed to the network as an option:
-`--video` and `--reply-to` for YouTube, `--subreddit` for Reddit, `--privacy`
-for an upload.
+`--no-thread`, `--limit`, `--force`. Any other `--flag value` is handed to the
+network as an option: `--video` and `--reply-to` for YouTube, `--subreddit` for
+Reddit, `--privacy` for an upload.
 
 `--json` on any read command gives machine output, so `myna accounts --json | jq`
 works the way you would expect.
+
+## The follow graph
+
+Following someone's *followers* is noise: anyone can follow an account, and
+most who do are bots, fans and the idle. Following who they *follow* is the
+opposite. It is a list a person you already trust curates by hand, and when
+several of those people follow the same account, that account is the one to
+follow first. That is the whole idea:
+
+```
+seeds  ──who they follow──▶  candidates  ──ranked, a few an hour──▶  follows
+```
+
+```bash
+myna graph seed bluesky jay.bsky.team pfrazee.com --weight 2   # people worth learning from
+myna graph seed mastodon Gargron@mastodon.social
+myna graph expand                       # read who each seed follows
+myna graph candidates                   # best first: score, how many seeds, who
+myna graph follow --limit 5 --dry-run   # what would go out
+myna graph follow --limit 5             # send them
+myna graph on && myna run               # or let the daemon do it, 10 an hour
+```
+
+A candidate's score is the summed weight of the seeds who follow them, so a
+person three seeds all follow outranks a person one seed follows, and a seed
+with `--weight 2` counts double. The seeds themselves are candidates too. Your
+own accounts never are, and neither is anyone you have already followed, marked
+with `myna graph skip`, or failed to follow three times.
+
+The daemon follows at most `graph.followsPerHour` (10) and `graph.followsPerDay`
+(80) per account, spread evenly across the hour rather than in a burst, which
+is what gets a new account flagged. Every attempt counts against the ceiling,
+successful or not. `myna graph status` shows the budget each account has left;
+`myna config graph.followsPerHour 5` changes it. `graph.networks` restricts
+the daemon to some networks (`bluesky,mastodon`), and `graph.minSeeds 2` means
+nobody is followed on one seed's word alone.
+
+Two direct commands sit under the graph: `myna following <account> [handle]`
+lists who anyone follows (yours by default), and `myna follow <account> <handle>`
+follows one person now.
+
+Works on Bluesky, Mastodon and its relatives, Misskey, X and Nostr. Two
+caveats. **X reads following lists only on the Basic tier and above**; on a
+free app the request answers 403, and an account signed in before this
+release needs `myna login x` again so its token carries the `follows` scopes.
+**Nostr refuses to follow from an account with no contact list on its
+relays**: a follow is a new kind 3 event that replaces the old one everywhere,
+so myna will only extend a list it can find, never publish one that would wipe
+what another client wrote. Follow one person from any other Nostr client first.
+
+## Plugins
+
+A plugin is an ES module whose default export describes what it adds:
+networks, commands, daemon tasks, and sources of seeds for the follow graph.
+The bundled `outreachgraph` plugin is the reference; read
+[docs/plugins.md](docs/plugins.md) to write one.
+
+```bash
+myna plugins                                 # what is loaded, and what each adds
+myna plugins add @someone/myna-plugin-foo    # from npm, into ~/.config/myna/plugins
+myna plugins add ./my-plugin                 # or a directory on disk
+myna plugins remove foo
+```
+
+Plugin commands run as `myna <command>`; plugin tasks run inside `myna run`;
+a plugin's secrets live in the same encrypted vault as your accounts.
+
+### OutreachGraph: influencers as seeds
+
+[OutreachGraph](https://outreachgraph.com) finds the people who matter for
+what you sell and ranks them by opportunity. The bundled plugin pulls that
+list, keeps the ones with a Bluesky, Mastodon, X, Nostr or Misskey identity,
+and hands them to the graph as seeds, weighted by their score. The graph then
+does the rest: reads who those people follow, and follows the accounts they
+agree on.
+
+```bash
+myna outreachgraph login       # email + password, stored in the vault
+myna outreachgraph people      # the ranked list, with the handles myna can use
+myna outreachgraph sync        # pull them in as seeds now
+myna graph on && myna run      # the daemon re-syncs every six hours
+```
 
 ## The writer
 
@@ -349,8 +439,13 @@ mention. Run `railway config plan` and read the destroy count before applying.
   vault.key       the key, when not using a passphrase (0600)
   queue.json      scheduled posts
   history.json    what was sent
+  graph.json      follow graph: seeds, candidates, and every follow sent
   settings.json   preferences
+  plugins/        plugins installed with `myna plugins add`
 ```
+
+Plugin secrets (an OutreachGraph login, say) are inside `vault.json` beside the
+accounts, not in settings.json.
 
 The vault is encrypted with a local keyfile by default, so myna does not ask for
 a master password on every launch. To use a passphrase instead:
