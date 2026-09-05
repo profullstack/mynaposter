@@ -167,7 +167,7 @@ export function urlsToPromote(event: PostedEvent): string[] {
 const plugin: MynaPlugin = {
   id: "crawlproof",
   name: "CrawlProof ads",
-  version: "0.8.1",
+  version: "0.8.2",
   description: "Run a CrawlProof ad campaign for every blog post myna publishes, or for any URL by hand.",
 
   commands: [

@@ -9,6 +9,7 @@ import plugin, {
   QUEUE_KEY,
   SCHEDULED_POST_EVENT_MS,
   DEFAULT_EVENT_MS,
+  GOOGLE_HOSTED_REDIRECT,
 } from "../src/index.ts";
 import type { Account, PluginContext, ScheduledEvent } from "@profullstack/myna-core";
 
@@ -121,6 +122,9 @@ test("the network is explicit-only and the plugin registers it", () => {
   expect(gcal?.caps.explicitTarget).toBe(true);
   expect(gcal?.auth.kind).toBe("oauth2");
   expect(plugin.commands?.map((command) => command.name)).toEqual(["calendar"]);
+  // Provider first, then the function, then the endpoint.
+  expect(GOOGLE_HOSTED_REDIRECT).toBe("https://mynaposter.com/google/oauth/callback");
+  expect(gcal?.auth.note).toContain(GOOGLE_HOSTED_REDIRECT);
 });
 
 test("afterSchedule is silent without a calendar, when turned off, and for a post that is itself a calendar entry", async () => {
