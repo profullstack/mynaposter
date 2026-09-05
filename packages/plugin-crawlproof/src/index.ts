@@ -10,6 +10,8 @@
  *   myna crawlproof login                 paste a CrawlProof API token (crp_…)
  *   myna crawlproof ad <url> [--name N] [--budget CENTS] [--draft true]
  *   myna crawlproof ads                   campaigns, newest first
+ *   myna crawlproof ads show <ref>        one campaign with its delivery
+ *   myna crawlproof ads pause|resume|budget|delete <ref>
  *   myna crawlproof auto on|off           run an ad for every blog post (on)
  *   myna crawlproof logout
  *
@@ -109,6 +111,30 @@ export async function createAd(secrets: Secrets, url: string, options: AdOptions
   });
 }
 
+export interface CampaignStats {
+  impressions: number;
+  clicks: number;
+  spent_cents: number;
+  free_impressions: number;
+  free_clicks: number;
+  visits: { total: number; days: { day: string; visits: number }[] };
+}
+
+/** One campaign by ref slug or id, with its delivery. */
+export async function showAd(secrets: Secrets, ref: string): Promise<Campaign & { stats?: CampaignStats }> {
+  return call<Campaign & { stats?: CampaignStats }>(secrets, "GET", `/api/ads/v1/campaigns/${encodeURIComponent(ref)}`);
+}
+
+/** Change a campaign in place: status, budget, bid, name. */
+export async function patchAd(secrets: Secrets, ref: string, patch: Record<string, unknown>): Promise<Campaign> {
+  return call<Campaign>(secrets, "PATCH", `/api/ads/v1/campaigns/${encodeURIComponent(ref)}`, patch);
+}
+
+/** Remove a campaign, metering included. Pausing keeps the history. */
+export async function deleteAd(secrets: Secrets, ref: string): Promise<{ ok: boolean; deleted?: string }> {
+  return call<{ ok: boolean; deleted?: string }>(secrets, "DELETE", `/api/ads/v1/campaigns/${encodeURIComponent(ref)}`);
+}
+
 export async function listAds(secrets: Secrets, limit = 20): Promise<Campaign[]> {
   const result = await call<{ campaigns?: Campaign[] }>(secrets, "GET", `/api/ads/v1/campaigns?limit=${limit}`);
   return result.campaigns ?? [];
@@ -141,7 +167,7 @@ export function urlsToPromote(event: PostedEvent): string[] {
 const plugin: MynaPlugin = {
   id: "crawlproof",
   name: "CrawlProof ads",
-  version: "0.6.0",
+  version: "0.7.0",
   description: "Run a CrawlProof ad campaign for every blog post myna publishes, or for any URL by hand.",
 
   commands: [
@@ -152,6 +178,10 @@ const plugin: MynaPlugin = {
         "crawlproof login                       Paste a CrawlProof API token (Social → API tokens)",
         "crawlproof ad <url> [--name N] [--budget CENTS] [--draft true]",
         "crawlproof ads [--limit N]             Campaigns, newest first",
+        "crawlproof ads show <ref>              One campaign with its delivery and attributed visits",
+        "crawlproof ads pause|resume <ref>      Stop or restart it; the history stays",
+        "crawlproof ads budget <ref> <cents>    Daily budget",
+        "crawlproof ads delete <ref> --yes      Remove it, metering included",
         "crawlproof auto on|off                 Run an ad for every blog post myna publishes (on by default)",
         "crawlproof budget <cents>              Daily budget for automatic campaigns",
         "crawlproof status | logout",
@@ -219,6 +249,38 @@ const plugin: MynaPlugin = {
           case "ads": {
             const secrets = secretsOf(ctx);
             if (!secrets) throw new Error("Not connected. Run: myna crawlproof login");
+            const [verb, ref, value] = rest;
+            if (verb === "show" || verb === "pause" || verb === "resume" || verb === "budget" || verb === "delete") {
+              if (!ref) throw new Error(`Usage: myna crawlproof ads ${verb} <ref>${verb === "budget" ? " <cents>" : ""}`);
+              if (verb === "delete") {
+                if (!ctx.flags.yes) throw new Error("delete removes the campaign and its metering; pass --yes. Pause keeps the history.");
+                const gone = await deleteAd(secrets, ref);
+                ctx.out(`deleted ${gone.deleted ?? ref}`);
+                return 0;
+              }
+              if (verb === "budget") {
+                const cents = Number(value);
+                if (!Number.isInteger(cents) || cents < 0) throw new Error("Usage: myna crawlproof ads budget <ref> <cents per day>");
+                ctx.out(describe(await patchAd(secrets, ref, { daily_budget_cents: cents })));
+                return 0;
+              }
+              if (verb === "pause" || verb === "resume") {
+                ctx.out(describe(await patchAd(secrets, ref, { status: verb === "pause" ? "paused" : "active" })));
+                return 0;
+              }
+              const campaign = await showAd(secrets, ref);
+              if (ctx.flags.json) {
+                ctx.out(JSON.stringify(campaign, null, 2));
+                return 0;
+              }
+              ctx.out(`${describe(campaign)}\n  ${campaign.daily_budget_cents ?? "?"}¢/day${campaign.dashboard_url ? `  ${campaign.dashboard_url}` : ""}`);
+              const s = campaign.stats;
+              if (s) {
+                ctx.out(`  impressions ${s.impressions} (+${s.free_impressions} free) · clicks ${s.clicks} (+${s.free_clicks} free) · spent ${s.spent_cents}¢ · visits attributed ${s.visits?.total ?? 0}`);
+                for (const day of (s.visits?.days ?? []).slice(0, 7)) ctx.out(`    ${day.day}  ${day.visits} visit${day.visits === 1 ? "" : "s"}`);
+              }
+              return 0;
+            }
             const limit = typeof ctx.flags.limit === "string" ? Number(ctx.flags.limit) || 20 : 20;
             const campaigns = await listAds(secrets, limit);
             if (ctx.flags.json) {

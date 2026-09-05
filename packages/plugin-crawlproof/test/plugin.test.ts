@@ -107,3 +107,40 @@ test("the command refuses a token that is not a CrawlProof token, and stores a g
   expect(good.ctx.secrets.get().budgetCents).toBe("300");
   await expect(command.run(["auto", "maybe"], good.ctx)).rejects.toThrow(/on\|off/);
 });
+
+test("ads show, pause, budget and delete talk to the campaign route by ref", async () => {
+  const command = plugin.commands![0];
+  const calls: { method: string; url: string; body?: string }[] = [];
+  const fake = (url: string, init?: RequestInit) => {
+    calls.push({ method: init?.method ?? "GET", url: String(url), body: init?.body ? String(init.body) : undefined });
+    if (init?.method === "DELETE") return new Response(JSON.stringify({ ok: true, deleted: "crawlproof-ad-144" }), { status: 200 });
+    return new Response(
+      JSON.stringify({
+        id: "1",
+        ref_slug: "crawlproof-ad-144",
+        name: "Post",
+        status: init?.method === "PATCH" ? "paused" : "active",
+        destination_url: "https://x.y/blog/044-post.html",
+        daily_budget_cents: 500,
+        stats: { impressions: 12, clicks: 3, spent_cents: 30, free_impressions: 100, free_clicks: 2, visits: { total: 5, days: [{ day: "2026-09-05", visits: 5 }] } },
+      }),
+      { status: 200 },
+    );
+  };
+  const { ctx, lines } = context({ token: "crp_x" });
+  await withFetch(fake, () => command.run(["ads", "show", "crawlproof-ad-144"], ctx));
+  expect(calls[0]).toMatchObject({ method: "GET", url: `${DEFAULT_URL}/api/ads/v1/campaigns/crawlproof-ad-144` });
+  expect(lines.join("\n")).toContain("impressions 12 (+100 free) · clicks 3 (+2 free) · spent 30¢ · visits attributed 5");
+
+  await withFetch(fake, () => command.run(["ads", "pause", "crawlproof-ad-144"], ctx));
+  expect(calls[1]).toMatchObject({ method: "PATCH", body: JSON.stringify({ status: "paused" }) });
+  await withFetch(fake, () => command.run(["ads", "budget", "crawlproof-ad-144", "300"], ctx));
+  expect(calls[2]).toMatchObject({ method: "PATCH", body: JSON.stringify({ daily_budget_cents: 300 }) });
+  await expect(command.run(["ads", "budget", "crawlproof-ad-144", "lots"], ctx)).rejects.toThrow(/cents per day/);
+
+  await expect(command.run(["ads", "delete", "crawlproof-ad-144"], ctx)).rejects.toThrow(/--yes/);
+  const yes = context({ token: "crp_x" }, { yes: true });
+  await withFetch(fake, () => command.run(["ads", "delete", "crawlproof-ad-144"], yes.ctx));
+  expect(calls[3]).toMatchObject({ method: "DELETE" });
+  expect(yes.lines).toEqual(["deleted crawlproof-ad-144"]);
+});
