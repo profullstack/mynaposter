@@ -7,8 +7,9 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { registerPlugin, resetPlugins } from "../src/plugins/loader.ts";
-import { postedEvent, runAfterPost } from "../src/plugins/hooks.ts";
-import type { PostedEvent } from "../src/plugins/types.ts";
+import { postedEvent, runAfterPost, runAfterSchedule, runAfterCancel } from "../src/plugins/hooks.ts";
+import type { CancelledEvent, PostedEvent, ScheduledEvent } from "../src/plugins/types.ts";
+import type { QueuedPost } from "../src/store/queue.ts";
 import type { TargetResult } from "../src/core/poster.ts";
 
 let dir = "";
@@ -58,4 +59,35 @@ test("every plugin's hook runs, in order, and a throwing one is reported not fat
     { plugin: "broken", error: "boom" },
     { plugin: "quiet", line: undefined },
   ]);
+});
+
+test("scheduling and cancelling reach plugins too, with the queue entry", async () => {
+  const seen: string[] = [];
+  registerPlugin({
+    id: "cal",
+    name: "Calendar",
+    async afterSchedule(event: ScheduledEvent) {
+      seen.push(`scheduled ${event.id} for ${event.scheduledFor} to ${event.targets.join(",")}`);
+      return "on the calendar";
+    },
+    async afterCancel(event: CancelledEvent) {
+      seen.push(`cancelled ${event.id}`);
+    },
+  });
+  registerPlugin({ id: "broken", name: "Broken", async afterSchedule() { throw new Error("no"); } });
+
+  const post: QueuedPost = {
+    id: "abcd1234",
+    createdAt: "2026-09-05T00:00:00Z",
+    scheduledFor: "2027-04-01T16:00:00.000Z",
+    targets: ["bluesky:me", "x:@me"],
+    text: "April 1: …",
+    status: "pending",
+  };
+  expect(await runAfterSchedule(post)).toEqual([
+    { plugin: "cal", line: "on the calendar" },
+    { plugin: "broken", error: "no" },
+  ]);
+  expect(await runAfterCancel("abcd1234")).toEqual([{ plugin: "cal", line: undefined }]);
+  expect(seen).toEqual(["scheduled abcd1234 for 2027-04-01T16:00:00.000Z to bluesky:me,x:@me", "cancelled abcd1234"]);
 });

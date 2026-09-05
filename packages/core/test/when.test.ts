@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { parseWhen } from "../../../apps/cli/src/tui/when.ts";
+import { parseWhen, parseDuration } from "../src/util/when.ts";
 
 const NOW = new Date("2026-09-02T12:00:00");
 
@@ -57,4 +57,13 @@ test("a bare time still ahead stays today", () => {
 
 test("nonsense is rejected with advice, not a wrong time", () => {
   expect(() => parseWhen("sometime soon", NOW)).toThrow(/Could not read that time/);
+});
+
+test("a duration is minutes, hours or days; anything else is not a duration", () => {
+  expect(parseDuration("45m")).toBe(45 * 60_000);
+  expect(parseDuration("1.5h")).toBe(90 * 60_000);
+  expect(parseDuration("2 hours")).toBe(2 * 3_600_000);
+  expect(parseDuration("1 day")).toBe(86_400_000);
+  expect(parseDuration("soon")).toBeUndefined();
+  expect(parseDuration("30")).toBeUndefined();
 });

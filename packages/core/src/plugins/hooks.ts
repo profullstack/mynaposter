@@ -11,7 +11,8 @@ import { getNetwork } from "../net/registry.ts";
 import type { TargetResult } from "../core/poster.ts";
 import { listPlugins } from "./loader.ts";
 import { pluginContext } from "./context.ts";
-import type { PostedEvent } from "./types.ts";
+import type { QueuedPost } from "../store/queue.ts";
+import type { CancelledEvent, MynaPlugin, PostedEvent, ScheduledEvent } from "./types.ts";
 
 export interface HookOutcome {
   plugin: string;
@@ -36,14 +37,17 @@ export function postedEvent(results: TargetResult[], options: { text: string; ti
   };
 }
 
-/** Run every plugin's `afterPost`, in load order, one at a time. */
-export async function runAfterPost(event: PostedEvent, log?: (line: string) => void): Promise<HookOutcome[]> {
+type Hook = "afterPost" | "afterSchedule" | "afterCancel";
+
+/** Run one hook on every plugin that has it, in load order, one at a time. */
+async function runHook<E>(hook: Hook, event: E, log?: (line: string) => void): Promise<HookOutcome[]> {
   const outcomes: HookOutcome[] = [];
   for (const { plugin } of listPlugins()) {
-    if (!plugin?.afterPost) continue;
+    const fn = plugin?.[hook] as ((event: E, ctx: ReturnType<typeof pluginContext>) => Promise<string | void>) | undefined;
+    if (!plugin || !fn) continue;
     const ctx = pluginContext(plugin, { log: log ? (line) => log(`${plugin.id}  ${line}`) : undefined });
     try {
-      const line = await plugin.afterPost(event, ctx);
+      const line = await fn.call(plugin as MynaPlugin, event, ctx);
       outcomes.push({ plugin: plugin.id, line: line || undefined });
     } catch (error) {
       outcomes.push({ plugin: plugin.id, error: (error as Error).message });
@@ -51,3 +55,25 @@ export async function runAfterPost(event: PostedEvent, log?: (line: string) => v
   }
   return outcomes;
 }
+
+/** Run every plugin's `afterPost`, in load order, one at a time. */
+export const runAfterPost = (event: PostedEvent, log?: (line: string) => void): Promise<HookOutcome[]> =>
+  runHook("afterPost", event, log);
+
+/** Shape a queue entry into what `afterSchedule` sees. */
+export const scheduledEvent = (post: QueuedPost): ScheduledEvent => ({
+  id: post.id,
+  scheduledFor: post.scheduledFor,
+  targets: post.targets,
+  text: post.text,
+  title: post.title,
+  extra: post.extra,
+});
+
+/** Run every plugin's `afterSchedule` for a post that was just queued. */
+export const runAfterSchedule = (post: QueuedPost, log?: (line: string) => void): Promise<HookOutcome[]> =>
+  runHook("afterSchedule", scheduledEvent(post), log);
+
+/** Run every plugin's `afterCancel` for a queue entry that was just removed. */
+export const runAfterCancel = (id: string, log?: (line: string) => void): Promise<HookOutcome[]> =>
+  runHook("afterCancel", { id } satisfies CancelledEvent, log);

@@ -115,6 +115,7 @@ Misskey (and Sharkey, Firefish), Pixelfed, Lemmy, Nostr, tsbb
 **Chat** Telegram, Discord, Slack, Matrix, Mattermost
 **Long-form** dev.to, Hashnode, Ghost, WordPress, Micro.blog, Tumblr
 **Your own blogs** Git blog, HTML blog
+**Your calendar** Google Calendar (an event is a post; see [Calendar](#calendar-what-myna-is-going-to-say-on-the-calendar-you-already-look-at))
 
 `myna networks` prints the current list with each one's login method and limit.
 
@@ -222,6 +223,7 @@ myna keys                         myna repost <account> <post url>
 myna search [network] <query>     myna follow <account> <handle>
 myna following <account> [handle] myna graph <subcommand>
 myna plugins [add|remove]         myna outreachgraph <subcommand>
+myna crawlproof <subcommand>      myna calendar <subcommand>
 ```
 
 Flags: `--to`, `--title`, `--media`, `--style`, `--json`, `--dry-run`,
@@ -285,8 +287,9 @@ what another client wrote. Follow one person from any other Nostr client first.
 
 A plugin is an ES module whose default export describes what it adds:
 networks, commands, daemon tasks, sources of seeds for the follow graph, and
-an `afterPost` hook that hears about every post once it is out. The bundled
-`outreachgraph` and `crawlproof` plugins are the references; read
+hooks: `afterPost` hears about every post once it is out, `afterSchedule` and
+`afterCancel` about every queue entry as it is made and removed. The bundled
+`outreachgraph`, `crawlproof` and `calendar` plugins are the references; read
 [docs/plugins.md](docs/plugins.md) to write one.
 
 ```bash
@@ -333,6 +336,30 @@ myna crawlproof ads show crawlproof-ad-144      # delivery, and the visits it se
 myna crawlproof ads pause crawlproof-ad-144     # or resume, budget <cents>, delete --yes
 myna crawlproof auto off              # stop the automatic ones
 ```
+
+### Calendar: what myna is going to say, on the calendar you already look at
+
+The bundled `calendar` plugin brings Google Calendar in as a network, `gcal`,
+and mirrors the queue onto it. Every post that goes through `myna schedule`
+gets an event at the moment it is due, with the text and the targets in the
+description; `myna cancel` takes the event away again. An event is also just a
+post to `gcal`, which is never part of `all`.
+
+```bash
+myna login gcal                       # a Google Cloud OAuth client with the Calendar API enabled
+myna schedule "2027-04-01 9am" "…"    # queued, and on the calendar
+myna calendar list --days 30          # what is coming up
+myna calendar add "tomorrow 9am" "Standup" --duration 30m --location "Room 1"
+myna post --to gcal --at "friday 3pm" --title "Release review" "Agenda inside"
+myna feed gcal                        # the next events, as a timeline
+myna calendar calendars               # which calendars the account can write to
+myna calendar auto off                # stop mirroring the queue
+```
+
+Google is the first provider; the network is `gcal` so another calendar can be
+another network in the same plugin. While the OAuth client's consent screen is
+in testing, Google expires the sign-in after seven days; publish the consent
+screen and the sign-in is permanent.
 
 ## The writer
 

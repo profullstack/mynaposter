@@ -19,7 +19,19 @@ export type {
 } from "./net/types.ts";
 
 export { NETWORKS, getNetwork, requireNetwork, registerNetwork, networksByCategory, authSummary } from "./net/registry.ts";
-export { CALLBACK_PORT, REDIRECT_URI, openBrowser } from "./net/oauth2.ts";
+export {
+  CALLBACK_PORT,
+  REDIRECT_URI,
+  openBrowser,
+  authorize,
+  refresh,
+  callbackFrom,
+  OAUTH_FIELDS,
+  PASTE_FIELD,
+  REDIRECT_NOTE,
+  type OAuth2Config,
+  type TokenSet,
+} from "./net/oauth2.ts";
 
 export {
   listAccounts,
@@ -67,7 +79,7 @@ export { vaultExists, vaultMode, rekeyVault, VaultLockedError } from "./util/cry
 export * as cloud from "./store/cloud.ts";
 
 export { postToAll, tailor, charsFor, summarize, type ComposeOptions, type TargetResult, type PostOutcome } from "./core/poster.ts";
-export { runAfterPost, postedEvent, type HookOutcome } from "./plugins/hooks.ts";
+export { runAfterPost, runAfterSchedule, runAfterCancel, postedEvent, scheduledEvent, type HookOutcome } from "./plugins/hooks.ts";
 export { renderMarkdown, renderInline, firstParagraph, slugify, escapeHtml } from "./util/markdown.ts";
 export { loadMedia, loadAllMedia } from "./core/media.ts";
 export { runDuePosts, startScheduler } from "./core/scheduler.ts";
@@ -106,11 +118,23 @@ export {
   resetPlugins,
 } from "./plugins/loader.ts";
 export { pluginContext, type HostOptions } from "./plugins/context.ts";
-export type { MynaPlugin, PluginContext, PluginCommand, DaemonTask, SeedProvider, LoadedPlugin, PostedEvent, PostedTarget } from "./plugins/types.ts";
+export type {
+  MynaPlugin,
+  PluginContext,
+  PluginCommand,
+  DaemonTask,
+  SeedProvider,
+  LoadedPlugin,
+  PostedEvent,
+  PostedTarget,
+  ScheduledEvent,
+  CancelledEvent,
+} from "./plugins/types.ts";
 
 export { countChars, splitThread, appendHashtags, toHashtag, extractHashtags, truncateTo } from "./util/text.ts";
 export { configDir, configPath } from "./util/paths.ts";
-export { HttpError } from "./util/http.ts";
+export { HttpError, request, getJson, postJson, postForm } from "./util/http.ts";
+export { parseWhen, describeWhen, parseDuration } from "./util/when.ts";
 
 export { draft, revise, infographicCopy, infographicHtml, writerAvailable, type Draft, type InfographicCopy } from "./ai/writer.ts";
 export { fetchPage, type PageSummary } from "./ai/extract.ts";

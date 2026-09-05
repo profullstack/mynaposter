@@ -1,7 +1,7 @@
 {
-  "name": "@profullstack/myna-plugin-outreachgraph",
+  "name": "@profullstack/myna-plugin-calendar",
   "version": "0.8.0",
-  "description": "myna plugin: pull the people OutreachGraph ranks for you into the follow graph as seeds.",
+  "description": "myna plugin: Google Calendar as a network, and a calendar entry for every scheduled post.",
   "license": "MIT",
   "type": "module",
   "main": "./src/index.ts",
@@ -11,21 +11,21 @@
   "keywords": [
     "myna",
     "myna-plugin",
-    "outreachgraph",
-    "social",
-    "prospecting"
+    "calendar",
+    "google-calendar",
+    "schedule"
   ],
-  "homepage": "https://outreachgraph.com",
+  "homepage": "https://mynaposter.com",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/profullstack/mynaposter.git",
-    "directory": "packages/plugin-outreachgraph"
+    "directory": "packages/plugin-calendar"
   },
   "publishConfig": {
     "access": "public"
   },
   "peerDependencies": {
-    "@profullstack/myna-core": ">=0.5.0"
+    "@profullstack/myna-core": ">=0.8.0"
   },
   "devDependencies": {
     "@profullstack/myna-core": "workspace:*"
