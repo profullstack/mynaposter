@@ -115,6 +115,7 @@ app.get("/", (context) =>
       "GET  /v1/history",
       "POST /v1/write",
       "GET  /v1/timeline/:target",
+      "GET  /v1/search/:target?q=",
       "POST /api/mcp",
       "POST /v1/cloud/signup",
       "POST /v1/cloud/login",
@@ -122,7 +123,7 @@ app.get("/", (context) =>
       "PUT  /v1/cloud/backup",
       "GET  /v1/cloud/backup",
     ],
-    mcp: { endpoint: "/api/mcp", transport: "streamable-http", tools: 10 },
+    mcp: { endpoint: "/api/mcp", transport: "streamable-http", tools: 11 },
   }),
 );
 
@@ -146,6 +147,12 @@ app.get("/v1/history", (context) =>
 
 app.get("/v1/timeline/:target", (context) =>
   guard(() => service.timeline(context.req.param("target"), Number(context.req.query("limit") ?? 20)))(context),
+);
+
+app.get("/v1/search/:target", (context) =>
+  guard(() =>
+    service.search(context.req.param("target"), context.req.query("q") ?? "", Number(context.req.query("limit") ?? 10)),
+  )(context),
 );
 
 app.post("/v1/post", async (context) => {

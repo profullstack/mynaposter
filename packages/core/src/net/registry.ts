@@ -10,6 +10,7 @@ import { telegram, discord, slack, matrix, mattermost } from "./adapters/chat.ts
 import { x } from "./adapters/x.ts";
 import { facebook, instagram, threads } from "./adapters/meta.ts";
 import { linkedin, pinterest, tiktok } from "./adapters/professional.ts";
+import { youtube } from "./adapters/youtube.ts";
 import { devto, hashnode, ghost, wordpress, microblog, tumblr } from "./adapters/blogs.ts";
 import { tsbb } from "./adapters/tsbb.ts";
 
@@ -24,6 +25,7 @@ export const NETWORKS: Network[] = [
   linkedin,
   pinterest,
   tiktok,
+  youtube,
   // Fediverse.
   mastodon,
   misskey,
@@ -59,6 +61,7 @@ const ALIASES: Record<string, string> = {
   ig: "instagram",
   insta: "instagram",
   li: "linkedin",
+  yt: "youtube",
   masto: "mastodon",
   fedi: "mastodon",
   pleroma: "mastodon",

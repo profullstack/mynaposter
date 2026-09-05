@@ -29,6 +29,8 @@ export interface PostRequest {
   to?: string;
   title?: string;
   mediaPaths?: string[];
+  /** Per-network options: `video` for a YouTube comment, `subreddit`, `privacy`. */
+  extra?: Record<string, string>;
   thread?: boolean;
   dryRun?: boolean;
 }
@@ -68,6 +70,7 @@ export async function post(request: PostRequest) {
     media: request.mediaPaths?.length ? loadAllMedia(request.mediaPaths) : undefined,
     thread: request.thread ?? loadSettings().threadByDefault,
     signature: loadSettings().signature || undefined,
+    extra: request.extra,
   });
 
   return {
@@ -93,6 +96,7 @@ export function schedule(request: PostRequest & { at: string }) {
     text: request.text,
     title: request.title,
     mediaPaths: request.mediaPaths,
+    extra: request.extra,
     thread: request.thread ?? loadSettings().threadByDefault,
   });
 }
@@ -115,6 +119,16 @@ export async function graphicCopy(input: string) {
   const check = writerAvailable();
   if (!check.ok) throw new Error(check.reason!);
   return infographicCopy(/^https?:\/\//.test(input) ? { url: input } : { prompt: input });
+}
+
+export async function search(spec: string, query: string, limit = 10) {
+  if (!query.trim()) throw new Error("Give a query: ?q=…");
+  const account = resolveTargets(spec).find((entry) => requireNetwork(entry.network).search);
+  if (!account) throw new Error("None of those accounts can search.");
+  return {
+    account: account.id,
+    items: await requireNetwork(account.network).search!(account, query, limit),
+  };
 }
 
 export async function timeline(spec: string, limit = 20) {

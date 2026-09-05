@@ -427,6 +427,31 @@ export const COMMANDS: Command[] = [
     },
   },
   {
+    name: "search",
+    args: "[network] <query>",
+    help: "Find public posts to reply to, where a network can search",
+    async run(state, args, redraw) {
+      const words = args.trim().split(/\s+/).filter(Boolean);
+      const accounts = words.length > 1 && getNetwork(words[0]) ? resolveTargets(words.shift()!) : selectedAccounts(state);
+      const query = words.join(" ");
+      if (!query) throw new Error("Search for what? Try: /search youtube terminal social media");
+      const account = accounts.find((entry) => requireNetwork(entry.network).search);
+      if (!account) throw new Error("None of those accounts can search. Try: /search youtube <query>");
+
+      state.busy = `Searching ${account.id}…`;
+      state.screen = "feed";
+      redraw();
+      try {
+        state.feed = await requireNetwork(account.network).search!(account, query, 40);
+        state.feedSource = `${account.id} · "${query}"`;
+        state.feedCursor = 0;
+        toast(state, `${state.feed.length} result${state.feed.length === 1 ? "" : "s"} on ${account.id}`, "success");
+      } finally {
+        state.busy = "";
+      }
+    },
+  },
+  {
     name: "notifications",
     args: "[network]",
     help: "Read mentions and replies",
