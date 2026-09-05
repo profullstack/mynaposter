@@ -1,7 +1,7 @@
 {
-  "name": "@profullstack/myna-plugin-outreachgraph",
+  "name": "@profullstack/myna-plugin-crawlproof",
   "version": "0.6.0",
-  "description": "myna plugin: pull the people OutreachGraph ranks for you into the follow graph as seeds.",
+  "description": "myna plugin: run a CrawlProof ad for every blog post myna publishes.",
   "license": "MIT",
   "type": "module",
   "main": "./src/index.ts",
@@ -11,21 +11,21 @@
   "keywords": [
     "myna",
     "myna-plugin",
-    "outreachgraph",
-    "social",
-    "prospecting"
+    "crawlproof",
+    "ads",
+    "blog"
   ],
-  "homepage": "https://outreachgraph.com",
+  "homepage": "https://crawlproof.com",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/profullstack/mynaposter.git",
-    "directory": "packages/plugin-outreachgraph"
+    "directory": "packages/plugin-crawlproof"
   },
   "publishConfig": {
     "access": "public"
   },
   "peerDependencies": {
-    "@profullstack/myna-core": ">=0.5.0"
+    "@profullstack/myna-core": ">=0.6.0"
   },
   "devDependencies": {
     "@profullstack/myna-core": "workspace:*"

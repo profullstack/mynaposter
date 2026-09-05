@@ -80,6 +80,7 @@ part most tools are vague about, so to be plain:
 | **Real username and password** | Bluesky (app password), Lemmy, Matrix, Mattermost, WordPress (application password), Reddit (script app) |
 | **A token you paste** | Telegram, Discord, Slack, Misskey, Nostr, dev.to, Hashnode, Ghost, Micro.blog |
 | **Approving a short code** | tsbb (device flow: the board shows a code, you approve it in a browser) |
+| **Nothing — files on this machine** | Git blog (a repository, committed through GitHub with your token or `gh`), HTML blog (a directory of pages) |
 | **One click in a browser, no setup** | Mastodon, Pleroma, Akkoma, GoToSocial, Pixelfed. myna registers itself on the instance and opens an Authorize page. Nothing to type but the instance, and no developer account anywhere |
 | **App keys** | Tumblr |
 | **Browser sign-in (OAuth)** | X, Facebook, Instagram, Threads, LinkedIn, Pinterest, TikTok, YouTube |
@@ -105,7 +106,7 @@ Two more things worth knowing before you plan a posting workflow:
 
 ## Supported networks
 
-27 in total.
+29 in total.
 
 **Major** X, Facebook, Instagram, Threads, Bluesky, Reddit, LinkedIn, Pinterest,
 TikTok, YouTube
@@ -113,8 +114,44 @@ TikTok, YouTube
 Misskey (and Sharkey, Firefish), Pixelfed, Lemmy, Nostr, tsbb
 **Chat** Telegram, Discord, Slack, Matrix, Mattermost
 **Long-form** dev.to, Hashnode, Ghost, WordPress, Micro.blog, Tumblr
+**Your own blogs** Git blog, HTML blog
 
 `myna networks` prints the current list with each one's login method and limit.
+
+### Your own blogs
+
+Two networks cover nearly every blog that is not a CMS, and both take the
+post as Markdown:
+
+- **Git blog** (`gitblog`) — a repository where a post is one Markdown file
+  with frontmatter (`content/blog/<slug>.md`, the Next.js, Astro and Hugo
+  shape). myna commits the file through the GitHub API, so no checkout is
+  needed and the site's own deploy publishes it. The token is optional:
+  `GH_TOKEN` or `gh auth token` is used when none is stored.
+- **HTML blog** (`htmlblog`) — a directory of plain pages where writing the
+  file is publishing. myna writes the next `NNN-post.html`, lists it in
+  `index.html`, runs the blog's `build-feed.mjs`, and pushes a mirror
+  repository if you name one. When
+  [cli-tools](https://github.com/profullstack/cli-tools)' `blog-post` is on
+  the PATH the page is written by it, byline and analytics tags included.
+
+```bash
+myna login gitblog                 # repo, posts directory, branch, where posts appear
+myna login htmlblog                # directory, public URL, optional mirror checkout
+myna post --to gitblog "Release 1.2
+
+The first paragraph is the description.
+
+## What changed
+..." --title "Release 1.2" --tags "release, cli"
+myna post --to htmlblog --description "One line for the feed" < post.md
+```
+
+Both are **never part of `all`**. A social post fanned out by accident is an
+embarrassment; a blog page fanned out by accident is a publication and a
+commit, so a blog only posts when named in `--to`. Per-post flags: `--slug`,
+`--description`, `--tags`, `--date` (the future is refused), `--draft true`,
+`--author`, and `--overwrite true` for a Git blog.
 
 ### YouTube: search, then comment
 
@@ -247,8 +284,9 @@ what another client wrote. Follow one person from any other Nostr client first.
 ## Plugins
 
 A plugin is an ES module whose default export describes what it adds:
-networks, commands, daemon tasks, and sources of seeds for the follow graph.
-The bundled `outreachgraph` plugin is the reference; read
+networks, commands, daemon tasks, sources of seeds for the follow graph, and
+an `afterPost` hook that hears about every post once it is out. The bundled
+`outreachgraph` and `crawlproof` plugins are the references; read
 [docs/plugins.md](docs/plugins.md) to write one.
 
 ```bash
@@ -275,6 +313,23 @@ myna outreachgraph login       # email + password, stored in the vault
 myna outreachgraph people      # the ranked list, with the handles myna can use
 myna outreachgraph sync        # pull them in as seeds now
 myna graph on && myna run      # the daemon re-syncs every six hours
+```
+
+### CrawlProof: an ad for every blog post
+
+[CrawlProof](https://crawlproof.com) runs an ad network across the sites that
+carry its slots. The bundled plugin turns a blog post into a campaign the
+moment it is published: after `myna post` lands a page on a Git blog or an
+HTML blog, the page's URL goes to CrawlProof, which reads it, writes the
+creatives and starts serving. Social posts do not get a campaign of their
+own; `--ad true` on any post runs one for the first URL in it.
+
+```bash
+myna crawlproof login                 # paste an API token from Social → API tokens
+myna post --to htmlblog < post.md     # …and the new page gets a campaign
+myna crawlproof ad https://example.com/launch --budget 300
+myna crawlproof ads                   # campaigns, newest first
+myna crawlproof auto off              # stop the automatic ones
 ```
 
 ## The writer

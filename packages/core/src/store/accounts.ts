@@ -1,6 +1,7 @@
 /** Accounts live in the encrypted vault; nothing else in myna touches it. */
 import type { Account } from "../net/types.ts";
 import { readVault, writeVault, vaultExists, vaultMode } from "../util/crypto/vault.ts";
+import { getNetwork } from "../net/registry.ts";
 
 interface VaultPayload {
   accounts: Account[];
@@ -85,7 +86,11 @@ export function removeAccount(id: string): boolean {
 export function resolveTargets(spec: string): Account[] {
   const accounts = listAccounts();
   const wanted = spec.split(",").map((part) => part.trim()).filter(Boolean);
-  if (!wanted.length || wanted.includes("all") || wanted.includes("*")) return accounts;
+  // "all" is every account that is safe to fan out to. A blog you host is
+  // not one: a post there is a page and a commit, so it has to be named.
+  if (!wanted.length || wanted.includes("all") || wanted.includes("*")) {
+    return accounts.filter((account) => !getNetwork(account.network)?.caps.explicitTarget);
+  }
 
   const seen = new Set<string>();
   const out: Account[] = [];

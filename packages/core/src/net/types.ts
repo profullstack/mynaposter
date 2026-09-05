@@ -21,7 +21,12 @@ export type AuthKind =
    * better than OAuth2 does — no password crosses the process and no loopback
    * port has to be free.
    */
-  | "device";
+  | "device"
+  /**
+   * Nothing to log in to: the target is a directory or a repository this
+   * machine can already write to. The "login" only records where it is.
+   */
+  | "local";
 
 export interface CredentialField {
   key: string;
@@ -55,6 +60,12 @@ export interface NetworkCapabilities {
   search?: boolean;
   /** Can follow an account, and list who a given account follows. */
   follow?: boolean;
+  /**
+   * Posts only when named in `--to`, never as part of `all`. For targets
+   * where a post is a publication — a page on a blog, a commit to a
+   * repository — that a stray fan-out must not be able to create.
+   */
+  explicitTarget?: boolean;
 }
 
 export interface Account {
