@@ -22,6 +22,9 @@ import {
   availableRasterizers,
   draft,
   enqueue,
+  runAfterSchedule,
+  runAfterCancel,
+  type HookOutcome,
   getNetwork,
   infographicCopy,
   infographicHtml,
@@ -136,6 +139,14 @@ export function extraFrom(flags: Flags): Record<string, string> | undefined {
 }
 
 const out = (line = "") => process.stdout.write(`${line}\n`);
+
+/** One line per plugin that reacted to a post, a schedule or a cancel. */
+function printHooks(hooks: HookOutcome[]): void {
+  for (const hook of hooks) {
+    if (hook.error) out(`FAIL  ${hook.plugin}  ${hook.error}`);
+    else if (hook.line) out(`ok    ${hook.plugin}  ${hook.line}`);
+  }
+}
 
 function table(rows: Record<string, string>[], columns: { key: string; title: string }[]): void {
   if (!rows.length) return;
@@ -331,7 +342,9 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
     case "post": {
       await ensureUnlocked();
       const { accounts, text } = await resolvePostArgs(positional, flags);
-      const extra = extraFrom(flags);
+      // `--at` is myna's own flag for `schedule`; on a post it is handed to the
+      // network, since a calendar entry needs a time.
+      const extra = flags.at ? { ...extraFrom(flags), at: flags.at } : extraFrom(flags);
 
       if (flags.dryRun) {
         out(`Would post to ${accounts.length} account${accounts.length === 1 ? "" : "s"}:`);
@@ -368,10 +381,7 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
           out(result.ok ? `ok    ${result.account.id}  ${result.posts[0]?.url ?? result.posts[0]?.id ?? ""}` : `FAIL  ${result.account.id}  ${result.error}`);
         }
         // What plugins did with the post once it was out: an ad, a note.
-        for (const hook of results.hooks) {
-          if (hook.error) out(`FAIL  ${hook.plugin}  ${hook.error}`);
-          else if (hook.line) out(`ok    ${hook.plugin}  ${hook.line}`);
-        }
+        printHooks(results.hooks);
         out(`\n${summarize(results)}`);
       }
       return results.every((result) => result.ok) ? 0 : 1;
@@ -396,6 +406,8 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
         thread: flags.thread ?? settings.threadByDefault,
       });
       out(`Queued ${entry.id} for ${describeWhen(at)} to ${accounts.length} account${accounts.length === 1 ? "" : "s"}`);
+      // What plugins did with the entry: a calendar event, a reminder.
+      printHooks(await runAfterSchedule(entry));
       return 0;
     }
 
@@ -433,6 +445,7 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
       if (!id) throw new Error("Which one? Run: myna queue");
       if (!removeQueued(id)) throw new Error(`No queued post "${id}"`);
       out(`Cancelled ${id}`);
+      printHooks(await runAfterCancel(id));
       return 0;
     }
 

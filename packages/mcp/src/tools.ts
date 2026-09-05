@@ -17,6 +17,8 @@ import {
   loadSettings,
   postToAll,
   removeQueued,
+  runAfterSchedule,
+  runAfterCancel,
   requireNetwork,
   resolveTargets,
   summarize,
@@ -284,14 +286,17 @@ export async function callTool(name: string, args_: Record<string, unknown> = {}
           title: args.title,
           thread: loadSettings().threadByDefault,
         });
-        return text({ queued: entry.id, at: entry.scheduledFor, targets: entry.targets });
+        const hooks = await runAfterSchedule(entry);
+        return text({ queued: entry.id, at: entry.scheduledFor, targets: entry.targets, ...(hooks.length ? { hooks } : {}) });
       }
 
       case "myna_queue":
         return text(listQueue().filter((post) => post.status === "pending"));
 
       case "myna_cancel":
-        return text(removeQueued(args.id) ? `Cancelled ${args.id}.` : `No queued post with id ${args.id}.`);
+        if (!removeQueued(args.id)) return text(`No queued post with id ${args.id}.`);
+        const hooks = await runAfterCancel(args.id);
+        return text(`Cancelled ${args.id}.${hooks.map((hook) => (hook.error ? ` ${hook.plugin} failed: ${hook.error}` : hook.line ? ` ${hook.plugin}: ${hook.line}` : "")).join("")}`);
 
       case "myna_history":
         return text(listHistory().slice(0, Number(args.limit ?? 25)));

@@ -18,6 +18,8 @@ import {
   listQueue,
   enqueue,
   removeQueued,
+  runAfterSchedule,
+  runAfterCancel,
   listHistory,
   postToAll,
   summarize,
@@ -354,7 +356,7 @@ export const COMMANDS: Command[] = [
     name: "schedule",
     args: "<when> [text]",
     help: "Queue a post: 'in 2h', 'tomorrow 9am', '2026-09-05 14:00'",
-    run(state, args) {
+    async run(state, args) {
       const trimmed = args.trim();
       if (!trimmed) throw new Error("When? Try /schedule tomorrow 9am");
       const { at, rest } = parseWhen(trimmed);
@@ -374,6 +376,11 @@ export const COMMANDS: Command[] = [
       state.media = [];
       state.screen = "queue";
       toast(state, `Queued ${entry.id} for ${describeWhen(at)}`, "success");
+      // A plugin may have put it on a calendar; say so, or say what went wrong.
+      for (const hook of await runAfterSchedule(entry)) {
+        if (hook.error) toast(state, `${hook.plugin}: ${hook.error}`, "error");
+        else if (hook.line) toast(state, `${hook.plugin}: ${hook.line}`, "success");
+      }
     },
   },
   {
@@ -388,11 +395,15 @@ export const COMMANDS: Command[] = [
     name: "cancel",
     args: "<id>",
     help: "Remove a scheduled post",
-    run(state, args) {
+    async run(state, args) {
       const id = args.trim();
       if (!id) throw new Error("Which one? /queue shows the ids.");
       if (!removeQueued(id)) throw new Error(`No queued post with id "${id}".`);
       toast(state, `Cancelled ${id}`, "success");
+      for (const hook of await runAfterCancel(id)) {
+        if (hook.error) toast(state, `${hook.plugin}: ${hook.error}`, "error");
+        else if (hook.line) toast(state, `${hook.plugin}: ${hook.line}`, "success");
+      }
     },
   },
   {

@@ -79,6 +79,24 @@ export interface PostedEvent {
   targets: PostedTarget[];
 }
 
+/** What `afterSchedule` receives: the queue entry as it was written. */
+export interface ScheduledEvent {
+  /** The queue id, what `myna cancel` takes. */
+  id: string;
+  /** ISO timestamp the post is due. */
+  scheduledFor: string;
+  /** Account ids it will go to. */
+  targets: string[];
+  text: string;
+  title?: string;
+  extra?: Record<string, string>;
+}
+
+/** What `afterCancel` receives: only the id, since the entry is already gone. */
+export interface CancelledEvent {
+  id: string;
+}
+
 /** A source of seeds. The daemon calls it on its own schedule and feeds the result to the graph. */
 export interface SeedProvider {
   id: string;
@@ -102,6 +120,15 @@ export interface MynaPlugin {
    * the person, or nothing. Throwing is reported and never undoes the post.
    */
   afterPost?(event: PostedEvent, ctx: PluginContext): Promise<string | void>;
+  /**
+   * Called once a post has been queued for later — from `myna schedule`, the
+   * TUI and the MCP server. For a plugin that keeps a calendar, or wants to
+   * remind someone. Same rules as `afterPost`: a line back, and throwing
+   * never undoes the queue entry.
+   */
+  afterSchedule?(event: ScheduledEvent, ctx: PluginContext): Promise<string | void>;
+  /** Called once a queued post has been cancelled, so whatever `afterSchedule` made can be undone. */
+  afterCancel?(event: CancelledEvent, ctx: PluginContext): Promise<string | void>;
 }
 
 /** What the loader knows about one plugin, including one that failed to load. */

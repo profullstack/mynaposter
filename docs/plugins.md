@@ -132,6 +132,29 @@ never undoes the post; by the time the hook runs, the post is already out.
 The bundled `crawlproof` plugin is the example: it takes every URL a blog
 target published and opens a CrawlProof ad campaign for it.
 
+## After a schedule, and a cancel
+
+`afterSchedule(event, ctx)` is called once a post has been queued for later,
+from `myna schedule`, the TUI's `/schedule` and the MCP server's
+`myna_schedule`. The event is the queue entry: its `id` (what `myna cancel`
+takes), `scheduledFor`, `targets`, `text`, `title` and `extra`.
+`afterCancel({ id }, ctx)` is called once an entry has been removed, so
+whatever `afterSchedule` made can be undone. Both follow `afterPost`'s rules:
+return a line or nothing, and throwing is reported without touching the queue.
+
+The bundled `calendar` plugin is the example: it puts an event on the
+person's Google Calendar for the moment the post is due, tagged with the queue
+id as a private extended property, and deletes it again on cancel.
+
+## Helpers a network can import
+
+A plugin's network usually needs more than types: the OAuth dance, an HTTP
+client, the time parser. Core exports them, and a bundled plugin imports them
+at run time: `authorize`, `refresh`, `callbackFrom`, `PASTE_FIELD`,
+`REDIRECT_NOTE`, `getJson`, `postJson`, `request`, `saveAccount`, `parseWhen`,
+`parseDuration`. Keep `@profullstack/myna-core` a peer dependency so there is
+one copy of the vault and the registry, not two.
+
 ## Secrets
 
 Use `ctx.secrets`, never a file of your own, for anything a person would not
