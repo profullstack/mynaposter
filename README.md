@@ -329,6 +329,8 @@ myna crawlproof login                 # paste an API token from Social → API t
 myna post --to htmlblog < post.md     # …and the new page gets a campaign
 myna crawlproof ad https://example.com/launch --budget 300
 myna crawlproof ads                   # campaigns, newest first
+myna crawlproof ads show crawlproof-ad-144      # delivery, and the visits it sent
+myna crawlproof ads pause crawlproof-ad-144     # or resume, budget <cents>, delete --yes
 myna crawlproof auto off              # stop the automatic ones
 ```
 
