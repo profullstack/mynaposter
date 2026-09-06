@@ -118,7 +118,7 @@ export function parseFlags(argv: string[]): { positional: string[]; flags: Flags
     // Boolean flags take no value. `--now`, `--off` and `--no-open` are as
     // much switches as `--json`; without them here the parser eats the next
     // argument, so `myna post all "hi" --now` died asking for a value.
-    const BOOLS = new Set(["json", "yes", "thread", "dryRun", "noThread", "force", "now", "off", "on", "noOpen"]);
+    const BOOLS = new Set(["json", "yes", "thread", "dryRun", "noThread", "force", "now", "off", "on", "noOpen", "front", "skipQueue"]);
     if (BOOLS.has(name)) {
       flags[name === "noThread" ? "thread" : name] = name !== "noThread";
       continue;
@@ -377,7 +377,7 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
         thread: flags.thread ?? settings.threadByDefault,
         signature: settings.signature || undefined,
         extra: flags.now ? { ...extra, now: "true" } : extra,
-      }, { force: Boolean(flags.now), mediaPaths: flags.media });
+      }, { force: Boolean(flags.now), front: Boolean(flags.front || flags.skipQueue), mediaPaths: flags.media });
       const results = paced.results;
 
       if (flags.json) {
@@ -391,6 +391,7 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
           })),
           queued: paced.queued.map((entry) => ({ id: entry.id, account: entry.targets[0], at: entry.scheduledFor })),
           skipped: paced.skipped.map((entry) => ({ account: entry.account.id, reason: entry.reason })),
+          reflowed: paced.reflowed.map((move) => ({ id: move.id, from: new Date(move.from).toISOString(), to: new Date(move.to).toISOString() })),
           hooks: [...results.hooks, ...paced.scheduleHooks],
         }, null, 2));
       } else {
@@ -402,13 +403,24 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
           out(`queue ${entry.targets[0]}  ${describeWhen(new Date(entry.scheduledFor))}${reason ? `  (${reason})` : ""}  [${entry.id}]`);
         }
         for (const entry of paced.skipped) out(`skip  ${entry.account.id}  ${entry.reason}`);
+        // Being pushed back is not a failure, but it happened to someone
+        // else's post, so it is never silent.
+        for (const move of paced.reflowed) {
+          out(`moved ${move.id}  ${describeWhen(new Date(move.from))} -> ${describeWhen(new Date(move.to))}  (made room for --front)`);
+        }
         // What plugins did with the post once it was out: an ad, a note.
         printHooks([...results.hooks, ...paced.scheduleHooks]);
         const line = [results.length ? summarize(results) : "nothing sent yet"];
         if (paced.queued.length) line.push(`${paced.queued.length} queued for the daemon (myna queue)`);
         if (paced.skipped.length) line.push(`${paced.skipped.length} skipped as a repeat`);
         out(`\n${line.join(" — ")}`);
-        if (paced.queued.length && !flags.now) out(`Pacing: one post per network per ${settings.pacing.minGap}, spread over ${settings.pacing.drip}. Pass --now to send everything at once.`);
+        if (paced.queued.length && !flags.now) {
+          const window = flags.front || flags.skipQueue ? settings.pacing.minGap : settings.pacing.drip;
+          out(`Pacing: one post per network per ${settings.pacing.minGap}, spread over ${window}.`);
+          // --front is the answer to a long queue; --now is the answer to the
+          // gates. Offering only --now is what makes people reach for it.
+          if (!flags.front && !flags.skipQueue) out(`Pass --front to take the next free slot ahead of the queue, or --now to send everything at once.`);
+        }
       }
       return results.every((result) => result.ok) ? 0 : 1;
     }
@@ -430,7 +442,10 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
       out(`gap     ${next.minGap}   least time between two posts on the same network`);
       out(`drip    ${next.drip}  a post to several accounts is spread over this window`);
       out(`repost  ${next.repostGap}   the same text to the same account waits this long`);
-      if (!changed) out("\nChange one: myna pace --gap 4h --drip 48h --repost 7d. Skip the gates once: myna post --now.");
+      if (!changed) {
+        out("\nChange one: myna pace --gap 4h --drip 48h --repost 7d.");
+        out("Jump the queue but keep the gaps: myna post --front. Skip the gates outright: myna post --now.");
+      }
       return 0;
     }
 

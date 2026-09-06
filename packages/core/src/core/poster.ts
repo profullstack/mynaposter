@@ -12,10 +12,10 @@ import { requireNetwork } from "../net/registry.ts";
 import { splitThread, truncateTo, appendHashtags, countChars } from "../util/text.ts";
 import { recordHistory, listHistory } from "../store/history.ts";
 import { postedEvent, runAfterPost, runAfterSchedule, type HookOutcome } from "../plugins/hooks.ts";
-import { enqueue, listQueue, type QueuedPost } from "../store/queue.ts";
+import { enqueue, listQueue, updateQueued, type QueuedPost } from "../store/queue.ts";
 import { getAccount } from "../store/accounts.ts";
 import { loadSettings } from "../store/settings.ts";
-import { pacingRules, planTargets, type Plan } from "./pacing.ts";
+import { pacingRules, planTargets, reflowQueue, type Plan, type Reflow } from "./pacing.ts";
 
 export interface ComposeOptions {
   text: string;
@@ -147,6 +147,11 @@ export async function postToAll(accounts: Account[], options: ComposeOptions): P
 export interface PacedOptions {
   /** Ignore the gates: everything that is not a duplicate goes now. */
   force?: boolean;
+  /**
+   * Jump the queue without opening the gates: the gap is measured from what
+   * has already gone out, and whatever this displaces is pushed back.
+   */
+  front?: boolean;
   /** Spread from this moment instead of now: a scheduled post. Epoch ms. */
   from?: number;
   now?: number;
@@ -163,6 +168,8 @@ export interface PacedOutcome {
   plan: Plan;
   /** What plugins said about the queued ones (a calendar entry, say). */
   scheduleHooks: HookOutcome[];
+  /** Queued entries a --front post pushed back to keep the gap intact. */
+  reflowed: Reflow[];
 }
 
 /**
@@ -174,17 +181,28 @@ export interface PacedOutcome {
 export async function postPaced(accounts: Account[], options: ComposeOptions, paced: PacedOptions = {}): Promise<PacedOutcome> {
   if (!accounts.length) throw new Error("No targets. Run /login <network> first, or check your --to value.");
   const settings = loadSettings();
+  const rules = pacingRules(settings.pacing);
+  const accountNetwork = (id: string) => getAccount(id)?.network;
+  const queueBefore = listQueue();
   const plan = planTargets({
     accounts,
     text: options.text,
     now: paced.now,
     from: paced.from,
     force: paced.force,
+    front: paced.front,
     history: listHistory(),
-    queue: listQueue(),
-    rules: pacingRules(settings.pacing),
-    accountNetwork: (id) => getAccount(id)?.network,
+    queue: queueBefore,
+    rules,
+    accountNetwork,
   });
+
+  // Make room before anything is sent or enqueued, so the entries we jumped
+  // are already out of the way when the new ones take their slots.
+  const reflowed = paced.front
+    ? reflowQueue({ taken: plan.taken, queue: queueBefore, accountNetwork, minGapMs: rules.minGapMs })
+    : [];
+  for (const move of reflowed) updateQueued(move.id, { scheduledFor: new Date(move.to).toISOString() });
 
   const results: PostOutcome = plan.now.length ? await postToAll(plan.now, options) : Object.assign([], { hooks: [] });
 
@@ -204,7 +222,7 @@ export async function postPaced(accounts: Account[], options: ComposeOptions, pa
     scheduleHooks.push(...(await runAfterSchedule(entry)));
   }
 
-  return { results, queued, skipped: plan.skipped, plan, scheduleHooks };
+  return { results, queued, skipped: plan.skipped, plan, scheduleHooks, reflowed };
 }
 
 export function summarize(results: TargetResult[]): string {

@@ -4,7 +4,7 @@
  * and --now only lifts the gates, never the duplicate rule.
  */
 import { test, expect } from "bun:test";
-import { planTargets, pacingRules, nextSlotFor, lastPerNetwork, bookingsPerNetwork, recentDuplicate, DEFAULT_PACING } from "../src/core/pacing.ts";
+import { planTargets, pacingRules, nextSlotFor, lastPerNetwork, bookingsPerNetwork, recentDuplicate, pastBookings, reflowQueue, DEFAULT_PACING } from "../src/core/pacing.ts";
 import type { Account } from "../src/net/types.ts";
 import type { HistoryEntry } from "../src/store/history.ts";
 import type { QueuedPost } from "../src/store/queue.ts";
@@ -145,4 +145,105 @@ test("a scheduled post drips from its own time, not from now", () => {
   const plan = planTargets({ accounts: [bsky, masto, li], text: "tomorrow", now: NOW, history: [], queue: [], rules, accountNetwork, order: stable, from });
   expect(plan.now).toEqual([]);
   expect(plan.later.map((t) => t.at)).toEqual([from, from + 24 * H, from + 48 * H]);
+});
+
+/**
+ * Front of line. The queue reached 30 deep on X and a launch post landed five
+ * days out, which is not pacing, it is a backlog. --front measures the gap
+ * from what has already gone out and pushes back whatever it displaced. It
+ * never opens a gate: that is --now's job, and the two are not the same.
+ */
+
+const queued = (account: Account, at: number, id: string, status: QueuedPost["status"] = "pending"): QueuedPost => ({
+  id,
+  createdAt: "",
+  scheduledFor: new Date(at).toISOString(),
+  targets: [account.id],
+  text: `queued ${id}`,
+  status,
+});
+
+/** The real shape of the problem: 30 X entries, one every 4h. */
+const saturatedX = Array.from({ length: 30 }, (_, i) => queued(x1, NOW + (i + 1) * 4 * H, `q${i}`));
+
+test("--front takes the next legal slot instead of queueing behind 30 entries", () => {
+  const plain = planTargets({ accounts: [x2], text: "launch", now: NOW, history: [], queue: saturatedX, rules, accountNetwork, order: stable });
+  expect(plain.later[0].at).toBe(NOW + 124 * H);
+
+  const front = planTargets({ accounts: [x2], text: "launch", now: NOW, history: [], queue: saturatedX, rules, accountNetwork, order: stable, front: true });
+  expect(front.now).toEqual([x2]);
+  expect(front.later).toEqual([]);
+});
+
+test("--front still waits out the gap of a post that actually went out", () => {
+  const history = [sent(x1, "an hour ago", 1 * H)];
+  const front = planTargets({ accounts: [x2], text: "launch", now: NOW, history, queue: saturatedX, rules, accountNetwork, order: stable, front: true });
+  expect(front.now).toEqual([]);
+  expect(front.later[0].at).toBe(NOW + 3 * H);
+});
+
+test("--front is not --now: the duplicate rule still refuses", () => {
+  const history = [sent(x2, "launch", 2 * H)];
+  const front = planTargets({ accounts: [x2], text: "launch", now: NOW, history, queue: [], rules, accountNetwork, order: stable, front: true });
+  expect(front.now).toEqual([]);
+  expect(front.later).toEqual([]);
+  expect(front.skipped[0].account.id).toBe("x:ProfullstackInc");
+});
+
+test("--front collapses the drip to one gap, and two accounts on a network keep it", () => {
+  const front = planTargets({ accounts: all, text: "launch", now: NOW, history: [], queue: [], rules, accountNetwork, order: stable, front: true });
+  expect(front.now.map((a) => a.id)).toEqual(["x:chovy"]);
+  // Five accounts over a 4h window: slots at 0, 1h, 2h, 3h, 4h by position.
+  // x2 holds position 1 but the network gap pushes it off 1h to 4h, behind
+  // x1. The rest keep their positions.
+  const at = new Map(front.later.map((t) => [t.account.id, t.at]));
+  expect(at.get("bluesky:chovy")).toBe(NOW + 2 * H);
+  expect(at.get("mastodon:chovy")).toBe(NOW + 3 * H);
+  expect(at.get("linkedin:anthony")).toBe(NOW + 4 * H);
+  expect(at.get("x:ProfullstackInc")).toBe(NOW + 4 * H);
+  // Everything inside one gap, against 48h for a normal drip.
+  expect(Math.max(...at.values()) - NOW).toBe(4 * H);
+});
+
+test("reflow pushes back only what the front post displaced, and only far enough", () => {
+  const queue = [queued(x1, NOW + 1 * H, "soon"), queued(x1, NOW + 9 * H, "far"), queued(bsky, NOW + 1 * H, "other")];
+  const moves = reflowQueue({ taken: [{ network: "x", at: NOW }], queue, accountNetwork, minGapMs: 4 * H });
+  expect(moves).toEqual([{ id: "soon", from: NOW + 1 * H, to: NOW + 4 * H }]);
+});
+
+test("reflow cascades, and an entry only ever moves later", () => {
+  const queue = [queued(x1, NOW + 1 * H, "a"), queued(x1, NOW + 5 * H, "b"), queued(x1, NOW + 30 * H, "c")];
+  const moves = reflowQueue({ taken: [{ network: "x", at: NOW }], queue, accountNetwork, minGapMs: 4 * H });
+  expect(moves).toEqual([
+    { id: "a", from: NOW + 1 * H, to: NOW + 4 * H },
+    { id: "b", from: NOW + 5 * H, to: NOW + 8 * H },
+  ]);
+  for (const move of moves) expect(move.to).toBeGreaterThan(move.from);
+});
+
+test("reflow leaves sent and cancelled entries alone", () => {
+  const queue = [queued(x1, NOW + 1 * H, "done", "sent"), queued(x1, NOW + 1 * H, "gone", "cancelled")];
+  expect(reflowQueue({ taken: [{ network: "x", at: NOW }], queue, accountNetwork, minGapMs: 4 * H })).toEqual([]);
+});
+
+test("a front post into a saturated lane lands now and drops nothing", () => {
+  const front = planTargets({ accounts: [x1], text: "launch", now: NOW, history: [], queue: saturatedX, rules, accountNetwork, order: stable, front: true });
+  expect(front.now).toEqual([x1]);
+  const moves = reflowQueue({ taken: front.taken, queue: saturatedX, accountNetwork, minGapMs: 4 * H });
+  expect(moves).toEqual([]);
+  expect(saturatedX).toHaveLength(30);
+});
+
+test("a front post one minute into the gap does displace the head of the queue", () => {
+  const history = [sent(x2, "just now", 1 * 60_000)];
+  const front = planTargets({ accounts: [x1], text: "launch", now: NOW, history, queue: saturatedX, rules, accountNetwork, order: stable, front: true });
+  const ours = front.later[0].at;
+  expect(ours).toBe(NOW + 4 * H - 60_000);
+  const moves = reflowQueue({ taken: front.taken, queue: saturatedX, accountNetwork, minGapMs: 4 * H });
+  expect(moves[0]).toEqual({ id: "q0", from: NOW + 4 * H, to: ours + 4 * H });
+});
+
+test("pastBookings ignores the future, which is the whole trick", () => {
+  const past = pastBookings([sent(x1, "earlier", 3 * H)], saturatedX, accountNetwork, NOW);
+  expect(past.get("x")).toEqual([NOW - 3 * H]);
 });

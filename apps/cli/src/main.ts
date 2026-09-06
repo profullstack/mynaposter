@@ -30,7 +30,8 @@ Posting:
   post [target] [text]              Post. Target is "all", a network, or an
                                     account id. Text can also be piped in.
                                     Paced: one account goes now, the rest are
-                                    queued along the drip. --now sends all
+                                    queued along the drip. --front jumps the
+                                    queue and keeps the gap; --now sends all
   schedule <when> [text]            Queue a post: "in 2h", "tomorrow 9am"
   pace [--gap 4h] [--drip 48h]      The pacing rules: one post per network
        [--repost 7d]                per gap, several accounts spread over
