@@ -1,6 +1,6 @@
 {
   "name": "@profullstack/myna-plugin-calendar",
-  "version": "0.8.3",
+  "version": "0.8.4",
   "description": "myna plugin: Google Calendar as a network, and a calendar entry for every scheduled post.",
   "license": "MIT",
   "type": "module",

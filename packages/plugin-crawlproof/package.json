@@ -1,6 +1,6 @@
 {
   "name": "@profullstack/myna-plugin-crawlproof",
-  "version": "0.8.3",
+  "version": "0.8.4",
   "description": "myna plugin: run a CrawlProof ad for every blog post myna publishes.",
   "license": "MIT",
   "type": "module",

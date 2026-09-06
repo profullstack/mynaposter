@@ -1,6 +1,6 @@
 {
   "name": "@profullstack/myna-plugin-outreachgraph",
-  "version": "0.8.3",
+  "version": "0.8.4",
   "description": "myna plugin: pull the people OutreachGraph ranks for you into the follow graph as seeds.",
   "license": "MIT",
   "type": "module",

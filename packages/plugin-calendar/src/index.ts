@@ -349,7 +349,7 @@ const when = (event: CalendarEvent): string => {
 const plugin: MynaPlugin = {
   id: "calendar",
   name: "Calendar",
-  version: "0.8.3",
+  version: "0.8.4",
   description: "Google Calendar as a network, and a calendar entry for every post myna schedules.",
 
   networks: [gcal],

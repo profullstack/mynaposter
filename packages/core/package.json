@@ -1,6 +1,6 @@
 {
   "name": "@profullstack/myna-core",
-  "version": "0.8.3",
+  "version": "0.8.4",
   "description": "Network adapters, credential vault, scheduling and the AI writer behind myna.",
   "license": "MIT",
   "type": "module",
