@@ -1,0 +1,33 @@
+{
+  "name": "@profullstack/myna-plugin-dashboard",
+  "version": "0.9.0",
+  "description": "myna plugin: a local dashboard for what went out, what is queued, and which network is gated.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "keywords": [
+    "myna",
+    "myna-plugin",
+    "dashboard",
+    "analytics",
+    "pacing"
+  ],
+  "homepage": "https://mynaposter.com",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/profullstack/mynaposter.git",
+    "directory": "packages/plugin-dashboard"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "peerDependencies": {
+    "@profullstack/myna-core": ">=0.9.0"
+  },
+  "devDependencies": {
+    "@profullstack/myna-core": "workspace:*"
+  }
+}

@@ -21,7 +21,7 @@ import {
   runAfterSchedule,
   runAfterCancel,
   listHistory,
-  postToAll,
+  postPaced,
   summarize,
   loadAllMedia,
   draft,
@@ -179,15 +179,19 @@ export const COMMANDS: Command[] = [
       state.busy = `Posting to ${accounts.length} account${accounts.length === 1 ? "" : "s"}…`;
       redraw();
       try {
-        const results = await postToAll(accounts, {
+        const paced = await postPaced(accounts, {
           text,
           title: state.title.value || undefined,
           media: state.media.length ? loadAllMedia(state.media) : undefined,
           thread: settings.threadByDefault,
           signature: settings.signature || undefined,
-        });
+        }, { mediaPaths: state.media });
+        const results = paced.results;
         const failed = results.filter((result) => !result.ok);
-        toast(state, summarize(results), failed.length ? "error" : "success");
+        const note = [results.length ? summarize(results) : "nothing sent yet"];
+        if (paced.queued.length) note.push(`${paced.queued.length} queued`);
+        if (paced.skipped.length) note.push(`${paced.skipped.length} skipped as a repeat`);
+        toast(state, note.join(" — "), failed.length ? "error" : "success");
         if (!failed.length) {
           state.compose.clear();
           state.title.clear();

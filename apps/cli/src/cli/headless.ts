@@ -36,6 +36,10 @@ import {
   needsPassphrase,
   openBrowser,
   postToAll,
+  postPaced,
+  runEvergreen,
+  DEFAULT_EVERGREEN,
+  getAccount,
   removeAccount,
   removeQueued,
   renderInfographic,
@@ -76,7 +80,12 @@ import {
 } from "@profullstack/myna-core";
 import { spawnSync } from "node:child_process";
 import { ask, askSecret, confirm, readStdin } from "./prompt.ts";
-import { parseWhen, describeWhen } from "../tui/when.ts";
+import { parseWhen, describeWhen, parseDuration } from "../tui/when.ts";
+
+/** A duration in ms, or the fallback's, or undefined when neither reads. */
+function parseDurationOr(value: string, fallback: string): number | undefined {
+  return parseDuration(value) ?? (fallback ? parseDuration(fallback) : undefined);
+}
 import { preparePlugins } from "../plugins.ts";
 
 export interface Flags {
@@ -106,7 +115,11 @@ export function parseFlags(argv: string[]): { positional: string[]; flags: Flags
     const [rawName, inlineValue] = arg.slice(2).split("=");
     const name = rawName.replace(/-([a-z])/g, (_, letter: string) => letter.toUpperCase());
 
-    if (name === "json" || name === "yes" || name === "thread" || name === "dryRun" || name === "noThread" || name === "force") {
+    // Boolean flags take no value. `--now`, `--off` and `--no-open` are as
+    // much switches as `--json`; without them here the parser eats the next
+    // argument, so `myna post all "hi" --now` died asking for a value.
+    const BOOLS = new Set(["json", "yes", "thread", "dryRun", "noThread", "force", "now", "off", "on", "noOpen"]);
+    if (BOOLS.has(name)) {
       flags[name === "noThread" ? "thread" : name] = name !== "noThread";
       continue;
     }
@@ -123,6 +136,7 @@ export function parseFlags(argv: string[]): { positional: string[]; flags: Flags
 const OWN_FLAGS = new Set([
   "to", "title", "media", "json", "yes", "style", "at", "thread", "dryRun", "limit", "output",
   "keepSvg", "server", "overwrite", "settings", "once", "interval", "refresh", "theme", "force", "weight", "source", "network",
+  "now", "gap", "drip", "repost", "every", "cooldown", "off", "on", "port", "open", "noOpen",
 ]);
 
 /**
@@ -354,37 +368,107 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
         return 0;
       }
 
-      const results = await postToAll(accounts, {
+      // Paced: the first free account goes now, the rest are queued along
+      // the drip and past each network's gap. --now sends everything at once.
+      const paced = await postPaced(accounts, {
         text,
         title: flags.title,
         media: flags.media?.length ? loadAllMedia(flags.media) : undefined,
         thread: flags.thread ?? settings.threadByDefault,
         signature: settings.signature || undefined,
-        extra,
-      });
+        extra: flags.now ? { ...extra, now: "true" } : extra,
+      }, { force: Boolean(flags.now), mediaPaths: flags.media });
+      const results = paced.results;
 
       if (flags.json) {
-        out(JSON.stringify(
-          results.map((result) => ({
+        out(JSON.stringify({
+          results: results.map((result) => ({
             account: result.account.id,
             ok: result.ok,
             url: result.posts[0]?.url,
             id: result.posts[0]?.id,
             error: result.error,
           })),
-          null,
-          2,
-        ));
-        if (results.hooks.length) out(JSON.stringify(results.hooks, null, 2));
+          queued: paced.queued.map((entry) => ({ id: entry.id, account: entry.targets[0], at: entry.scheduledFor })),
+          skipped: paced.skipped.map((entry) => ({ account: entry.account.id, reason: entry.reason })),
+          hooks: [...results.hooks, ...paced.scheduleHooks],
+        }, null, 2));
       } else {
         for (const result of results) {
           out(result.ok ? `ok    ${result.account.id}  ${result.posts[0]?.url ?? result.posts[0]?.id ?? ""}` : `FAIL  ${result.account.id}  ${result.error}`);
         }
+        for (const entry of paced.queued) {
+          const reason = paced.plan.later.find((t) => t.account.id === entry.targets[0])?.reason;
+          out(`queue ${entry.targets[0]}  ${describeWhen(new Date(entry.scheduledFor))}${reason ? `  (${reason})` : ""}  [${entry.id}]`);
+        }
+        for (const entry of paced.skipped) out(`skip  ${entry.account.id}  ${entry.reason}`);
         // What plugins did with the post once it was out: an ad, a note.
-        printHooks(results.hooks);
-        out(`\n${summarize(results)}`);
+        printHooks([...results.hooks, ...paced.scheduleHooks]);
+        const line = [results.length ? summarize(results) : "nothing sent yet"];
+        if (paced.queued.length) line.push(`${paced.queued.length} queued for the daemon (myna queue)`);
+        if (paced.skipped.length) line.push(`${paced.skipped.length} skipped as a repeat`);
+        out(`\n${line.join(" — ")}`);
+        if (paced.queued.length && !flags.now) out(`Pacing: one post per network per ${settings.pacing.minGap}, spread over ${settings.pacing.drip}. Pass --now to send everything at once.`);
       }
       return results.every((result) => result.ok) ? 0 : 1;
+    }
+
+    case "pace": {
+      // myna pace                     show the pacing rules
+      // myna pace --gap 4h --drip 48h --repost 7d
+      const next = { ...settings.pacing };
+      let changed = false;
+      for (const key of ["gap", "drip", "repost"] as const) {
+        const value = flags[key];
+        if (typeof value !== "string") continue;
+        if (parseDurationOr(value, "") === undefined) throw new Error(`--${key} wants a duration like 4h, 48h or 7d, not "${value}".`);
+        const field = key === "gap" ? "minGap" : key === "repost" ? "repostGap" : "drip";
+        next[field] = value;
+        changed = true;
+      }
+      if (changed) saveSettings({ ...settings, pacing: next });
+      out(`gap     ${next.minGap}   least time between two posts on the same network`);
+      out(`drip    ${next.drip}  a post to several accounts is spread over this window`);
+      out(`repost  ${next.repostGap}   the same text to the same account waits this long`);
+      if (!changed) out("\nChange one: myna pace --gap 4h --drip 48h --repost 7d. Skip the gates once: myna post --now.");
+      return 0;
+    }
+
+    case "evergreen": {
+      // myna evergreen <blog account> [--to all] [--every 7d] [--cooldown 30d] [--ad true|false]
+      // myna evergreen --off
+      // myna evergreen                 status, and one turn now if due
+      await ensureUnlocked();
+      const cfg = { ...settings.evergreen };
+      let changed = false;
+      if (flags.off) { cfg.enabled = false; changed = true; }
+      if (positional[0]) {
+        const account = getAccount(positional[0]);
+        if (!account) throw new Error(`${positional[0]} is not a connected account. Run: myna accounts`);
+        if (!getNetwork(account.network)?.timeline) throw new Error(`${account.network} cannot list its own pages, so there is nothing to re-post.`);
+        cfg.from = account.id;
+        cfg.enabled = true;
+        changed = true;
+      }
+      if (typeof flags.to === "string") { cfg.to = flags.to; changed = true; }
+      if (typeof flags.every === "string") { if (parseDurationOr(flags.every, "") === undefined) throw new Error("--every wants a duration like 7d."); cfg.every = flags.every; changed = true; }
+      if (typeof flags.cooldown === "string") { if (parseDurationOr(flags.cooldown, "") === undefined) throw new Error("--cooldown wants a duration like 30d."); cfg.cooldown = flags.cooldown; changed = true; }
+      if (typeof flags.ad === "string") { cfg.ad = flags.ad !== "false"; changed = true; }
+      if (changed) saveSettings({ ...settings, evergreen: cfg });
+      out(`evergreen  ${cfg.enabled ? "on" : "off"}${cfg.from ? `  from ${cfg.from}` : ""}  every ${cfg.every}  to ${cfg.to}  ad ${cfg.ad ? "on" : "off"}  cooldown ${cfg.cooldown}`);
+      if (!cfg.enabled) {
+        out("Turn it on with: myna evergreen <blog account>   e.g. myna evergreen htmlblog:dev.profullstack.com/~anthony/blog");
+        return 0;
+      }
+      const turn = await runEvergreen({ log: out });
+      if (turn.idle) out(turn.idle);
+      else if (turn.page && turn.outcome) {
+        out(`picked ${turn.page.url}`);
+        for (const entry of turn.outcome.queued) out(`queue ${entry.targets[0]}  ${describeWhen(new Date(entry.scheduledFor))}  [${entry.id}]`);
+        for (const result of turn.outcome.results) out(result.ok ? `ok    ${result.account.id}  ${result.posts[0]?.url ?? ""}` : `FAIL  ${result.account.id}  ${result.error}`);
+      }
+      out("The daemon (myna run) keeps this going; see myna queue.");
+      return 0;
     }
 
     case "schedule": {
@@ -396,18 +480,20 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
       if (!text) throw new Error("Nothing to schedule.");
       const accounts = resolveTargets(flags.to ?? settings.defaultTargets);
 
-      const entry = enqueue({
-        scheduledFor: at.toISOString(),
-        targets: accounts.map((account) => account.id),
+      // Scheduled posts are paced from their own time: the first account at
+      // `at`, the rest dripped after it, each past its network's gap.
+      const paced = await postPaced(accounts, {
         text,
         title: flags.title,
-        mediaPaths: flags.media,
-        extra: extraFrom(flags),
         thread: flags.thread ?? settings.threadByDefault,
-      });
-      out(`Queued ${entry.id} for ${describeWhen(at)} to ${accounts.length} account${accounts.length === 1 ? "" : "s"}`);
-      // What plugins did with the entry: a calendar event, a reminder.
-      printHooks(await runAfterSchedule(entry));
+        extra: flags.now ? { ...extraFrom(flags), now: "true" } : extraFrom(flags),
+      }, { from: Math.max(at.getTime(), Date.now() + 1), force: Boolean(flags.now), mediaPaths: flags.media });
+      for (const entry of paced.queued) {
+        out(`Queued ${entry.id} for ${describeWhen(new Date(entry.scheduledFor))} to ${entry.targets[0]}`);
+      }
+      for (const entry of paced.skipped) out(`skip  ${entry.account.id}  ${entry.reason}`);
+      // What plugins did with the entries: a calendar event, a reminder.
+      printHooks(paced.scheduleHooks);
       return 0;
     }
 

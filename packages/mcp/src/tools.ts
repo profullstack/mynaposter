@@ -16,6 +16,7 @@ import {
   listQueue,
   loadSettings,
   postToAll,
+  postPaced,
   removeQueued,
   runAfterSchedule,
   runAfterCancel,
@@ -256,22 +257,25 @@ export async function callTool(name: string, args_: Record<string, unknown> = {}
           });
         }
 
-        const results = await postToAll(targets, {
+        const paced = await postPaced(targets, {
           text: args.text,
           title: args.title,
           thread: args.thread ?? loadSettings().threadByDefault,
           signature: loadSettings().signature || undefined,
           extra: Object.keys(extra).length ? extra : undefined,
-        });
+        }, { force: Boolean(args.now) });
+        const results = paced.results;
 
         return text({
-          summary: summarize(results),
+          summary: results.length ? summarize(results) : "nothing sent yet",
           results: results.map((result) => ({
             account: result.account.id,
             ok: result.ok,
             url: result.posts[0]?.url,
             error: result.error,
           })),
+          queued: paced.queued.map((entry) => ({ id: entry.id, account: entry.targets[0], at: entry.scheduledFor })),
+          skipped: paced.skipped.map((entry) => ({ account: entry.account.id, reason: entry.reason })),
         });
       }
 
@@ -279,15 +283,17 @@ export async function callTool(name: string, args_: Record<string, unknown> = {}
         const at = new Date(args.at);
         if (Number.isNaN(at.getTime())) throw new Error(`"${args.at}" is not a timestamp myna can read.`);
         const targets = resolveTargets(args.to ?? loadSettings().defaultTargets);
-        const entry = enqueue({
-          scheduledFor: at.toISOString(),
-          targets: targets.map((account) => account.id),
+        const paced = await postPaced(targets, {
           text: args.text,
           title: args.title,
           thread: loadSettings().threadByDefault,
+        }, { from: Math.max(at.getTime(), Date.now() + 1) });
+        const hooks = paced.scheduleHooks;
+        return text({
+          queued: paced.queued.map((entry) => ({ id: entry.id, at: entry.scheduledFor, account: entry.targets[0] })),
+          skipped: paced.skipped.map((entry) => ({ account: entry.account.id, reason: entry.reason })),
+          ...(hooks.length ? { hooks } : {}),
         });
-        const hooks = await runAfterSchedule(entry);
-        return text({ queued: entry.id, at: entry.scheduledFor, targets: entry.targets, ...(hooks.length ? { hooks } : {}) });
       }
 
       case "myna_queue":

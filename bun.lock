@@ -13,7 +13,7 @@
     },
     "apps/api": {
       "name": "@profullstack/myna-api",
-      "version": "0.8.0",
+      "version": "0.9.0",
       "dependencies": {
         "@profullstack/myna-core": "workspace:*",
         "@profullstack/myna-mcp": "workspace:*",
@@ -23,7 +23,7 @@
     },
     "apps/cli": {
       "name": "@profullstack/myna",
-      "version": "0.8.0",
+      "version": "0.9.0",
       "bin": {
         "myna": "./bin/myna.mjs",
       },
@@ -32,12 +32,13 @@
         "@profullstack/myna-core": "workspace:*",
         "@profullstack/myna-plugin-calendar": "workspace:*",
         "@profullstack/myna-plugin-crawlproof": "workspace:*",
+        "@profullstack/myna-plugin-dashboard": "workspace:*",
         "@profullstack/myna-plugin-outreachgraph": "workspace:*",
       },
     },
     "apps/desktop": {
       "name": "@profullstack/myna-desktop",
-      "version": "0.8.0",
+      "version": "0.8.4",
       "dependencies": {
         "@profullstack/myna-core": "workspace:*",
       },
@@ -48,7 +49,7 @@
     },
     "apps/web": {
       "name": "@profullstack/myna-web",
-      "version": "0.8.0",
+      "version": "0.8.4",
       "dependencies": {
         "@profullstack/hqtui": "^0.1.9",
         "@profullstack/myna-core": "workspace:*",
@@ -56,14 +57,14 @@
     },
     "packages/core": {
       "name": "@profullstack/myna-core",
-      "version": "0.8.0",
+      "version": "0.9.0",
       "dependencies": {
         "@anthropic-ai/sdk": "^0.123.0",
       },
     },
     "packages/mcp": {
       "name": "@profullstack/myna-mcp",
-      "version": "0.8.0",
+      "version": "0.9.0",
       "bin": {
         "myna-mcp": "./src/server.ts",
       },
@@ -74,7 +75,7 @@
     },
     "packages/plugin-calendar": {
       "name": "@profullstack/myna-plugin-calendar",
-      "version": "0.8.0",
+      "version": "0.8.4",
       "devDependencies": {
         "@profullstack/myna-core": "workspace:*",
       },
@@ -84,7 +85,7 @@
     },
     "packages/plugin-crawlproof": {
       "name": "@profullstack/myna-plugin-crawlproof",
-      "version": "0.8.0",
+      "version": "0.8.4",
       "devDependencies": {
         "@profullstack/myna-core": "workspace:*",
       },
@@ -92,9 +93,19 @@
         "@profullstack/myna-core": ">=0.6.0",
       },
     },
+    "packages/plugin-dashboard": {
+      "name": "@profullstack/myna-plugin-dashboard",
+      "version": "0.9.0",
+      "devDependencies": {
+        "@profullstack/myna-core": "workspace:*",
+      },
+      "peerDependencies": {
+        "@profullstack/myna-core": ">=0.9.0",
+      },
+    },
     "packages/plugin-outreachgraph": {
       "name": "@profullstack/myna-plugin-outreachgraph",
-      "version": "0.8.0",
+      "version": "0.8.4",
       "devDependencies": {
         "@profullstack/myna-core": "workspace:*",
       },
@@ -211,6 +222,8 @@
     "@profullstack/myna-plugin-calendar": ["@profullstack/myna-plugin-calendar@workspace:packages/plugin-calendar"],
 
     "@profullstack/myna-plugin-crawlproof": ["@profullstack/myna-plugin-crawlproof@workspace:packages/plugin-crawlproof"],
+
+    "@profullstack/myna-plugin-dashboard": ["@profullstack/myna-plugin-dashboard@workspace:packages/plugin-dashboard"],
 
     "@profullstack/myna-plugin-outreachgraph": ["@profullstack/myna-plugin-outreachgraph@workspace:packages/plugin-outreachgraph"],
 
