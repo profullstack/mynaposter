@@ -1,6 +1,6 @@
 {
   "name": "@profullstack/myna-api",
-  "version": "0.9.0",
+  "version": "0.10.2",
   "private": true,
   "type": "module",
   "scripts": {

@@ -23,7 +23,7 @@
     },
     "apps/cli": {
       "name": "@profullstack/myna",
-      "version": "0.9.0",
+      "version": "0.10.1",
       "bin": {
         "myna": "./bin/myna.mjs",
       },
@@ -57,14 +57,14 @@
     },
     "packages/core": {
       "name": "@profullstack/myna-core",
-      "version": "0.9.0",
+      "version": "0.10.1",
       "dependencies": {
         "@anthropic-ai/sdk": "^0.123.0",
       },
     },
     "packages/mcp": {
       "name": "@profullstack/myna-mcp",
-      "version": "0.9.0",
+      "version": "0.10.1",
       "bin": {
         "myna-mcp": "./src/server.ts",
       },
