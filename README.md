@@ -113,7 +113,7 @@ TikTok, YouTube
 **Fediverse and self-hosted** Mastodon (and Pleroma, Akkoma, GoToSocial),
 Misskey (and Sharkey, Firefish), Pixelfed, Lemmy, Nostr, tsbb
 **Chat** Telegram, Discord, Slack, Matrix, Mattermost
-**Long-form** dev.to, Hashnode, Ghost, WordPress, Micro.blog, Tumblr
+**Long-form** dev.to, Hashnode, Ghost, WordPress, Micro.blog, Tumblr (named in `--to`, never part of `all`)
 **Your own blogs** Git blog, HTML blog
 **Your calendar** Google Calendar (an event is a post; see [Calendar](#calendar-what-myna-is-going-to-say-on-the-calendar-you-already-look-at))
 
@@ -148,9 +148,12 @@ The first paragraph is the description.
 myna post --to htmlblog --description "One line for the feed" < post.md
 ```
 
-Both are **never part of `all`**. A social post fanned out by accident is an
-embarrassment; a blog page fanned out by accident is a publication and a
-commit, so a blog only posts when named in `--to`. Per-post flags: `--slug`,
+Both are **never part of `all`**, and neither is any long-form network (dev.to,
+Hashnode, Ghost, WordPress, Micro.blog, Tumblr). A social post fanned out by
+accident is an embarrassment; an article fanned out by accident is a
+publication (and on your own blog, a commit), so those only post when named in
+`--to`. One post can name several: `--to htmlblog,devto` writes the page and
+the article from the same Markdown. Per-post flags: `--slug`,
 `--description`, `--tags`, `--date` (the future is refused), `--draft true`,
 `--author`, and `--overwrite true` for a Git blog.
 

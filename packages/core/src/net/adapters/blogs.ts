@@ -21,7 +21,7 @@ export const devto: Network = {
     note: "dev.to → Settings → Extensions → DEV Community API Keys → Generate API Key.",
     fields: [{ key: "apiKey", label: "API key", secret: true }],
   },
-  caps: { charLimit: 0, mediaLimit: 0, threads: false, delete: false, timeline: true, notifications: false, stats: true, needsTitle: true },
+  caps: { charLimit: 0, mediaLimit: 0, threads: false, delete: false, timeline: true, notifications: false, stats: true, needsTitle: true, explicitTarget: true },
 
   async login(input) {
     const me = await getJson<{ username: string; name: string }>("https://dev.to/api/users/me", {
@@ -84,7 +84,7 @@ export const hashnode: Network = {
       { key: "publicationId", label: "Publication id" },
     ],
   },
-  caps: { charLimit: 0, mediaLimit: 0, threads: false, delete: false, timeline: false, notifications: false, stats: false, needsTitle: true },
+  caps: { charLimit: 0, mediaLimit: 0, threads: false, delete: false, timeline: false, notifications: false, stats: false, needsTitle: true, explicitTarget: true },
 
   async login(input) {
     const me = await postJson<{ data: { me: { username: string; name: string } } }>(
@@ -143,7 +143,7 @@ export const ghost: Network = {
       { key: "adminApiKey", label: "Admin API key", secret: true, placeholder: "6421…:9f8e…" },
     ],
   },
-  caps: { charLimit: 0, mediaLimit: 0, threads: false, delete: true, timeline: true, notifications: false, stats: false, needsTitle: true },
+  caps: { charLimit: 0, mediaLimit: 0, threads: false, delete: true, timeline: true, notifications: false, stats: false, needsTitle: true, explicitTarget: true },
 
   async login(input) {
     const url = normalizeInstance(input.url);
@@ -214,7 +214,7 @@ export const wordpress: Network = {
       { key: "password", label: "Application password", secret: true, placeholder: "xxxx xxxx xxxx xxxx" },
     ],
   },
-  caps: { charLimit: 0, mediaLimit: 0, threads: false, delete: true, timeline: true, notifications: false, stats: false, needsTitle: true },
+  caps: { charLimit: 0, mediaLimit: 0, threads: false, delete: true, timeline: true, notifications: false, stats: false, needsTitle: true, explicitTarget: true },
 
   async login(input) {
     const url = normalizeInstance(input.url);
@@ -278,7 +278,7 @@ export const microblog: Network = {
       { key: "endpoint", label: "Micropub endpoint", optional: true, default: "https://micro.blog/micropub" },
     ],
   },
-  caps: { charLimit: 0, mediaLimit: 0, threads: false, delete: false, timeline: false, notifications: false, stats: false },
+  caps: { charLimit: 0, mediaLimit: 0, threads: false, delete: false, timeline: false, notifications: false, stats: false, explicitTarget: true },
 
   async login(input) {
     const endpoint = input.endpoint || "https://micro.blog/micropub";
@@ -324,7 +324,7 @@ export const tumblr: Network = {
       { key: "blog", label: "Blog identifier", placeholder: "myblog.tumblr.com" },
     ],
   },
-  caps: { charLimit: 0, mediaLimit: 0, threads: false, delete: true, timeline: false, notifications: false, stats: false },
+  caps: { charLimit: 0, mediaLimit: 0, threads: false, delete: true, timeline: false, notifications: false, stats: false, explicitTarget: true },
 
   async login(input) {
     const creds = {

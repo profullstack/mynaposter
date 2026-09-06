@@ -5,9 +5,26 @@
  * to a personal profile at all: you need a Page, and for Instagram a Business
  * or Creator account linked to one. That is a Meta rule, not a myna limitation.
  */
-import type { Account, Network, TimelineItem } from "../types.ts";
+import type { Account, LoginContext, Network, TimelineItem } from "../types.ts";
 import { getJson, postJson, request } from "../../util/http.ts";
 import { authorize, callbackFrom, PASTE_FIELD, REDIRECT_NOTE, type OAuth2Config } from "../oauth2.ts";
+
+/**
+ * Where Meta sends the code when the browser is not on this machine. Meta
+ * checks the redirect against the app's list exactly, so each provider gets
+ * its own path there: the site's /api namespace, the API version, then
+ * provider, function, endpoint.
+ */
+export const HOSTED_REDIRECT = {
+  facebook: "https://mynaposter.com/api/v1/facebook/oauth/callback",
+  instagram: "https://mynaposter.com/api/v1/instagram/oauth/callback",
+} as const;
+
+/** The callback half of the config, with the provider's own hosted page in paste mode. */
+function callbackFor(provider: keyof typeof HOSTED_REDIRECT, input: Record<string, string>, ctx: LoginContext): Partial<OAuth2Config> {
+  const callback = callbackFrom(input, ctx);
+  return callback.mode === "paste" ? { ...callback, redirectUri: HOSTED_REDIRECT[provider] } : callback;
+}
 
 const GRAPH = "https://graph.facebook.com/v21.0";
 const THREADS = "https://graph.threads.net/v1.0";
@@ -63,7 +80,7 @@ export const facebook: Network = {
         "pages_read_engagement",
         "pages_show_list",
         "public_profile",
-      ]), ...callbackFrom(input, ctx) },
+      ]), ...callbackFor("facebook", input, ctx) },
       ctx,
     );
     const userToken = await longLived(input.clientId, input.clientSecret, tokens.access_token);
@@ -160,7 +177,7 @@ export const instagram: Network = {
         "instagram_content_publish",
         "pages_show_list",
         "pages_read_engagement",
-      ]), ...callbackFrom(input, ctx) },
+      ]), ...callbackFor("instagram", input, ctx) },
       ctx,
     );
     const userToken = await longLived(input.clientId, input.clientSecret, tokens.access_token);
