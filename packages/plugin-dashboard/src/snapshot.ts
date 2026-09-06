@@ -15,6 +15,7 @@ import {
   postsPerDay,
   topPosts,
   totals,
+  bookingsPerNetwork,
   lastPerNetwork,
   nextSlotFor,
   pacingRules,
@@ -157,7 +158,8 @@ export function buildSnapshot(input: SnapshotInput): Snapshot {
 
   const networkOf = new Map(accounts.map((account) => [account.id, account.network]));
   const rules = pacingRules(settings.pacing);
-  const last = lastPerNetwork(history, queue, (id) => networkOf.get(id));
+  const booked = bookingsPerNetwork(history, queue, (id) => networkOf.get(id));
+  const last = lastPerNetwork(history, queue, (id) => networkOf.get(id), now);
   const breakdown = new Map(byNetwork(history, engagement).map((row: NetworkBreakdown) => [row.network, row]));
 
   // Every network with an account, plus any the history remembers, so a
@@ -166,7 +168,7 @@ export function buildSnapshot(input: SnapshotInput): Snapshot {
   const networks: NetworkState[] = [...present]
     .map((network) => {
       const row = breakdown.get(network);
-      const freeAt = nextSlotFor(network, last, now, rules.minGapMs);
+      const freeAt = nextSlotFor(network, booked, now, rules.minGapMs);
       return {
         network,
         slot: slotFor(network),

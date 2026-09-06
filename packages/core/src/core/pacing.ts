@@ -59,27 +59,64 @@ export function textKey(text: string): string {
  * (what actually went out, failures included, since a failed attempt still
  * counted against the network's rate) and the queue (what is promised).
  */
-export function lastPerNetwork(history: HistoryEntry[], queue: QueuedPost[], accountNetwork: (id: string) => string | undefined): Map<string, number> {
-  const last = new Map<string, number>();
+export function bookingsPerNetwork(
+  history: HistoryEntry[],
+  queue: QueuedPost[],
+  accountNetwork: (id: string) => string | undefined,
+): Map<string, number[]> {
+  const times = new Map<string, number[]>();
   const note = (network: string | undefined, iso: string) => {
     if (!network) return;
     const at = new Date(iso).getTime();
     if (Number.isNaN(at)) return;
-    if ((last.get(network) ?? -Infinity) < at) last.set(network, at);
+    const list = times.get(network);
+    if (list) list.push(at);
+    else times.set(network, [at]);
   };
+  // A failed attempt still counted against the network's rate, so history is
+  // taken whole; the queue is what has been promised but not yet sent.
   for (const entry of history) note(entry.network, entry.at);
   for (const post of queue) {
     if (post.status !== "pending" && post.status !== "sending") continue;
     for (const id of post.targets) note(accountNetwork(id), post.scheduledFor);
   }
+  for (const list of times.values()) list.sort((a, b) => a - b);
+  return times;
+}
+
+/**
+ * The last time a network was posted to, ignoring anything still in the
+ * future. This is the "3h ago" a dashboard shows, not the gate.
+ */
+export function lastPerNetwork(
+  history: HistoryEntry[],
+  queue: QueuedPost[],
+  accountNetwork: (id: string) => string | undefined,
+  now = Date.now(),
+): Map<string, number> {
+  const last = new Map<string, number>();
+  for (const [network, times] of bookingsPerNetwork(history, queue, accountNetwork)) {
+    const past = times.filter((at) => at <= now);
+    if (past.length) last.set(network, past[past.length - 1]);
+  }
   return last;
 }
 
 /** The earliest time `network` may be posted to, given when it was last used. */
-export function nextSlotFor(network: string, last: Map<string, number>, now: number, minGapMs: number): number {
-  const seen = last.get(network);
-  if (seen === undefined) return now;
-  return Math.max(now, seen + minGapMs);
+export function nextSlotFor(network: string, bookings: Map<string, number[]>, now: number, minGapMs: number): number {
+  const times = bookings.get(network);
+  if (!times?.length || minGapMs <= 0) return now;
+
+  // Walk forward from now, stepping past any booking this would land within
+  // the gap of. Only bookings NEAR the candidate matter: one seven months out
+  // says nothing about whether the network is free this minute, and treating
+  // the newest booking as "the last post" is what pushed a release
+  // announcement into next April behind an April Fools post.
+  let at = now;
+  for (const booked of times) {
+    if (at >= booked - minGapMs && at < booked + minGapMs) at = booked + minGapMs;
+  }
+  return at;
 }
 
 /**
@@ -137,7 +174,7 @@ export function planTargets(input: PlanInput): Plan {
   const now = input.now ?? Date.now();
   const from = input.from ?? now;
   const order = input.order ?? shuffle;
-  const last = lastPerNetwork(input.history, input.queue, input.accountNetwork);
+  const booked = bookingsPerNetwork(input.history, input.queue, input.accountNetwork);
 
   const plan: Plan = { now: [], later: [], skipped: [] };
   const candidates: Account[] = [];
@@ -165,10 +202,16 @@ export function planTargets(input: PlanInput): Plan {
 
   candidates.forEach((account, index) => {
     const ideal = from + index * step;
-    const gate = nextSlotFor(account.network, last, now, input.rules.minGapMs);
-    const at = Math.max(ideal, gate);
+    const gate = nextSlotFor(account.network, booked, now, input.rules.minGapMs);
+    // The ideal slot may itself sit inside another booking's gap, so resolve
+    // from whichever is later rather than taking the gate alone.
+    const at = nextSlotFor(account.network, booked, Math.max(ideal, gate), input.rules.minGapMs);
     // Book it so the next account on the same network is pushed past it.
-    last.set(account.network, at);
+    const list = booked.get(account.network);
+    if (list) {
+      list.push(at);
+      list.sort((a, b) => a - b);
+    } else booked.set(account.network, [at]);
 
     if (at <= now) {
       plan.now.push(account);

@@ -4,7 +4,7 @@
  * and --now only lifts the gates, never the duplicate rule.
  */
 import { test, expect } from "bun:test";
-import { planTargets, pacingRules, nextSlotFor, lastPerNetwork, recentDuplicate, DEFAULT_PACING } from "../src/core/pacing.ts";
+import { planTargets, pacingRules, nextSlotFor, lastPerNetwork, bookingsPerNetwork, recentDuplicate, DEFAULT_PACING } from "../src/core/pacing.ts";
 import type { Account } from "../src/net/types.ts";
 import type { HistoryEntry } from "../src/store/history.ts";
 import type { QueuedPost } from "../src/store/queue.ts";
@@ -77,11 +77,37 @@ test("the queue's promises count as bookings", () => {
     { id: "q1", createdAt: "", scheduledFor: new Date(NOW + 2 * H).toISOString(), targets: ["mastodon:chovy"], text: "later", status: "pending" },
     { id: "q2", createdAt: "", scheduledFor: new Date(NOW + 2 * H).toISOString(), targets: ["bluesky:chovy"], text: "done", status: "sent" },
   ];
-  const last = lastPerNetwork([], queue, accountNetwork);
-  expect(last.get("mastodon")).toBe(NOW + 2 * H);
-  expect(last.has("bluesky")).toBe(false);
-  expect(nextSlotFor("mastodon", last, NOW, 4 * H)).toBe(NOW + 6 * H);
-  expect(nextSlotFor("linkedin", last, NOW, 4 * H)).toBe(NOW);
+  const booked = bookingsPerNetwork([], queue, accountNetwork);
+  expect(booked.get("mastodon")).toEqual([NOW + 2 * H]);
+  // A sent entry is history's business, not a future booking.
+  expect(booked.has("bluesky")).toBe(false);
+  // Ours would land 2h before the booked one, inside its gap, so it goes 4h after it.
+  expect(nextSlotFor("mastodon", booked, NOW, 4 * H)).toBe(NOW + 6 * H);
+  expect(nextSlotFor("linkedin", booked, NOW, 4 * H)).toBe(NOW);
+});
+
+test("a booking months away does not hold a network today", () => {
+  // The bug this test exists for: an April Fools post queued seven months
+  // out made every network look busy, and a release announcement was
+  // scheduled behind it, in April.
+  const APRIL = NOW + 208 * 24 * H;
+  const queue: QueuedPost[] = [
+    { id: "q1", createdAt: "", scheduledFor: new Date(APRIL).toISOString(), targets: ["x:chovy"], text: "april fools", status: "pending" },
+  ];
+  const booked = bookingsPerNetwork([], queue, accountNetwork);
+  expect(nextSlotFor("x", booked, NOW, 4 * H)).toBe(NOW);
+
+  const plan = planTargets({ accounts: [x1], text: "0.10.1 is out", now: NOW, history: [], queue, rules, accountNetwork, order: stable });
+  expect(plan.now).toEqual([x1]);
+  expect(plan.later).toEqual([]);
+});
+
+test("last posted ignores the future, so a dashboard never says a booking was the last post", () => {
+  const queue: QueuedPost[] = [
+    { id: "q1", createdAt: "", scheduledFor: new Date(NOW + 30 * 24 * H).toISOString(), targets: ["x:chovy"], text: "later", status: "pending" },
+  ];
+  const last = lastPerNetwork([sent(x1, "earlier", 3 * H)], queue, accountNetwork, NOW);
+  expect(last.get("x")).toBe(NOW - 3 * H);
 });
 
 test("the same text to the same account inside the repost gap is refused, even with --now", () => {
