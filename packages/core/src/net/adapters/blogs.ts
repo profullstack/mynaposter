@@ -4,6 +4,13 @@
  * These take a title and a body, so a thread-length post becomes an article
  * rather than being split. All of them authenticate with a key you paste,
  * except WordPress, which has genuine application passwords.
+ *
+ * Syndicating the same article to several of these makes one of them the
+ * original, so `--canonical-url` is honored wherever the network has a field
+ * for it: dev.to `canonical_url`, Hashnode `originalArticleURL`, Ghost
+ * `canonical_url`, Tumblr `source_url`. WordPress core has no such field —
+ * canonical there belongs to an SEO plugin's post meta — and Micropub defines
+ * no canonical property, so neither of those pretends to support it.
  */
 import type { Network, TimelineItem } from "../types.ts";
 import { getJson, normalizeInstance, postJson, request } from "../../util/http.ts";
@@ -112,6 +119,7 @@ export const hashnode: Network = {
             publicationId: input.extra?.publicationId || account.meta.publicationId,
             title: input.title || firstLine(input.text),
             contentMarkdown: input.text,
+            ...(input.extra?.canonicalUrl ? { originalArticleURL: input.extra.canonicalUrl } : {}),
             tags: (input.extra?.tags ?? "")
               .split(",")
               .map((tag) => tag.trim().replace(/^#/, ""))
@@ -167,6 +175,7 @@ export const ghost: Network = {
             title: input.title || firstLine(input.text),
             html: `<p>${input.text.replace(/\n\n/g, "</p><p>").replace(/\n/g, "<br>")}</p>`,
             status: input.extra?.draft === "true" ? "draft" : "published",
+            ...(input.extra?.canonicalUrl ? { canonical_url: input.extra.canonicalUrl } : {}),
             ...(input.extra?.tags ? { tags: input.extra.tags.split(",").map((name) => ({ name: name.trim() })) } : {}),
           },
         ],
@@ -353,6 +362,9 @@ export const tumblr: Network = {
         { type: "text", text: input.text },
       ],
       state: input.extra?.draft === "true" ? "draft" : "published",
+      // Tumblr has no rel=canonical of its own; source_url is the attribution
+      // link it does have, and it points where a canonical would.
+      ...(input.extra?.canonicalUrl ? { source_url: input.extra.canonicalUrl } : {}),
       tags: (input.extra?.tags ?? "").split(",").map((tag) => tag.trim().replace(/^#/, "")).filter(Boolean).join(","),
     };
     // The signature covers only the OAuth parameters when the body is JSON.

@@ -154,6 +154,9 @@ export function gitblogFile(account: Account, input: PostInput, now: Date = new 
     title,
     date: date.toISOString().slice(0, 10),
     description,
+    // The site template has to render this; myna only records it. A repo blog
+    // that syndicates elsewhere needs it, and one that does not ignores it.
+    canonical: input.extra?.canonicalUrl || undefined,
     author: input.extra?.author || account.meta.author || undefined,
     tags: tagList(input.extra?.tags),
     draft: input.extra?.draft === "true" ? true : undefined,
@@ -302,6 +305,17 @@ export const gitblog: Network = {
 
 const POST_FILE = /^(\d+)-post\.html$/;
 
+/**
+ * The address a post file is served at.
+ *
+ * Shared by the link myna reports, the feed's timeline and the canonical tag,
+ * because a canonical that does not byte-match the real URL is a canonical
+ * pointing at a different page.
+ */
+export function postUrl(siteUrl: string, file: string): string {
+  return `${String(siteUrl).replace(/\/+$/, "")}/${file}`;
+}
+
 interface HtmlBlogConfig {
   siteTitle?: string | null;
   author?: string | null;
@@ -334,19 +348,22 @@ export function nextPostNumber(names: string[]): string {
 
 /** A whole page in the shape the plain-HTML blog uses. */
 export function renderHtmlPost(
-  post: { title: string; description: string; date: string; body: string },
+  post: { title: string; description: string; date: string; body: string; canonical?: string },
   config: HtmlBlogConfig = {},
 ): string {
   const day = post.date.slice(0, 10);
   const site = config.siteTitle ? ` &mdash; ${escapeHtml(config.siteTitle)}` : "";
   const byline = config.author ? `<p><em>${day}, by ${escapeHtml(config.author)}.</em></p>` : `<p><em>${day}</em></p>`;
   const disclosure = config.disclosure ? `\n\n<p><small>${config.disclosure}</small></p>` : "";
+  // Omitted when there is nothing to point at: a canonical aimed at nowhere is
+  // worse than none, because search engines act on it.
+  const canonical = post.canonical ? `\n<link rel="canonical" href="${escapeHtml(post.canonical)}">` : "";
   return `<!doctype html>
 <html lang="en">
 <head>
 <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>${escapeHtml(post.title)}${site}</title>
+<title>${escapeHtml(post.title)}${site}</title>${canonical}
 <link rel="alternate" type="application/rss+xml" href="feed.xml">
 <meta name="date" content="${escapeHtml(post.date)}">
 <meta name="description" content="${escapeHtml(post.description)}">
@@ -400,21 +417,43 @@ function runQuiet(command: string, args: string[], cwd: string): { ok: boolean; 
  * one written by hand. When it is not installed, myna writes the page itself
  * in the same shape, minus what only that config knows.
  */
-function writeWithBlogPost(tool: string, dir: string, post: { title: string; description: string; date: string; body: string }): string {
+function writeWithBlogPost(
+  tool: string,
+  dir: string,
+  post: { title: string; description: string; date: string; body: string },
+  canonical?: string,
+): string {
   const scratch = mkdtempSync(join(tmpdir(), "myna-blog-"));
   const bodyFile = join(scratch, "body.html");
   writeFileSync(bodyFile, post.body);
-  const result = runQuiet(tool, ["new", post.title, "--description", post.description, "--body", bodyFile, "--date", post.date, "--dir", dir], dir);
+  // Only an explicit override is passed. Left alone, blog-post points the page
+  // at itself from its own siteUrl, which it knows and myna would be guessing.
+  // The flag needs cli-tools 0.28.0 or newer.
+  const args = ["new", post.title, "--description", post.description, "--body", bodyFile, "--date", post.date, "--dir", dir];
+  if (canonical) args.push("--canonical", canonical);
+  const result = runQuiet(tool, args, dir);
   if (!result.ok) throw new Error(`blog-post failed: ${result.output || "no output"}`);
   const created = /created\s+(\S+-post\.html)/.exec(result.output);
   if (!created) throw new Error(`blog-post did not say which file it created:\n${result.output}`);
   return created[1];
 }
 
-function writeNatively(dir: string, post: { title: string; description: string; date: string; body: string }): string {
+function writeNatively(
+  dir: string,
+  post: { title: string; description: string; date: string; body: string },
+  siteUrl?: string,
+  canonical?: string,
+): string {
   const file = `${nextPostNumber(readdirSync(dir))}-post.html`;
+  // The file name is only settled here, so a self-canonical can only be built
+  // here. An explicit one wins: it means the original is somewhere else.
+  const href = canonical ?? (siteUrl ? postUrl(siteUrl, file) : undefined);
   // 'wx': two writers that both read the directory would pick the same number.
-  writeFileSync(join(dir, file), renderHtmlPost(post, readBlogConfig(dir)), { flag: "wx" });
+  writeFileSync(
+    join(dir, file),
+    renderHtmlPost({ ...post, ...(href ? { canonical: href } : {}) }, readBlogConfig(dir)),
+    { flag: "wx" },
+  );
   const indexPath = join(dir, "index.html");
   if (existsSync(indexPath)) {
     writeFileSync(indexPath, insertIntoIndex(readFileSync(indexPath, "utf8"), { file, title: post.title, date: post.date }));
@@ -504,9 +543,12 @@ export const htmlblog: Network = {
     if (!description) throw new Error("A post needs a description for the feed. Write a first paragraph, or pass --description.");
     const post = { title, description, date, body: renderMarkdown(markdown) };
 
+    const canonical = input.extra?.canonicalUrl;
     const tool = findOnPath("blog-post");
-    const file = tool ? writeWithBlogPost(tool, dir, post) : writeNatively(dir, post);
-    const url = `${siteUrl}/${file}`;
+    const file = tool
+      ? writeWithBlogPost(tool, dir, post, canonical)
+      : writeNatively(dir, post, siteUrl, canonical);
+    const url = postUrl(siteUrl, file);
 
     if (mirror) {
       const problem = pushMirror(dir, mirror, [file, "index.html", "feed.xml"], `${file.replace(/-post\.html$/, "")}: ${title}`);
@@ -533,7 +575,7 @@ export const htmlblog: Network = {
           handle: account.handle,
           text: title.replace(/<[^>]+>/g, "").replace(/&mdash;/g, "—").trim(),
           createdAt: date,
-          url: `${siteUrl}/${name}`,
+          url: postUrl(siteUrl, name),
         };
       });
   },

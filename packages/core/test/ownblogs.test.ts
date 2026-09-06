@@ -20,6 +20,7 @@ import {
   nextPostNumber,
   insertIntoIndex,
   renderHtmlPost,
+  postUrl,
 } from "../src/net/adapters/ownblogs.ts";
 import { getNetwork, authSummary } from "../src/net/registry.ts";
 import { tailor } from "../src/core/poster.ts";
@@ -229,4 +230,69 @@ test("login checks the directory and the URL", async () => {
   expect(account.handle).toBe("x.y/blog");
   expect(account.meta.dir).toBe(dir);
   expect(account.meta.siteUrl).toBe("https://x.y/blog");
+});
+
+/* ------------------------------------------------------------- canonical --- */
+
+test("a page points at itself, so the copies on dev.to agree with the original", async () => {
+  const result = await htmlblog.post(htmlAccount(), { text: "Hello\n\nBody text.", title: "Hello" });
+  const page = readFileSync(join(dir, "042-post.html"), "utf8");
+  expect(page).toContain('<link rel="canonical" href="https://example.com/~me/blog/042-post.html">');
+  // The canonical has to be the URL, not merely a URL for the same page.
+  expect(page).toContain(`<link rel="canonical" href="${result.url}">`);
+});
+
+test("an explicit canonical wins, for a post first published elsewhere", async () => {
+  await htmlblog.post(htmlAccount(), {
+    text: "Hello\n\nBody text.",
+    title: "Hello",
+    extra: { canonicalUrl: "https://elsewhere.example/original" },
+  });
+  const page = readFileSync(join(dir, "042-post.html"), "utf8");
+  expect(page).toContain('<link rel="canonical" href="https://elsewhere.example/original">');
+  expect(page).not.toContain("example.com/~me/blog/042-post.html\">");
+});
+
+test("a blog with no siteUrl claims no canonical rather than guessing one", () => {
+  const page = renderHtmlPost({ title: "T", description: "d", date: "2026-01-01T00:00:00Z", body: "<p>x</p>" });
+  expect(page).not.toContain("rel=\"canonical\"");
+});
+
+test("the canonical URL is escaped rather than trusted", () => {
+  const page = renderHtmlPost({
+    title: "T",
+    description: "d",
+    date: "2026-01-01T00:00:00Z",
+    body: "<p>x</p>",
+    canonical: 'https://x.y/"><script>alert(1)</script>',
+  });
+  expect(page).not.toContain("<script>alert(1)</script>");
+});
+
+test("a trailing slash on siteUrl does not double up in the URL or the canonical", () => {
+  expect(postUrl("https://x.y/blog/", "007-post.html")).toBe("https://x.y/blog/007-post.html");
+  expect(postUrl("https://x.y/blog", "007-post.html")).toBe("https://x.y/blog/007-post.html");
+  expect(postUrl("https://x.y/blog///", "007-post.html")).toBe("https://x.y/blog/007-post.html");
+});
+
+test("gitblog records the canonical in frontmatter, and omits it when absent", () => {
+  const account = {
+    id: "gitblog:o/r",
+    network: "gitblog",
+    handle: "o/r",
+    addedAt: "",
+    creds: {},
+    meta: { repo: "o/r", dir: "content/blog", branch: "main", ext: ".md", author: "" },
+  } as unknown as Account;
+
+  const withUrl = gitblogFile(account, {
+    text: "Title\n\nBody.",
+    title: "Title",
+    extra: { canonicalUrl: "https://example.com/blog/x.html" },
+  });
+  // Quoted, because a bare value holding a colon is not the string YAML reads back.
+  expect(withUrl.content).toContain('canonical: "https://example.com/blog/x.html"');
+
+  const without = gitblogFile(account, { text: "Title\n\nBody.", title: "Title" });
+  expect(without.content).not.toContain("canonical:");
 });
