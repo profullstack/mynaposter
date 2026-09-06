@@ -31,6 +31,15 @@ export interface DaemonOptions {
   jobs?: DaemonJob[];
   /** Leave out the built-in jobs, for a host that only wants its own. */
   builtins?: boolean;
+  /**
+   * The ids of every job that registered, once they are known.
+   *
+   * The CLI used to print its own guess at this list, and the guess went
+   * stale every time a job was added: evergreen and the recap both ran
+   * without ever being named, which makes a daemon look like it is not
+   * doing the thing you just switched on.
+   */
+  onReady?: (jobIds: string[]) => void;
 }
 
 const stamp = (): string => new Date().toISOString();
@@ -129,6 +138,7 @@ export function startDaemon(options: DaemonOptions = {}): () => void {
   const tickMs = options.tickMs ?? 30_000;
   const log = options.log ?? ((line: string) => process.stdout.write(`${stamp()}  ${line}\n`));
   const jobs = [...(options.builtins === false ? [] : builtinJobs(log, tickMs)), ...(options.jobs ?? [])];
+  options.onReady?.(jobs.map((job) => job.id));
   const lastRun = new Map<string, number>();
   let running = false;
   let stopped = false;

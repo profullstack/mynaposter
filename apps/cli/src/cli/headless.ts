@@ -40,7 +40,7 @@ import {
   runEvergreen,
   buildRecap,
   renderRecapText,
-  sendRecap,
+  runRecap,
   loadRecapState,
   DEFAULT_EVERGREEN,
   getAccount,
@@ -537,7 +537,10 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
       }
 
       if (flags.send) {
-        const result = await sendRecap(cfg, recap);
+        // Through runRecap rather than sendRecap, so a hand-sent recap stamps
+        // the day and the daemon does not follow it with an identical one.
+        const turn = await runRecap(cfg, { force: true, windowMs: days * 24 * 3_600_000 });
+        const result = turn.result!;
         out(result.sent ? `Sent "${result.subject}" to ${cfg.to}.` : `Not sent: ${result.error}`);
         return result.sent ? 0 : 1;
       }
@@ -807,11 +810,14 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
         if (!lines.length) out("Nothing was due.");
         return 0;
       }
-      const jobs = settings.graph.enabled ? "posts, follow graph" : "posts";
-      const extras = listPlugins().filter((entry) => entry.plugin?.tasks?.length || entry.plugin?.seeds?.length).map((entry) => entry.plugin!.id);
-      out(`Daemon running: ${[jobs, ...extras].join(", ")}. Ctrl+C to stop.`);
       if (!settings.graph.enabled) out("The follow graph is off. Turn it on with: myna graph on");
-      const stop = startDaemon({ tickMs: Number(flags.interval ?? 30) * 1000, log });
+      const stop = startDaemon({
+        tickMs: Number(flags.interval ?? 30) * 1000,
+        log,
+        // The daemon knows what it registered; printing a second list here
+        // meant every new job was invisible until somebody updated the line.
+        onReady: (ids) => out(`Daemon running: ${ids.join(", ")}. Ctrl+C to stop.`),
+      });
       // The daemon's own timer is unref'd so a host that embeds it can exit
       // freely; here the process *is* the daemon, and with no TTY on stdin
       // (systemd, a container) nothing else keeps the event loop alive. Hold
