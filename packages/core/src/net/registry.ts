@@ -69,6 +69,26 @@ export function registerNetwork(network: Network): void {
   BY_ID.set(id, network);
 }
 
+/**
+ * Take a registered network back out.
+ *
+ * `registerNetwork` appends to module-level state, which outlives whatever
+ * registered it: a test that registers a stand-in adapter leaves it in
+ * `NETWORKS` for every later test in the same process, and the ones that
+ * assert every network is well formed then fail on somebody else's fixture.
+ * The plugin loader has `resetPlugins` for the same reason.
+ *
+ * Returns whether anything was removed.
+ */
+export function unregisterNetwork(id: string): boolean {
+  const key = id.trim().toLowerCase();
+  const index = NETWORKS.findIndex((entry) => entry.id === key);
+  if (index < 0) return false;
+  NETWORKS.splice(index, 1);
+  BY_ID.delete(key);
+  return true;
+}
+
 /** Names people actually type. */
 const ALIASES: Record<string, string> = {
   twitter: "x",

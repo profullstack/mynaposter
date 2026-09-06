@@ -19,6 +19,14 @@ export interface QueuedPost {
   text: string;
   title?: string;
   mediaPaths?: string[];
+  /**
+   * Share an existing post instead of writing one.
+   *
+   * A URL or id on the target's own network. When this is set the entry
+   * carries no text of its own, so `text` is only what the queue prints —
+   * the send calls the network's repost API and nothing is composed.
+   */
+  repostOf?: string;
   extra?: Record<string, string>;
   /** Split over the character limit into a reply chain where supported. */
   thread?: boolean;
