@@ -122,8 +122,8 @@ test("the network is explicit-only and the plugin registers it", () => {
   expect(gcal?.caps.explicitTarget).toBe(true);
   expect(gcal?.auth.kind).toBe("oauth2");
   expect(plugin.commands?.map((command) => command.name)).toEqual(["calendar"]);
-  // Provider first, then the function, then the endpoint.
-  expect(GOOGLE_HOSTED_REDIRECT).toBe("https://mynaposter.com/google/oauth/callback");
+  // The site's /api namespace and the API's version, then provider, function, endpoint.
+  expect(GOOGLE_HOSTED_REDIRECT).toBe("https://mynaposter.com/api/v1/google/oauth/callback");
   expect(gcal?.auth.note).toContain(GOOGLE_HOSTED_REDIRECT);
 });
 

@@ -295,14 +295,14 @@ copyFileSync(join(root, "assets", "oauth-callback.html"), join(out, "oauth", "ca
 mkdirSync(join(out, "api", "linkedin"), { recursive: true });
 copyFileSync(join(root, "assets", "oauth-callback.html"), join(out, "api", "linkedin", "callback.html"));
 // Google gets a path of its own too, so the OAuth client's redirect list reads
-// as what it is. Provider first, then the function, then the endpoint; new
-// providers follow this shape. Same page, same job.
-mkdirSync(join(out, "google", "oauth"), { recursive: true });
-copyFileSync(join(root, "assets", "oauth-callback.html"), join(out, "google", "oauth", "callback.html"));
+// as what it is: the site's /api namespace, the API's version, then provider,
+// function, endpoint. New providers follow this shape. Same page, same job.
+mkdirSync(join(out, "api", "v1", "google", "oauth"), { recursive: true });
+copyFileSync(join(root, "assets", "oauth-callback.html"), join(out, "api", "v1", "google", "oauth", "callback.html"));
 
 writeFileSync(
   join(out, "robots.txt"),
-  "User-agent: *\nAllow: /\nDisallow: /oauth/\nDisallow: /google/oauth/\n\nSitemap: https://mynaposter.com/sitemap.xml\n",
+  "User-agent: *\nAllow: /\nDisallow: /oauth/\nDisallow: /api/v1/google/oauth/\n\nSitemap: https://mynaposter.com/sitemap.xml\n",
 );
 
 writeFileSync(

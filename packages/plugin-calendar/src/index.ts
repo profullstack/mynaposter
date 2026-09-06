@@ -68,7 +68,7 @@ const SUMMARY_LIMIT = 120;
 /** The private extended property that ties an event to a queue entry. */
 export const QUEUE_KEY = "mynaQueue";
 /** Where Google sends the code when the browser is not on this machine; register it on the OAuth client. */
-export const GOOGLE_HOSTED_REDIRECT = "https://mynaposter.com/google/oauth/callback";
+export const GOOGLE_HOSTED_REDIRECT = "https://mynaposter.com/api/v1/google/oauth/callback";
 /** The loopback redirect for a browser on the same machine. */
 export const GOOGLE_LOCAL_REDIRECT = "http://127.0.0.1:8765/callback";
 
@@ -349,7 +349,7 @@ const when = (event: CalendarEvent): string => {
 const plugin: MynaPlugin = {
   id: "calendar",
   name: "Calendar",
-  version: "0.8.2",
+  version: "0.8.3",
   description: "Google Calendar as a network, and a calendar entry for every post myna schedules.",
 
   networks: [gcal],
