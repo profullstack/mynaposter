@@ -41,7 +41,8 @@ Posting:
   cancel <id>                       Remove a scheduled post
   history                           What was posted, and what failed
   delete <account> <post id>        Delete a post you made
-  repost <account> <post url>       Share someone's post from one account
+  repost <account> <post url>       Share a post from one account.
+       [--at "in 2h"]               With --at it is queued instead of sent now
   feed [network]                    Read a home timeline
   search [network] <query>          Find posts to reply to. On YouTube this
                                     lists videos; comment with post --video

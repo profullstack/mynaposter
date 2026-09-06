@@ -512,15 +512,37 @@ export const COMMANDS: Command[] = [
   },
   {
     name: "repost",
-    args: "<account> <post url>",
-    help: "Share someone's post from one account",
+    args: "<account> <post url> [--at <when>]",
+    help: "Share someone's post from one account, now or at a time",
     async run(state, args, redraw) {
-      const [accountId, ref] = args.trim().split(/\s+/);
-      if (!accountId || !ref) throw new Error("Usage: /repost <account> <post url or id>");
+      // `--at` takes the rest of the line, because "in 2 hours" is three words.
+      const raw = args.trim();
+      const atIndex = raw.search(/\s--at\b/);
+      const when = atIndex === -1 ? "" : raw.slice(atIndex + " --at".length + 1).trim();
+      const [accountId, ref] = (atIndex === -1 ? raw : raw.slice(0, atIndex)).trim().split(/\s+/);
+      if (!accountId || !ref) throw new Error("Usage: /repost <account> <post url or id> [--at <when>]");
       const account = state.accounts.find((entry) => entry.id === accountId);
       if (!account) throw new Error(`No account "${accountId}".`);
       const network = requireNetwork(account.network);
       if (!network.repost) throw new Error(`${network.name} has no repost API.`);
+
+      if (atIndex !== -1) {
+        if (!when) throw new Error("--at needs a time, e.g. --at 'in 2h'");
+        const { at } = parseWhen(when);
+        const entry = enqueue({
+          scheduledFor: at.toISOString(),
+          targets: [account.id],
+          // The queue prints this; the send uses repostOf and composes nothing.
+          text: `repost ${ref}`,
+          repostOf: ref,
+        });
+        toast(state, `Queued repost ${entry.id} from ${accountId} for ${describeWhen(at)}`, "success");
+        for (const hook of await runAfterSchedule(entry)) {
+          if (hook.error) toast(state, `${hook.plugin}: ${hook.error}`, "error");
+          else if (hook.line) toast(state, `${hook.plugin}: ${hook.line}`, "success");
+        }
+        return;
+      }
 
       state.busy = "Reposting…";
       redraw();

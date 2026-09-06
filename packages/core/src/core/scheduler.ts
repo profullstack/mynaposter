@@ -7,6 +7,7 @@
  */
 import { duePosts, enqueue, listQueue, updateQueued, type QueuedPost } from "../store/queue.ts";
 import { getAccount } from "../store/accounts.ts";
+import { requireNetwork } from "../net/registry.ts";
 import { postToAll, type TargetResult } from "./poster.ts";
 import { loadAllMedia } from "./media.ts";
 import { loadSettings } from "../store/settings.ts";
@@ -26,6 +27,46 @@ export async function runDuePosts(now = new Date()): Promise<RunResult[]> {
     const targeted = post.targets.map((id) => getAccount(id)).filter((account) => account !== undefined);
     if (!targeted.length) {
       updateQueued(post.id, { status: "failed", lastError: "None of its target accounts still exist." });
+      continue;
+    }
+
+    // A repost shares something that already exists, so none of the composing
+    // path applies to it: there is no text to pace against, no media to load
+    // and no thread to split. It goes to its targets as asked.
+    if (post.repostOf) {
+      updateQueued(post.id, { status: "sending", attempts: (post.attempts ?? 0) + 1 });
+      const results: TargetResult[] = [];
+      for (const account of targeted) {
+        const network = requireNetwork(account.network);
+        if (!network.repost) {
+          results.push({ account, ok: false, posts: [], error: `${network.name} has no repost API.` });
+          continue;
+        }
+        try {
+          const result = await network.repost(account, post.repostOf);
+          results.push({ account, ok: true, posts: [result] });
+        } catch (error) {
+          results.push({ account, ok: false, posts: [], error: (error as Error).message });
+        }
+      }
+      const byAccount: QueuedPost["results"] = {};
+      for (const result of results) {
+        byAccount[result.account.id] = {
+          ok: result.ok,
+          id: result.posts[0]?.id,
+          url: result.posts[0]?.url,
+          error: result.error,
+        };
+      }
+      const failedReposts = results.filter((result) => !result.ok);
+      updateQueued(post.id, {
+        status: failedReposts.length === results.length ? "failed" : "sent",
+        results: byAccount,
+        lastError: failedReposts.length
+          ? failedReposts.map((result) => `${result.account.id}: ${result.error}`).join("; ")
+          : undefined,
+      });
+      out.push({ post, results });
       continue;
     }
 
