@@ -29,14 +29,24 @@ function callbackFor(provider: keyof typeof HOSTED_REDIRECT, input: Record<strin
 const GRAPH = "https://graph.facebook.com/v21.0";
 const THREADS = "https://graph.threads.net/v1.0";
 
-const facebookConfig = (clientId: string, clientSecret: string, scopes: string[]): OAuth2Config => ({
+/**
+ * `configId` switches this to **Facebook Login for Business**, which is a
+ * different flow wearing the same URL. A business app ignores `scope`
+ * entirely — the permissions come from the configuration named by
+ * `config_id` — and refuses a request without one. It does not say so: it
+ * complains that the redirect's domain is not in the app's domains, even
+ * when it plainly is, which sends you round the settings pages for hours.
+ * The tell is `is_business_login=1` in the URL Facebook redirects you to.
+ */
+const facebookConfig = (clientId: string, clientSecret: string, scopes: string[], configId?: string): OAuth2Config => ({
   authorizeUrl: "https://www.facebook.com/v21.0/dialog/oauth",
   tokenUrl: `${GRAPH}/oauth/access_token`,
   clientId,
   clientSecret,
-  scopes,
+  scopes: configId ? [] : scopes,
   pkce: false,
   scopeSeparator: ",",
+  ...(configId ? { authParams: { config_id: configId } } : {}),
 });
 
 interface Page {
@@ -63,10 +73,17 @@ export const facebook: Network = {
     kind: "oauth2",
     note:
       "Create an app at developers.facebook.com with the Facebook Login product, and add pages_manage_posts and pages_read_engagement. " +
+      "If the app uses Facebook Login for Business instead, give the configuration id below. " +
       `You must be an admin of the Page. ${REDIRECT_NOTE}`,
     fields: [
       { key: "clientId", label: "App id" },
       { key: "clientSecret", label: "App secret", secret: true },
+      {
+        key: "configId",
+        label: "Login configuration id",
+        optional: true,
+        help: "Only for Facebook Login for Business. Facebook Login for Business → Configurations. Leave blank for a classic app.",
+      },
       { key: "page", label: "Page name or id", optional: true, help: "Leave blank to use the first Page you administer." },
       PASTE_FIELD,
     ],
@@ -75,12 +92,12 @@ export const facebook: Network = {
 
   async login(input, ctx) {
     const tokens = await authorize(
-      { ...facebookConfig(input.clientId, input.clientSecret, [
-        "pages_manage_posts",
-        "pages_read_engagement",
-        "pages_show_list",
-        "public_profile",
-      ]), ...callbackFor("facebook", input, ctx) },
+      { ...facebookConfig(
+        input.clientId,
+        input.clientSecret,
+        ["pages_manage_posts", "pages_read_engagement", "pages_show_list", "public_profile"],
+        input.configId?.trim() || undefined,
+      ), ...callbackFor("facebook", input, ctx) },
       ctx,
     );
     const userToken = await longLived(input.clientId, input.clientSecret, tokens.access_token);
