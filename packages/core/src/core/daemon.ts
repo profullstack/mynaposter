@@ -14,6 +14,7 @@ import { loadSettings } from "../store/settings.ts";
 import { pluginTasks, seedProviders } from "../plugins/loader.ts";
 import { pluginContext } from "../plugins/context.ts";
 import { runEvergreen } from "./evergreen.ts";
+import { runRecap } from "./recap.ts";
 
 export interface DaemonJob {
   id: string;
@@ -59,6 +60,20 @@ export function builtinJobs(log: (line: string) => void, tickMs: number): Daemon
       },
     });
   }
+  if (settings.recap.enabled) {
+    jobs.push({
+      id: "recap",
+      // Look every ten minutes. `runRecap` owns the "is it due" question, so
+      // the tick rate only decides how close to `at` the mail lands.
+      everyMs: 600_000,
+      async run() {
+        const turn = await runRecap(settings.recap);
+        if (turn.idle || !turn.result) return;
+        return turn.result.sent ? `sent to ${settings.recap.to}` : `not sent: ${turn.result.error}`;
+      },
+    });
+  }
+
   if (settings.graph.enabled) {
     jobs.push(
       {

@@ -38,6 +38,10 @@ import {
   postToAll,
   postPaced,
   runEvergreen,
+  buildRecap,
+  renderRecapText,
+  sendRecap,
+  loadRecapState,
   DEFAULT_EVERGREEN,
   getAccount,
   removeAccount,
@@ -118,7 +122,7 @@ export function parseFlags(argv: string[]): { positional: string[]; flags: Flags
     // Boolean flags take no value. `--now`, `--off` and `--no-open` are as
     // much switches as `--json`; without them here the parser eats the next
     // argument, so `myna post all "hi" --now` died asking for a value.
-    const BOOLS = new Set(["json", "yes", "thread", "dryRun", "noThread", "force", "now", "off", "on", "noOpen", "front", "skipQueue"]);
+    const BOOLS = new Set(["json", "yes", "thread", "dryRun", "noThread", "force", "now", "off", "on", "noOpen", "front", "skipQueue", "send"]);
     if (BOOLS.has(name)) {
       flags[name === "noThread" ? "thread" : name] = name !== "noThread";
       continue;
@@ -137,6 +141,7 @@ const OWN_FLAGS = new Set([
   "to", "title", "media", "json", "yes", "style", "at", "thread", "dryRun", "limit", "output",
   "keepSvg", "server", "overwrite", "settings", "once", "interval", "refresh", "theme", "force", "weight", "source", "network",
   "now", "gap", "drip", "repost", "every", "cooldown", "off", "on", "port", "open", "noOpen",
+  "days", "send", "command",
 ]);
 
 /**
@@ -483,6 +488,61 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
         for (const result of turn.outcome.results) out(result.ok ? `ok    ${result.account.id}  ${result.posts[0]?.url ?? ""}` : `FAIL  ${result.account.id}  ${result.error}`);
       }
       out("The daemon (myna run) keeps this going; see myna queue.");
+      return 0;
+    }
+
+    case "recap": {
+      // myna recap                     print the last 24 hours and the next
+      // myna recap --days 2            a wider window, both ways
+      // myna recap --send              send it now, whether or not it is due
+      // myna recap on --to me@x.com [--at 08:00]
+      // myna recap off
+      //
+      // Deliberately no vault: the recap reads history and the queue, both
+      // plain JSON, so it works from cron with nobody there to type a
+      // passphrase. That is the whole point of a morning email.
+      const cfg = { ...settings.recap };
+      const action = positional[0];
+      let changed = false;
+
+      if (action === "on" || action === "off") {
+        cfg.enabled = action === "on";
+        changed = true;
+      }
+      if (typeof flags.to === "string") { cfg.to = flags.to; changed = true; }
+      if (typeof flags.at === "string") {
+        if (!/^\d{1,2}:\d{2}$/.test(flags.at)) throw new Error("--at wants a time of day like 08:00.");
+        cfg.at = flags.at;
+        changed = true;
+      }
+      if (typeof flags.command === "string") { cfg.command = flags.command; changed = true; }
+      if (cfg.enabled && !cfg.to) throw new Error("Where to? Try: myna recap on --to you@example.com");
+      if (changed) saveSettings({ ...settings, recap: cfg });
+
+      if (action === "status" || action === "on" || action === "off") {
+        const state = loadRecapState();
+        out(`recap  ${cfg.enabled ? "on" : "off"}${cfg.to ? `  to ${cfg.to}` : ""}  at ${cfg.at}  via ${cfg.command}`);
+        out(state.lastSentAt ? `last sent ${describeWhen(new Date(state.lastSentAt))}` : "never sent");
+        if (cfg.enabled) out("The daemon (myna run) sends it; myna recap --send sends one now.");
+        return 0;
+      }
+
+      const days = Number(flags.days ?? 1);
+      if (!Number.isFinite(days) || days <= 0) throw new Error("--days wants a positive number.");
+      const recap = buildRecap({ windowMs: days * 24 * 3_600_000 });
+
+      if (flags.json) {
+        out(JSON.stringify(recap, null, 2));
+        return 0;
+      }
+
+      if (flags.send) {
+        const result = await sendRecap(cfg, recap);
+        out(result.sent ? `Sent "${result.subject}" to ${cfg.to}.` : `Not sent: ${result.error}`);
+        return result.sent ? 0 : 1;
+      }
+
+      out(renderRecapText(recap));
       return 0;
     }
 

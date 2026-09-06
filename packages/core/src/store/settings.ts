@@ -3,6 +3,7 @@ import { readJson, writeJson } from "../util/json.ts";
 import { SETTINGS_FILE } from "../util/paths.ts";
 import { DEFAULT_PACING, type PacingSettings } from "../core/pacing.ts";
 import { DEFAULT_EVERGREEN, type EvergreenSettings } from "../core/evergreen.ts";
+import { DEFAULT_RECAP, type RecapSettings } from "../core/recap.ts";
 
 export interface Settings {
   /** Default `--to` value when none is given. "all" posts everywhere. */
@@ -50,6 +51,8 @@ export interface Settings {
   pacing: PacingSettings;
   /** Old pages from a blog account, re-posted on a slow cadence with an ad. */
   evergreen: EvergreenSettings;
+  /** One email a day: what went out, what failed, what is booked next. */
+  recap: RecapSettings;
   /** Plugin specs: an absolute path, or a package name installed by `myna plugins add`. */
   plugins: string[];
 }
@@ -82,6 +85,7 @@ export const DEFAULT_SETTINGS: Settings = {
   },
   pacing: { ...DEFAULT_PACING },
   evergreen: { ...DEFAULT_EVERGREEN },
+  recap: { ...DEFAULT_RECAP },
   plugins: [],
 };
 
@@ -95,6 +99,7 @@ export function loadSettings(): Settings {
     graph: { ...DEFAULT_SETTINGS.graph, ...stored.graph },
     pacing: { ...DEFAULT_SETTINGS.pacing, ...stored.pacing },
     evergreen: { ...DEFAULT_SETTINGS.evergreen, ...stored.evergreen },
+    recap: { ...DEFAULT_SETTINGS.recap, ...stored.recap },
     plugins: Array.isArray(stored.plugins) ? stored.plugins.filter((entry) => typeof entry === "string") : [],
   };
 }

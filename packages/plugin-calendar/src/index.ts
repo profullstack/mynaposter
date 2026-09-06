@@ -26,6 +26,11 @@
  *
  * `gcal` is never part of `all`: a calendar entry is not a social post, so
  * it only gets one when named in `--to`.
+ *
+ * A word on the hook. It is right for a handful of posts a week and wrong
+ * for a drip queue: at forty entries the calendar stops being a list of
+ * appointments and becomes a log. `myna recap` says the same thing once a
+ * morning instead, and `myna calendar auto off` is how you choose it.
  */
 import type {
   Account,
