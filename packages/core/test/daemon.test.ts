@@ -71,6 +71,24 @@ test("a seed provider's result lands in the graph", async () => {
   expect(readGraph().seeds.map((seed) => seed.handle)).toEqual(["alice.bsky.social"]);
 });
 
+test("onReady names every job that registered", async () => {
+  // The CLI printed its own guess at this list, so evergreen and the recap
+  // ran without ever being named and the daemon looked idle.
+  let ids: string[] = [];
+  const stop = startDaemon({
+    tickMs: 10_000,
+    builtins: false,
+    log: () => {},
+    onReady: (seen) => { ids = seen; },
+    jobs: [
+      { id: "one", everyMs: 1, async run() {} },
+      { id: "two", everyMs: 1, async run() {} },
+    ],
+  });
+  stop();
+  expect(ids).toEqual(["one", "two"]);
+});
+
 test("the loop runs due jobs on a tick and stops when told", async () => {
   let runs = 0;
   const stop = startDaemon({

@@ -322,13 +322,22 @@ export interface RecapTurn {
   result?: SendRecapResult;
 }
 
-/** One turn for the daemon: send today's recap if it is due and not yet sent. */
-export async function runRecap(settings: RecapSettings, options: { now?: Date; force?: boolean } = {}): Promise<RecapTurn> {
+/**
+ * One turn: send today's recap if it is due and not yet sent.
+ *
+ * `myna recap --send` goes through here too, with `force`. Sending by hand
+ * and sending on schedule have to share the stamp, or a recap asked for at
+ * noon is followed by an identical one from the daemon ten minutes later.
+ */
+export async function runRecap(
+  settings: RecapSettings,
+  options: { now?: Date; force?: boolean; windowMs?: number } = {},
+): Promise<RecapTurn> {
   const now = options.now ?? new Date();
   const state = loadRecapState();
   if (!options.force && !recapDue(settings, now, state.lastSentAt)) return { idle: "not due" };
 
-  const recap = buildRecap({ now });
+  const recap = buildRecap({ now, windowMs: options.windowMs });
   const result = await sendRecap(settings, recap);
   // Stamp only on success, so a mail outage retries on the next tick rather
   // than costing the day's recap entirely.

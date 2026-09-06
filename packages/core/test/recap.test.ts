@@ -204,3 +204,10 @@ test("a late send does not let the next one follow too soon", () => {
 test("a corrupt last-sent stamp does not wedge the recap forever", () => {
   expect(recapDue(on, local("2026-09-06T09:00:00"), "whenever")).toBe(true);
 });
+
+test("a hand-sent recap stamps the day, so the daemon does not send a second", () => {
+  // This is the real sequence that sent two identical recaps in one evening:
+  // `myna recap --send` at 18:55, daemon restart at 18:56, both past 08:00.
+  const sentByHand = local("2026-09-06T18:55:00").toISOString();
+  expect(recapDue(on, local("2026-09-06T18:56:00"), sentByHand)).toBe(false);
+});
