@@ -155,7 +155,40 @@ publication (and on your own blog, a commit), so those only post when named in
 `--to`. One post can name several: `--to htmlblog,devto` writes the page and
 the article from the same Markdown. Per-post flags: `--slug`,
 `--description`, `--tags`, `--date` (the future is refused), `--draft true`,
-`--author`, and `--overwrite true` for a Git blog.
+`--author`, `--canonical-url`, and `--overwrite true` for a Git blog.
+
+#### Which copy is the original
+
+`--to htmlblog,devto` publishes the same article twice, so one of them has to
+be the original or search engines pick for you. `--canonical-url` says which:
+
+```sh
+myna post --to devto --title "Release 1.2" \
+  --canonical-url https://example.com/blog/042-post.html < post.md
+```
+
+It is honored wherever the network has a field for it, and the field is
+different every time:
+
+| network | what it sends |
+| --- | --- |
+| dev.to | `canonical_url` |
+| Hashnode | `originalArticleURL` |
+| Ghost | `canonical_url` |
+| Tumblr | `source_url`, the attribution link it has instead |
+| gitblog | `canonical:` in the post's frontmatter, for the site template to render |
+| htmlblog | `<link rel="canonical">` in the page head |
+
+WordPress and Micro.blog are left out on purpose. WordPress core has no
+canonical field (it belongs to an SEO plugin's post meta) and Micropub defines
+no canonical property, so neither pretends to support one.
+
+**htmlblog points at itself** without being asked, using the `siteUrl` you
+logged in with, because the original should confirm what the copies claim.
+Pass `--canonical-url` only when the original really is elsewhere. When
+profullstack/cli-tools' `blog-post` writes the page, it applies its own
+`siteUrl` and myna forwards the flag only when you set one — that needs
+cli-tools 0.28.0 or newer.
 
 ### YouTube: search, then comment
 
