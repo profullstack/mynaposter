@@ -41,6 +41,9 @@ Posting:
   queue                             Show scheduled posts
   cancel <id>                       Remove a scheduled post
   history                           What was posted, and what failed
+  recap [--days 1] [--send]         The last day and the next: what was sent,
+  recap on --to you@example.com     what failed, what is booked. "on" mails it
+       [--at 08:00]                 daily from the daemon; "off" stops it
   delete <account> <post id>        Delete a post you made
   repost <account> <post url>       Share a post from one account.
        [--at "in 2h"]               With --at it is queued instead of sent now

@@ -81,6 +81,25 @@ export * as cloud from "./store/cloud.ts";
 export { postToAll, postPaced, tailor, charsFor, summarize, type ComposeOptions, type TargetResult, type PostOutcome, type PacedOptions, type PacedOutcome } from "./core/poster.ts";
 export { planTargets, pacingRules, nextSlotFor, lastPerNetwork, bookingsPerNetwork, recentDuplicate, describeMs, DEFAULT_PACING, type PacingSettings, type PacingRules, type Plan, type PlannedTarget } from "./core/pacing.ts";
 export { runEvergreen, pickEvergreen, evergreenText, lastEvergreen, DEFAULT_EVERGREEN, EVERGREEN_MARK, type EvergreenSettings, type EvergreenRun, type EvergreenPick } from "./core/evergreen.ts";
+export {
+  buildRecap,
+  renderRecapText,
+  recapSubject,
+  recapDue,
+  runRecap,
+  sendRecap,
+  loadRecapState,
+  saveRecapState,
+  DEFAULT_RECAP,
+  RECAP_GUARD_MS,
+  type Recap,
+  type RecapSettings,
+  type RecapAccountRow,
+  type RecapFailure,
+  type RecapUpcoming,
+  type RecapTurn,
+  type SendRecapResult,
+} from "./core/recap.ts";
 export { runAfterPost, runAfterSchedule, runAfterCancel, postedEvent, scheduledEvent, type HookOutcome } from "./plugins/hooks.ts";
 export { renderMarkdown, renderInline, firstParagraph, slugify, escapeHtml } from "./util/markdown.ts";
 export { loadMedia, loadAllMedia } from "./core/media.ts";
