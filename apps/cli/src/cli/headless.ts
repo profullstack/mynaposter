@@ -115,7 +115,11 @@ export function parseFlags(argv: string[]): { positional: string[]; flags: Flags
     const [rawName, inlineValue] = arg.slice(2).split("=");
     const name = rawName.replace(/-([a-z])/g, (_, letter: string) => letter.toUpperCase());
 
-    if (name === "json" || name === "yes" || name === "thread" || name === "dryRun" || name === "noThread" || name === "force") {
+    // Boolean flags take no value. `--now`, `--off` and `--no-open` are as
+    // much switches as `--json`; without them here the parser eats the next
+    // argument, so `myna post all "hi" --now` died asking for a value.
+    const BOOLS = new Set(["json", "yes", "thread", "dryRun", "noThread", "force", "now", "off", "on", "noOpen"]);
+    if (BOOLS.has(name)) {
       flags[name === "noThread" ? "thread" : name] = name !== "noThread";
       continue;
     }
@@ -132,7 +136,7 @@ export function parseFlags(argv: string[]): { positional: string[]; flags: Flags
 const OWN_FLAGS = new Set([
   "to", "title", "media", "json", "yes", "style", "at", "thread", "dryRun", "limit", "output",
   "keepSvg", "server", "overwrite", "settings", "once", "interval", "refresh", "theme", "force", "weight", "source", "network",
-  "now", "gap", "drip", "repost", "every", "cooldown", "off", "on",
+  "now", "gap", "drip", "repost", "every", "cooldown", "off", "on", "port", "open", "noOpen",
 ]);
 
 /**

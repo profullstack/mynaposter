@@ -40,7 +40,8 @@
     "@profullstack/myna-core": "workspace:*",
     "@profullstack/myna-plugin-outreachgraph": "workspace:*",
     "@profullstack/myna-plugin-crawlproof": "workspace:*",
-    "@profullstack/myna-plugin-calendar": "workspace:*"
+    "@profullstack/myna-plugin-calendar": "workspace:*",
+    "@profullstack/myna-plugin-dashboard": "workspace:*"
   },
   "scripts": {
     "build:binaries": "bun build-binaries.ts"

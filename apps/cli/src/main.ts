@@ -61,6 +61,11 @@ Following (Bluesky, Mastodon, Misskey, X, Nostr):
     graph on | off                  Let the daemon do all of this
     graph status | seeds | skip | unseed | clear
 
+Seeing it:
+  dashboard                         A local dashboard: the queue, the drip,
+                                    what each network is holding, what went out
+       [--port 7777] [--no-open]
+
 Plugins:
   plugins                           What is loaded, and what each one adds
   plugins add <package or path>     Install a plugin
