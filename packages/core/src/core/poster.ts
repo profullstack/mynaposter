@@ -10,8 +10,12 @@
 import type { Account, MediaItem, PostInput, PostResult } from "../net/types.ts";
 import { requireNetwork } from "../net/registry.ts";
 import { splitThread, truncateTo, appendHashtags, countChars } from "../util/text.ts";
-import { recordHistory } from "../store/history.ts";
-import { postedEvent, runAfterPost, type HookOutcome } from "../plugins/hooks.ts";
+import { recordHistory, listHistory } from "../store/history.ts";
+import { postedEvent, runAfterPost, runAfterSchedule, type HookOutcome } from "../plugins/hooks.ts";
+import { enqueue, listQueue, type QueuedPost } from "../store/queue.ts";
+import { getAccount } from "../store/accounts.ts";
+import { loadSettings } from "../store/settings.ts";
+import { pacingRules, planTargets, type Plan } from "./pacing.ts";
 
 export interface ComposeOptions {
   text: string;
@@ -138,6 +142,69 @@ export async function postToAll(accounts: Account[], options: ComposeOptions): P
   // Hooks run after the history is written: a hook that reads it sees this post.
   const hooks = await runAfterPost(postedEvent(results, options));
   return Object.assign(results, { hooks });
+}
+
+export interface PacedOptions {
+  /** Ignore the gates: everything that is not a duplicate goes now. */
+  force?: boolean;
+  /** Spread from this moment instead of now: a scheduled post. Epoch ms. */
+  from?: number;
+  now?: number;
+  /** Media paths, so the queued part can reload them when its turn comes. */
+  mediaPaths?: string[];
+}
+
+export interface PacedOutcome {
+  /** What went out in this call. Empty when everything was queued. */
+  results: PostOutcome;
+  /** One queued post per account whose turn is later. */
+  queued: QueuedPost[];
+  skipped: Array<{ account: Account; reason: string }>;
+  plan: Plan;
+  /** What plugins said about the queued ones (a calendar entry, say). */
+  scheduleHooks: HookOutcome[];
+}
+
+/**
+ * Post with pacing: the accounts whose turn it is now are posted to at once;
+ * the rest are queued one by one along the drip window and past their
+ * network's gap, for the daemon to send. The same text to an account that
+ * already had it inside the repost gap is refused. See pacing.ts.
+ */
+export async function postPaced(accounts: Account[], options: ComposeOptions, paced: PacedOptions = {}): Promise<PacedOutcome> {
+  if (!accounts.length) throw new Error("No targets. Run /login <network> first, or check your --to value.");
+  const settings = loadSettings();
+  const plan = planTargets({
+    accounts,
+    text: options.text,
+    now: paced.now,
+    from: paced.from,
+    force: paced.force,
+    history: listHistory(),
+    queue: listQueue(),
+    rules: pacingRules(settings.pacing),
+    accountNetwork: (id) => getAccount(id)?.network,
+  });
+
+  const results: PostOutcome = plan.now.length ? await postToAll(plan.now, options) : Object.assign([], { hooks: [] });
+
+  const queued: QueuedPost[] = [];
+  const scheduleHooks: HookOutcome[] = [];
+  for (const target of plan.later) {
+    const entry = enqueue({
+      scheduledFor: new Date(target.at).toISOString(),
+      targets: [target.account.id],
+      text: options.text,
+      title: options.title,
+      mediaPaths: paced.mediaPaths,
+      extra: options.extra,
+      thread: options.thread,
+    });
+    queued.push(entry);
+    scheduleHooks.push(...(await runAfterSchedule(entry)));
+  }
+
+  return { results, queued, skipped: plan.skipped, plan, scheduleHooks };
 }
 
 export function summarize(results: TargetResult[]): string {

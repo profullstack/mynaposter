@@ -13,6 +13,7 @@ import { addSeeds, expandSeeds, followNext } from "./graph.ts";
 import { loadSettings } from "../store/settings.ts";
 import { pluginTasks, seedProviders } from "../plugins/loader.ts";
 import { pluginContext } from "../plugins/context.ts";
+import { runEvergreen } from "./evergreen.ts";
 
 export interface DaemonJob {
   id: string;
@@ -47,6 +48,17 @@ export function builtinJobs(log: (line: string) => void, tickMs: number): Daemon
     },
   ];
 
+  if (settings.evergreen.enabled) {
+    jobs.push({
+      id: "evergreen",
+      // Look every hour; runEvergreen itself waits out `every`.
+      everyMs: 3_600_000,
+      async run() {
+        const turn = await runEvergreen({ log });
+        if (turn.page) return `evergreen: ${turn.page.url}`;
+      },
+    });
+  }
   if (settings.graph.enabled) {
     jobs.push(
       {

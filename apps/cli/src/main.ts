@@ -27,9 +27,16 @@ Accounts:
   networks                          List all supported networks
 
 Posting:
-  post [target] [text]              Post now. Target is "all", a network, or an
-                                    account id. Text can also be piped in
+  post [target] [text]              Post. Target is "all", a network, or an
+                                    account id. Text can also be piped in.
+                                    Paced: one account goes now, the rest are
+                                    queued along the drip. --now sends all
   schedule <when> [text]            Queue a post: "in 2h", "tomorrow 9am"
+  pace [--gap 4h] [--drip 48h]      The pacing rules: one post per network
+       [--repost 7d]                per gap, several accounts spread over
+                                    the drip, a repeat waits out the repost gap
+  evergreen <blog account>          Re-post an old page every --every 7d to
+       [--to all] [--every 7d]      --to, with a CrawlProof ad. --off stops it
   queue                             Show scheduled posts
   cancel <id>                       Remove a scheduled post
   history                           What was posted, and what failed

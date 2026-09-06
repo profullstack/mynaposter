@@ -1,6 +1,8 @@
 /** User preferences. Plain JSON — no secrets here except by the user's choice. */
 import { readJson, writeJson } from "../util/json.ts";
 import { SETTINGS_FILE } from "../util/paths.ts";
+import { DEFAULT_PACING, type PacingSettings } from "../core/pacing.ts";
+import { DEFAULT_EVERGREEN, type EvergreenSettings } from "../core/evergreen.ts";
 
 export interface Settings {
   /** Default `--to` value when none is given. "all" posts everywhere. */
@@ -40,6 +42,14 @@ export interface Settings {
     /** Which networks the daemon follows on: "all" or a comma list. */
     networks: string;
   };
+  /**
+   * How fast posts go out. Nothing is sent at the rate it was asked for:
+   * one post per network per `minGap`, a multi-account post dripped over
+   * `drip`, the same text to the same account not inside `repostGap`.
+   */
+  pacing: PacingSettings;
+  /** Old pages from a blog account, re-posted on a slow cadence with an ad. */
+  evergreen: EvergreenSettings;
   /** Plugin specs: an absolute path, or a package name installed by `myna plugins add`. */
   plugins: string[];
 }
@@ -70,6 +80,8 @@ export const DEFAULT_SETTINGS: Settings = {
     minSeeds: 1,
     networks: "all",
   },
+  pacing: { ...DEFAULT_PACING },
+  evergreen: { ...DEFAULT_EVERGREEN },
   plugins: [],
 };
 
@@ -81,6 +93,8 @@ export function loadSettings(): Settings {
     ai: { ...DEFAULT_SETTINGS.ai, ...stored.ai },
     infographic: { ...DEFAULT_SETTINGS.infographic, ...stored.infographic },
     graph: { ...DEFAULT_SETTINGS.graph, ...stored.graph },
+    pacing: { ...DEFAULT_SETTINGS.pacing, ...stored.pacing },
+    evergreen: { ...DEFAULT_SETTINGS.evergreen, ...stored.evergreen },
     plugins: Array.isArray(stored.plugins) ? stored.plugins.filter((entry) => typeof entry === "string") : [],
   };
 }

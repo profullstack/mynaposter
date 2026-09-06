@@ -17,6 +17,7 @@ import {
   loadAllMedia,
   loadSettings,
   postToAll,
+  postPaced,
   removeQueued,
   requireNetwork,
   resolveTargets,
@@ -64,17 +65,18 @@ export async function post(request: PostRequest) {
     };
   }
 
-  const results = await postToAll(targets, {
+  const paced = await postPaced(targets, {
     text: request.text,
     title: request.title,
     media: request.mediaPaths?.length ? loadAllMedia(request.mediaPaths) : undefined,
     thread: request.thread ?? loadSettings().threadByDefault,
     signature: loadSettings().signature || undefined,
     extra: request.extra,
-  });
+  }, { force: request.extra?.now === "true", mediaPaths: request.mediaPaths });
+  const results = paced.results;
 
   return {
-    summary: summarize(results),
+    summary: results.length ? summarize(results) : "nothing sent yet",
     results: results.map((result) => ({
       account: result.account.id,
       ok: result.ok,
@@ -82,6 +84,8 @@ export async function post(request: PostRequest) {
       url: result.posts[0]?.url,
       error: result.error,
     })),
+    queued: paced.queued.map((entry) => ({ id: entry.id, account: entry.targets[0], at: entry.scheduledFor })),
+    skipped: paced.skipped.map((entry) => ({ account: entry.account.id, reason: entry.reason })),
   };
 }
 
