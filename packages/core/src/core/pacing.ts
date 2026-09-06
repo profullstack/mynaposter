@@ -120,6 +120,88 @@ export function nextSlotFor(network: string, bookings: Map<string, number[]>, no
 }
 
 /**
+ * Bookings that have already happened: history, plus queue entries whose time
+ * has passed. This is what `--front` measures its gap against, and the reason
+ * a 30-deep queue cannot push a launch into next week.
+ */
+export function pastBookings(
+  history: HistoryEntry[],
+  queue: QueuedPost[],
+  accountNetwork: (id: string) => string | undefined,
+  now: number,
+): Map<string, number[]> {
+  const past = new Map<string, number[]>();
+  for (const [network, times] of bookingsPerNetwork(history, queue, accountNetwork)) {
+    const before = times.filter((at) => at <= now);
+    if (before.length) past.set(network, before);
+  }
+  return past;
+}
+
+/** One queued entry that a front-of-line post pushed back. */
+export interface Reflow {
+  id: string;
+  from: number;
+  to: number;
+}
+
+/**
+ * Make room. Given the slots a front-of-line post just took, walk each
+ * affected network in time order and push any pending entry that would now
+ * sit inside the gap. Nothing is dropped and nothing is sent early: an entry
+ * only ever moves later, and only far enough to clear the gap.
+ */
+export function reflowQueue(input: {
+  taken: Array<{ network: string; at: number }>;
+  queue: QueuedPost[];
+  accountNetwork: (id: string) => string | undefined;
+  minGapMs: number;
+}): Reflow[] {
+  const { minGapMs } = input;
+  if (minGapMs <= 0 || !input.taken.length) return [];
+
+  const takenByNetwork = new Map<string, number[]>();
+  for (const slot of input.taken) {
+    const list = takenByNetwork.get(slot.network);
+    if (list) list.push(slot.at);
+    else takenByNetwork.set(slot.network, [slot.at]);
+  }
+
+  // An entry can touch more than one network, so collect every proposal and
+  // give it the latest, rather than letting one network undo another's.
+  const proposals = new Map<string, { from: number; to: number }>();
+
+  for (const [network, slots] of takenByNetwork) {
+    slots.sort((a, b) => a - b);
+    const earliest = slots[0];
+
+    const onNetwork = input.queue
+      .filter((post) => post.status === "pending" || post.status === "sending")
+      .filter((post) => post.targets.some((id) => input.accountNetwork(id) === network))
+      .map((post) => ({ post, at: new Date(post.scheduledFor).getTime() }))
+      .filter((row) => !Number.isNaN(row.at) && row.at >= earliest)
+      .sort((a, b) => a.at - b.at);
+
+    // A slot we took that sits between two entries still has to gate the
+    // later one, so walk the taken list alongside the entries rather than
+    // measuring everything from the last slot.
+    const ahead = slots.slice();
+    let prev = ahead.shift() as number;
+    for (const row of onNetwork) {
+      while (ahead.length && ahead[0] <= row.at) prev = Math.max(prev, ahead.shift() as number);
+      const at = row.at < prev + minGapMs ? prev + minGapMs : row.at;
+      if (at !== row.at) {
+        const seen = proposals.get(row.post.id);
+        if (!seen || at > seen.to) proposals.set(row.post.id, { from: row.at, to: at });
+      }
+      prev = at;
+    }
+  }
+
+  return [...proposals].map(([id, move]) => ({ id, from: move.from, to: move.to })).sort((a, b) => a.to - b.to);
+}
+
+/**
  * Has this exact text gone to this account inside the repost gap? A repost
  * of an old page is fine once a week; twice in an afternoon is spam.
  */
@@ -141,6 +223,12 @@ export interface Plan {
   later: PlannedTarget[];
   /** Targets refused outright: the same text went to that account too recently. */
   skipped: Array<{ account: Account; reason: string }>;
+  /**
+   * Every slot this plan claimed, now and later alike. A front-of-line plan
+   * hands these to `reflowQueue` so what it jumped ahead of gets pushed back
+   * rather than landing inside its gap.
+   */
+  taken: Array<{ network: string; at: number }>;
 }
 
 export interface PlanInput {
@@ -158,6 +246,19 @@ export interface PlanInput {
   order?: (accounts: Account[]) => Account[];
   /** Ignore the gates: the person said --now. Duplicates are still refused. */
   force?: boolean;
+  /**
+   * Front of line: the person said --front.
+   *
+   * The gap is measured from what has already GONE OUT, so a saturated queue
+   * stops holding the door. Two differences from a normal plan and no third:
+   * future queue entries do not gate, and the drip collapses to the minGap
+   * window, because the point of jumping the line is that every account
+   * carries the thing while it is still news.
+   *
+   * `minGap` and `repostGap` are enforced exactly as usual. This reorders the
+   * queue, it does not open the gates. That is what separates it from `force`.
+   */
+  front?: boolean;
 }
 
 /**
@@ -174,9 +275,14 @@ export function planTargets(input: PlanInput): Plan {
   const now = input.now ?? Date.now();
   const from = input.from ?? now;
   const order = input.order ?? shuffle;
-  const booked = bookingsPerNetwork(input.history, input.queue, input.accountNetwork);
+  // Front of line measures the gap from what has already gone out. Everything
+  // still sitting in the queue is what we are jumping, so it cannot also be
+  // what holds us back.
+  const booked = input.front
+    ? pastBookings(input.history, input.queue, input.accountNetwork, now)
+    : bookingsPerNetwork(input.history, input.queue, input.accountNetwork);
 
-  const plan: Plan = { now: [], later: [], skipped: [] };
+  const plan: Plan = { now: [], later: [], skipped: [], taken: [] };
   const candidates: Account[] = [];
   for (const account of order(input.accounts)) {
     const dup = recentDuplicate(input.text, account.id, input.history, now, input.rules.repostGapMs);
@@ -192,13 +298,17 @@ export function planTargets(input: PlanInput): Plan {
     for (const account of candidates) {
       if (from <= now) plan.now.push(account);
       else plan.later.push({ account, at: from, reason: "scheduled" });
+      plan.taken.push({ network: account.network, at: Math.max(from, now) });
     }
     return plan;
   }
 
   // Ideal positions along the drip: 0, 1/(n-1), ... of the window from `from`.
+  // Front of line spreads over minGap instead of the full drip, so the whole
+  // set lands inside one gap rather than over two days.
   const n = candidates.length;
-  const step = n > 1 ? Math.floor(input.rules.dripMs / (n - 1)) : 0;
+  const window = input.front ? input.rules.minGapMs : input.rules.dripMs;
+  const step = n > 1 ? Math.floor(window / (n - 1)) : 0;
 
   candidates.forEach((account, index) => {
     const ideal = from + index * step;
@@ -212,6 +322,7 @@ export function planTargets(input: PlanInput): Plan {
       list.push(at);
       list.sort((a, b) => a - b);
     } else booked.set(account.network, [at]);
+    plan.taken.push({ network: account.network, at });
 
     if (at <= now) {
       plan.now.push(account);
