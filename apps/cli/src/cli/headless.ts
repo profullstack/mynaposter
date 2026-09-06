@@ -694,11 +694,29 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
       // boost, a Bluesky repost. Takes the URL as copied from the network.
       await ensureUnlocked();
       const [accountId, ref] = positional;
-      if (!accountId || !ref) throw new Error("Usage: myna repost <account> <post url or id>");
+      if (!accountId || !ref) throw new Error("Usage: myna repost <account> <post url or id> [--at <when>]");
       const account = listAccounts().find((entry) => entry.id === accountId);
       if (!account) throw new Error(`No account "${accountId}"`);
       const network = requireNetwork(account.network);
       if (!network.repost) throw new Error(`${network.name} has no repost API.`);
+
+      // `--at` queues it instead. Two accounts sharing each other's posts
+      // want a delay between them, or both timelines show the same thing at
+      // the same minute and neither reaches anybody the other did not.
+      if (typeof flags.at === "string") {
+        const { at } = parseWhen(flags.at);
+        const entry = enqueue({
+          scheduledFor: at.toISOString(),
+          targets: [account.id],
+          // What the queue prints. The send reads repostOf and composes nothing.
+          text: `repost ${ref}`,
+          repostOf: ref,
+        });
+        out(`Queued repost ${entry.id} from ${accountId} for ${describeWhen(at)}`);
+        printHooks(await runAfterSchedule(entry));
+        return 0;
+      }
+
       const result = await network.repost(account, ref);
       out(`Reposted from ${accountId}${result.url ? `  ${result.url}` : ""}`);
       return 0;
