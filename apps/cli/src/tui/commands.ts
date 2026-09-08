@@ -46,6 +46,7 @@ import { homedir } from "node:os";
 import { selectedAccounts, toast, type State, SCREENS, type Screen } from "./state.ts";
 import { Field } from "./field.ts";
 import { startLogin } from "./login.ts";
+import { loginValuesFromArgs } from "../login-args.ts";
 import { parseWhen, describeWhen } from "./when.ts";
 
 export interface Command {
@@ -79,16 +80,19 @@ export const COMMANDS: Command[] = [
   },
   {
     name: "login",
-    args: "<network>",
-    help: "Connect an account. Prompts for whatever that network accepts",
+    args: "<network> [value...]",
+    help: "Connect an account. Prompts for whatever that network accepts, or takes the values as arguments",
     async run(state, args, redraw) {
-      const id = args.trim().split(/\s+/)[0];
+      const [id, ...rest] = args.trim().split(/\s+/).filter(Boolean);
       if (!id) throw new Error("Which network? Try /networks to see them all.");
       const network = getNetwork(id);
       if (!network) {
         throw new Error(`Unknown network "${id}". /networks lists all ${NETWORKS.length}.`);
       }
-      startLogin(state, network, redraw);
+      // `/login tsbb https://bbs.hqtui.com/ app-showcase` fills the dialog in
+      // the order the adapter declares its fields and lands on the first one
+      // still empty, so a board you already know is one line and one Enter.
+      startLogin(state, network, redraw, loginValuesFromArgs(network, rest));
     },
   },
   {

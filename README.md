@@ -92,6 +92,33 @@ TikTok and YouTube require you to register an app on their developer portal firs
 because they removed password APIs years ago and scraping a login session is
 both against their terms and fragile enough to break without warning.
 
+Anything a login would ask for can be given on the command line instead, in the
+order the network declares its fields or as `--<field>`, and what you pass is
+never asked for again:
+
+```sh
+myna login tsbb https://bbs.hqtui.com/ --forum app-showcase
+myna login tsbb https://bbs.hqtui.com/ app-showcase        # same thing, positionally
+```
+
+That makes a login scriptable, and outside a terminal a missing required field
+is an error naming the flag rather than a prompt nobody can answer. `/login tsbb
+https://bbs.hqtui.com/` does the same in the TUI: the dialog opens with the
+board filled in and the cursor on the first empty box.
+
+**A board is a set of forums, so tsbb takes several and cycles through them.**
+Login reads the board's forum list, and either takes the slugs you name or asks
+which ones, checking them against the board before it asks anyone to approve a
+code:
+
+```sh
+myna login tsbb https://bbs.hqtui.com/ --forum app-showcase,announcements,news
+```
+
+Each post then goes to the *next* forum in that list rather than to all of them
+at once, which is what a board would read as spam. `myna post --forum <slug>` is
+a detour for one post and leaves the rotation where it stands.
+
 **Mastodon no longer accepts a password at all.** `grant_type=password` was
 removed; a current server answers `unsupported_grant_type`. myna used to offer
 the field and produced a confusing failure, so it does not any more.
