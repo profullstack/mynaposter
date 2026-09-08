@@ -77,6 +77,26 @@ test("a forum the board refuses is skipped, and dropped from the rotation", asyn
   expect(after?.meta.forum).toBe("app-showcase,announcements");
 });
 
+test("the rotation advances through the poster, not only through a direct post()", async () => {
+  // `myna post --to all` goes through postToAll, which fills in a title and can
+  // rewrite options before an adapter runs. The adapter tests here call
+  // tsbb.post directly and so cannot see anything the poster does on the way,
+  // which is exactly how a title fix got shipped that never ran (0.15.1).
+  // This is the live state after the news forum was pruned: two forums, cursor
+  // on the second, so the next announcement belongs in `announcements`.
+  const { postToAll } = await import("../src/core/poster.ts");
+  saveAccount(account("app-showcase,announcements", "1") as never);
+  const seen = board([]);
+
+  const results = await postToAll([getAccount("tsbb:member@example.com") as never], {
+    text: "A 403 you could have predicted. The board knew the answer already.",
+  });
+
+  expect(results[0]?.ok).toBe(true);
+  expect(seen).toEqual(["announcements"]);
+  expect(getAccount("tsbb:member@example.com")?.meta.forumCursor).toBe("0");
+});
+
 test("the next post carries on from where the pruned list left off", async () => {
   saveAccount(account("app-showcase,announcements", "1") as never);
   const seen = board([]);
