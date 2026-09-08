@@ -85,6 +85,7 @@ import {
 import { spawnSync } from "node:child_process";
 import { ask, askSecret, confirm, readStdin } from "./prompt.ts";
 import { parseWhen, describeWhen, parseDuration } from "../tui/when.ts";
+import { loginValuesFromArgs } from "../login-args.ts";
 
 /** A duration in ms, or the fallback's, or undefined when neither reads. */
 function parseDurationOr(value: string, fallback: string): number | undefined {
@@ -261,6 +262,9 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
       if (!network) throw new Error(`Unknown network "${id}". Run: myna networks`);
       await ensureUnlocked();
 
+      const given = loginValuesFromArgs(network, positional.slice(1), flags);
+      const interactive = Boolean(process.stdin.isTTY);
+
       out(`Connecting ${network.name}.`);
       if (network.auth.note) out(`\n${network.auth.note}`);
       if (network.auth.docsUrl) out(`Get the values here: ${network.auth.docsUrl}`);
@@ -268,6 +272,27 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
 
       const values: Record<string, string> = {};
       for (const field of network.auth.fields) {
+        // A value on the command line answers the question, so do not ask it
+        // again. This is what makes `myna login tsbb https://bbs.hqtui.com/
+        // --forum app-showcase` a single non-interactive command.
+        const supplied = given[field.key];
+        if (supplied) {
+          values[field.key] = supplied;
+          out(`  ${field.label}: ${field.secret ? "•".repeat(8) : supplied}`);
+          continue;
+        }
+        if (!interactive) {
+          // Nothing can be typed, so a missing required field has to say which
+          // flag would have filled it rather than hang on a prompt nobody sees.
+          if (!field.optional) {
+            throw new Error(
+              `${network.id} needs ${field.label} and stdin is not a terminal. ` +
+                `Pass it: myna login ${network.id} --${field.key} <value>`,
+            );
+          }
+          values[field.key] = field.default ?? "";
+          continue;
+        }
         const label = field.optional ? `${field.label} (optional)` : field.label;
         if (field.help) out(`  ${field.help}`);
         values[field.key] = field.secret ? await askSecret(label) : await ask(label, field.default ?? "");

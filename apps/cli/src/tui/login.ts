@@ -9,19 +9,29 @@ import { listAccounts, openBrowser, saveAccount, type Account, type Network } fr
 import { Field } from "./field.ts";
 import { toast, type State } from "./state.ts";
 
-export function startLogin(state: State, network: Network, redraw: () => void): void {
+export function startLogin(
+  state: State,
+  network: Network,
+  redraw: () => void,
+  values: Record<string, string> = {},
+): void {
+  const fields = network.auth.fields.map(
+    (field) =>
+      new Field(field.key, field.label, {
+        secret: field.secret,
+        placeholder: field.placeholder,
+        help: field.help,
+        optional: field.optional,
+      }, values[field.key] ?? field.default ?? ""),
+  );
+  // Start on the first thing still to answer rather than on a box that was
+  // filled from the command line, which for a one-field network is the
+  // difference between typing nothing and re-reading a URL you just typed.
+  const firstEmpty = fields.findIndex((field) => !field.value.trim());
   state.login = {
     network,
-    fields: network.auth.fields.map(
-      (field) =>
-        new Field(field.key, field.label, {
-          secret: field.secret,
-          placeholder: field.placeholder,
-          help: field.help,
-          optional: field.optional,
-        }, field.default ?? ""),
-    ),
-    active: 0,
+    fields,
+    active: firstEmpty < 0 ? Math.max(0, fields.length - 1) : firstEmpty,
     log: [],
     busy: false,
   };

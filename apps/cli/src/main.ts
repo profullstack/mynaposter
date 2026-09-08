@@ -18,10 +18,12 @@ Usage:
   myna <command> [args] [flags]     Run one command and exit
 
 Accounts:
-  login <network>                   Connect an account. Asks for whatever that
+  login <network> [value...]        Connect an account. Asks for whatever that
                                     network accepts: a password where one works,
                                     a token where it does not, a browser sign-in
-                                    for the ones that require it
+                                    for the ones that require it. Values given
+                                    as arguments, or as --<field>, are not asked
+                                    for again, so a login can be scripted
   logout <account>                  Disconnect and wipe its credentials
   accounts                          List connected accounts
   networks                          List all supported networks
@@ -122,6 +124,7 @@ Flags:
 
 Examples:
   myna login bluesky
+  myna login tsbb https://bbs.hqtui.com/ --forum app-showcase
   myna post all "the release notes are up"
   echo "shipping today" | myna post bluesky,mastodon
   myna link https://example.com/blog/post --to all
