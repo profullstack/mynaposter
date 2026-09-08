@@ -9,7 +9,7 @@
 import { createServer } from "node:http";
 import { createHash, randomBytes } from "node:crypto";
 import { spawn } from "node:child_process";
-import type { LoginContext } from "./types.ts";
+import type { Account, LoginContext } from "./types.ts";
 import { postForm } from "../util/http.ts";
 
 export const CALLBACK_PORT = 8765;
@@ -50,6 +50,12 @@ export interface OAuth2Config {
   scopes: string[];
   /** Extra query parameters on the authorize URL. */
   authParams?: Record<string, string>;
+  /**
+   * Extra form fields on the token endpoint, sent when the code is exchanged
+   * and again on every refresh. For providers that name the client something
+   * of their own (TikTok wants client_key, not client_id).
+   */
+  tokenParams?: Record<string, string>;
   /** PKCE. Off only for the few providers that reject the parameters. */
   pkce?: boolean;
   /** Send the client credentials as a Basic header rather than form fields. */
@@ -208,6 +214,7 @@ export async function authorize(config: OAuth2Config, ctx: LoginContext, timeout
     client_id: config.clientId,
   };
   if (config.pkce !== false) form.code_verifier = verifier;
+  Object.assign(form, config.tokenParams ?? {});
 
   const headers: Record<string, string> = {};
   if (config.basicAuth && config.clientSecret) {
@@ -227,6 +234,7 @@ export async function refresh(config: OAuth2Config, refreshToken: string): Promi
     grant_type: "refresh_token",
     refresh_token: refreshToken,
     client_id: config.clientId,
+    ...config.tokenParams,
   };
   const headers: Record<string, string> = {};
   if (config.basicAuth && config.clientSecret) {
@@ -235,6 +243,42 @@ export async function refresh(config: OAuth2Config, refreshToken: string): Promi
     form.client_secret = config.clientSecret;
   }
   return postForm<TokenSet>(config.tokenUrl, form, { headers });
+}
+
+/**
+ * The access token for a stored account, refreshed in place when it is spent.
+ *
+ * Access tokens are short: two hours on X, one on Google, a day on TikTok. A
+ * post scheduled for tomorrow would fail with the token that was fresh when the
+ * account was connected, so every adapter has to swap the refresh token for a
+ * new pair before it signs anything. The new pair goes back into the vault, and
+ * the refresh token itself is replaced when the provider rotates it — miss that
+ * and the account can never refresh again.
+ *
+ * An account with no recorded expiry, or none left, and no refresh token is
+ * handed back as-is: nothing better can be done, and the network's own 401 says
+ * more than a guess here would.
+ */
+export async function currentToken(
+  account: Account,
+  config: OAuth2Config,
+  options: { key?: string; lifetime?: number } = {},
+): Promise<string> {
+  const key = options.key ?? "accessToken";
+  const token = account.creds[key] ?? "";
+  const expiresAt = Number(account.meta.expiresAt || 0);
+  // A minute of margin, so a token cannot expire between the check and the call.
+  if (token && Date.now() < expiresAt - 60_000) return token;
+  if (!account.creds.refreshToken) return token;
+
+  const tokens = await refresh(config, account.creds.refreshToken);
+  account.creds[key] = tokens.access_token;
+  if (tokens.refresh_token) account.creds.refreshToken = tokens.refresh_token;
+  account.meta.expiresAt = String(Date.now() + (tokens.expires_in ?? options.lifetime ?? 3600) * 1000);
+  // Imported here because the store imports the registry, which imports this.
+  const { saveAccount } = await import("../store/accounts.ts");
+  saveAccount(account);
+  return tokens.access_token;
 }
 
 /** Shared by every OAuth adapter's login dialog. */

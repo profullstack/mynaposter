@@ -3,12 +3,14 @@
  *
  * No password login exists — X removed it. `/login x` opens a browser for the
  * OAuth 2.0 flow, which needs an app from the X developer portal with
- * "Native App / Public client" and the loopback redirect registered.
+ * "Native App / Public client" and the loopback redirect registered. OAuth 1.0a
+ * is gone: X issues those keys per app rather than per user, so the four values
+ * only ever signed in as the app owner, and every other path here has to
+ * refresh a bearer token anyway.
  */
 import type { Account, Network, Profile, TimelineItem } from "../types.ts";
 import { getJson, postJson, request } from "../../util/http.ts";
-import { oauth1Header, type OAuth1Credentials } from "../../util/crypto/sign.ts";
-import { authorize, callbackFrom, refresh, PASTE_FIELD, REDIRECT_NOTE, type OAuth2Config } from "../oauth2.ts";
+import { authorize, callbackFrom, currentToken, PASTE_FIELD, REDIRECT_NOTE, type OAuth2Config } from "../oauth2.ts";
 
 const API = "https://api.x.com";
 // follows.* are what the follow graph needs. An account signed in before they
@@ -25,50 +27,14 @@ const config = (clientId: string, clientSecret?: string): OAuth2Config => ({
   basicAuth: Boolean(clientSecret),
 });
 
-/**
- * X access tokens last two hours, so anything scheduled more than two hours out
- * would fail without this. The refreshed pair is written back to the vault.
- */
-async function accessToken(account: Account): Promise<string> {
-  const expiresAt = Number(account.meta.expiresAt || 0);
-  if (account.creds.accessToken && Date.now() < expiresAt - 60_000) return account.creds.accessToken;
-  if (!account.creds.refreshToken) return account.creds.accessToken;
-
-  const tokens = await refresh(config(account.creds.clientId, account.creds.clientSecret), account.creds.refreshToken);
-  account.creds.accessToken = tokens.access_token;
-  if (tokens.refresh_token) account.creds.refreshToken = tokens.refresh_token;
-  account.meta.expiresAt = String(Date.now() + (tokens.expires_in ?? 7200) * 1000);
-  const { saveAccount } = await import("../../store/accounts.ts");
-  saveAccount(account);
-  return tokens.access_token;
-}
-
 const auth = (token: string) => ({ authorization: `Bearer ${token}` });
 
-const isOAuth1 = (account: Account): boolean => Boolean(account.creds.apiKey && account.creds.accessToken);
-
-const oauth1Creds = (account: Account): OAuth1Credentials => ({
-  consumerKey: account.creds.apiKey,
-  consumerSecret: account.creds.apiSecret,
-  token: account.creds.accessToken,
-  tokenSecret: account.creds.accessSecret,
-});
-
 /**
- * The Authorization header for one request.
- *
- * X accepts either scheme on v2. OAuth 1.0a signs per request and never
- * expires, which is why it needs no refresh and no browser; OAuth 2.0 carries a
- * bearer token that lasts two hours and has to be refreshed. Both are here
- * because the first is far easier to set up and the second is what X pushes you
- * toward in the portal.
+ * The Authorization header for one request. X access tokens last two hours, so
+ * anything scheduled further out than that signs with a token refreshed here.
  */
-async function authorizeRequest(account: Account, method: string, url: string): Promise<Record<string, string>> {
-  if (isOAuth1(account)) {
-    return { authorization: oauth1Header(method, url, {}, oauth1Creds(account)) };
-  }
-  return auth(await accessToken(account));
-}
+const bearer = async (account: Account): Promise<Record<string, string>> =>
+  auth(await currentToken(account, config(account.creds.clientId, account.creds.clientSecret), { lifetime: 7200 }));
 
 export const x: Network = {
   id: "x",
@@ -78,56 +44,20 @@ export const x: Network = {
   auth: {
     kind: "oauth2",
     note:
-      "Two ways in. Simplest: paste the four OAuth 1.0a values from Keys and tokens (API key and secret, " +
-      "access token and secret) and myna signs each request, with no browser at all. Otherwise give the " +
-      `OAuth 2.0 client id and sign in through the browser. ${REDIRECT_NOTE}`,
+      "In the X developer portal open your app, then Keys and tokens for the OAuth 2.0 Client ID and Client " +
+      `Secret — not the API key. User authentication settings must have Read and write turned on. ${REDIRECT_NOTE}`,
+    docsUrl: "https://developer.x.com/en/portal/dashboard",
     fields: [
-      // Masked even though it is the public half of the OAuth 1.0a pair. The
-      // rule that every *_key field is masked is worth more than the small
-      // convenience of reading this one back, and apiKey on other networks
-      // (dev.to) is a real secret, so exempting the name would unmask that too.
-      { key: "apiKey", label: "API key", secret: true, optional: true, help: "OAuth 1.0a. Fill these four to skip the browser." },
-      { key: "apiSecret", label: "API key secret", secret: true, optional: true },
-      { key: "accessToken", label: "Access token", secret: true, optional: true },
-      { key: "accessSecret", label: "Access token secret", secret: true, optional: true },
-      { key: "clientId", label: "OAuth 2.0 client id", optional: true, help: "Only for the browser flow." },
-      { key: "clientSecret", label: "OAuth 2.0 client secret", secret: true, optional: true },
+      { key: "clientId", label: "OAuth 2.0 client id", help: "From Keys and tokens, under OAuth 2.0 Client ID and Client Secret." },
+      { key: "clientSecret", label: "OAuth 2.0 client secret", secret: true, optional: true, help: "Confidential clients only. Leave blank for a public/native app." },
       PASTE_FIELD,
     ],
   },
   caps: { charLimit: 280, mediaLimit: 4, threads: true, delete: true, timeline: true, notifications: false, stats: true, repost: true, follow: true },
 
   async login(input, ctx) {
-    // The four OAuth 1.0a values, if given, are enough on their own.
-    if (input.apiKey && input.apiSecret && input.accessToken && input.accessSecret) {
-      const creds = {
-        apiKey: input.apiKey.trim(),
-        apiSecret: input.apiSecret.trim(),
-        accessToken: input.accessToken.trim(),
-        accessSecret: input.accessSecret.trim(),
-      };
-      const url = `${API}/2/users/me`;
-      ctx.report("Checking the keys against X...");
-      const who = await getJson<{ data: { id: string; username: string; name: string } }>(url, {
-        headers: {
-          authorization: oauth1Header("GET", url, {}, {
-            consumerKey: creds.apiKey,
-            consumerSecret: creds.apiSecret,
-            token: creds.accessToken,
-            tokenSecret: creds.accessSecret,
-          }),
-        },
-      });
-      return {
-        handle: `@${who.data.username}`,
-        displayName: who.data.name,
-        creds,
-        meta: { userId: who.data.id, scheme: "oauth1", expiresAt: "" } as Record<string, string>,
-      };
-    }
-
     if (!input.clientId) {
-      throw new Error("Give either the four OAuth 1.0a values, or an OAuth 2.0 client id for the browser flow.");
+      throw new Error("Give the OAuth 2.0 client id from the X developer portal (Keys and tokens).");
     }
 
     const tokens = await authorize({ ...config(input.clientId, input.clientSecret || undefined), ...callbackFrom(input, ctx) }, ctx);
@@ -162,7 +92,7 @@ export const x: Network = {
         form.append("media", new Blob([item.data as unknown as ArrayBuffer], { type: item.mime }), item.path.split("/").pop() ?? "media");
         const uploaded = await request(`${API}/2/media/upload`, {
           method: "POST",
-          headers: await authorizeRequest(account, "POST", `${API}/2/media/upload`),
+          headers: await bearer(account),
           body: form as never,
         });
         ids.push(((await uploaded.json()) as { data: { id: string } }).data.id);
@@ -171,7 +101,7 @@ export const x: Network = {
     }
 
     const created = await postJson<{ data: { id: string } }>(`${API}/2/tweets`, body, {
-      headers: await authorizeRequest(account, "POST", `${API}/2/tweets`),
+      headers: await bearer(account),
     });
     return { id: created.data.id, url: `https://x.com/${account.handle.replace("@", "")}/status/${created.data.id}` };
   },
@@ -179,7 +109,7 @@ export const x: Network = {
   async remove(account, id) {
     await request(`${API}/2/tweets/${id}`, {
       method: "DELETE",
-      headers: await authorizeRequest(account, "DELETE", `${API}/2/tweets/${id}`),
+      headers: await bearer(account),
     });
   },
 
@@ -187,7 +117,7 @@ export const x: Network = {
     const id = xPostId(ref);
     const url = `${API}/2/users/${account.meta.userId}/retweets`;
     await postJson<{ data: { retweeted: boolean } }>(url, { tweet_id: id }, {
-      headers: await authorizeRequest(account, "POST", url),
+      headers: await bearer(account),
     });
     return { id, url: `https://x.com/i/status/${id}` };
   },
@@ -198,7 +128,7 @@ export const x: Network = {
       `&tweet.fields=created_at,public_metrics,author_id&expansions=author_id&user.fields=username,name`;
     const result = await getJson<{ data?: Record<string, any>[]; includes?: { users?: Record<string, any>[] } }>(
       url,
-      { headers: await authorizeRequest(account, "GET", url) },
+      { headers: await bearer(account) },
     );
     const users = new Map((result.includes?.users ?? []).map((user) => [user.id, user]));
     return (result.data ?? []).map((tweet): TimelineItem => {
@@ -221,7 +151,7 @@ export const x: Network = {
     const url = `${API}/2/tweets/${id}?tweet.fields=public_metrics`;
     const result = await getJson<{ data: { public_metrics: Record<string, number> } }>(
       url,
-      { headers: await authorizeRequest(account, "GET", url) },
+      { headers: await bearer(account) },
     );
     const metrics = result.data.public_metrics ?? {};
     return {
@@ -247,7 +177,7 @@ export const x: Network = {
         `${API}/2/users/${user.id}/following?max_results=${Math.min(1000, Math.max(limit - out.length, 1))}` +
         `&user.fields=description,public_metrics,username,name${token ? `&pagination_token=${token}` : ""}`;
       const page = await getJson<{ data?: Record<string, any>[]; meta?: { next_token?: string } }>(url, {
-        headers: await authorizeRequest(account, "GET", url),
+        headers: await bearer(account),
       });
       for (const item of page.data ?? []) {
         out.push({
@@ -272,7 +202,7 @@ export const x: Network = {
     // X answers the same way whether the follow is new or already there, so
     // "already" cannot be told apart without a second call. Not worth one.
     await postJson<{ data: { following: boolean; pending_follow: boolean } }>(url, { target_user_id: user.id }, {
-      headers: await authorizeRequest(account, "POST", url),
+      headers: await bearer(account),
     });
     return { id: user.id, url: `https://x.com/${user.username}` };
   },
@@ -281,7 +211,7 @@ export const x: Network = {
 async function xUser(account: Account, ref: string): Promise<{ id: string; username: string }> {
   const username = xUsername(ref);
   const url = `${API}/2/users/by/username/${encodeURIComponent(username)}`;
-  const found = await getJson<{ data?: { id: string; username: string } }>(url, { headers: await authorizeRequest(account, "GET", url) });
+  const found = await getJson<{ data?: { id: string; username: string } }>(url, { headers: await bearer(account) });
   if (!found.data) throw new Error(`No X account named @${username}`);
   return found.data;
 }

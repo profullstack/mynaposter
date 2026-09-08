@@ -25,6 +25,7 @@ export {
   openBrowser,
   authorize,
   refresh,
+  currentToken,
   callbackFrom,
   OAUTH_FIELDS,
   PASTE_FIELD,

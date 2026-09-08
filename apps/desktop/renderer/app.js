@@ -313,6 +313,10 @@ function openLogin(network) {
   activeNetwork = network;
   $("#login-title").textContent = `Connect ${network.name}`;
   $("#login-note").textContent = network.auth.note ?? "";
+  const docs = $("#login-docs");
+  docs.textContent = network.auth.docsUrl ? `Get the values here: ${network.auth.docsUrl}` : "";
+  docs.href = network.auth.docsUrl ?? "#";
+  docs.hidden = !network.auth.docsUrl;
   $("#login-progress").textContent = "";
   $("#login-error").textContent = "";
 

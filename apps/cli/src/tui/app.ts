@@ -192,7 +192,12 @@ function hint(state: State): string {
 
 function drawLogin(ui: Container, state: State, theme: Theme, height: number): void {
   const flow = state.login!;
-  const rows = flow.fields.length * 2 + flow.log.length + 9;
+  const noteLines = flow.network.auth.note ? wrapText(flow.network.auth.note, 70) : [];
+  // Wrapped rather than clipped: half a URL is no use to anyone.
+  const docsLines = flow.network.auth.docsUrl
+    ? wrapText(`Get the values here: ${flow.network.auth.docsUrl}`, 70)
+    : [];
+  const rows = flow.fields.length * 2 + flow.log.length + noteLines.length + docsLines.length + 9;
 
   ui.modal(
     {
@@ -201,10 +206,9 @@ function drawLogin(ui: Container, state: State, theme: Theme, height: number): v
       height: Math.min(rows, Math.max(12, height - 4)),
     },
     (panel) => {
-      if (flow.network.auth.note) {
-        for (const line of wrapText(flow.network.auth.note, 70)) panel.label(line, { size: 1 });
-        panel.spacer(1);
-      }
+      for (const line of noteLines) panel.label(line, { size: 1 });
+      for (const line of docsLines) panel.text(line, { size: 1, fg: theme.accent });
+      if (noteLines.length || docsLines.length) panel.spacer(1);
 
       flow.fields.forEach((field, index) => {
         const spec = flow.network.auth.fields[index];

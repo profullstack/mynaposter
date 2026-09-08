@@ -38,7 +38,7 @@ const fake: Network = {
   name: "Fake",
   category: "minor",
   blurb: "test",
-  auth: { kind: "token", fields: [{ key: "token", label: "Token", secret: true }] },
+  auth: { kind: "token", docsUrl: "https://example.com/tokens", fields: [{ key: "token", label: "Token", secret: true }] },
   caps: { ...NO_CAPS, follow: true },
   async login() {
     throw new Error("unused");

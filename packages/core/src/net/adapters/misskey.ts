@@ -49,6 +49,7 @@ export const misskey: Network = {
   auth: {
     kind: "token",
     note: "Settings → API → Generate access token. Tick 'Compose or delete notes' and 'View your account information'.",
+    docsUrl: "https://misskey-hub.net/en/docs/",
     fields: [
       { key: "instance", label: "Instance", placeholder: "misskey.io" },
       { key: "token", label: "Access token", secret: true },

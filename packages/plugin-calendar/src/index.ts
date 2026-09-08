@@ -265,6 +265,7 @@ const gcal: Network = {
       "type 'Web application'. While the app's consent screen is still in testing, Google expires the sign-in after " +
       `seven days; publishing it makes the sign-in permanent. Add ${GOOGLE_LOCAL_REDIRECT} as an authorized redirect ` +
       `URI, and ${GOOGLE_HOSTED_REDIRECT} too if you will authorize from a browser on another machine (answer "yes" to pasting a code).`,
+    docsUrl: "https://console.cloud.google.com/apis/credentials",
     fields: [
       { key: "clientId", label: "Client id", placeholder: "….apps.googleusercontent.com" },
       { key: "clientSecret", label: "Client secret", secret: true },

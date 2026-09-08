@@ -85,7 +85,7 @@ handle("networks:list", () =>
     name: network.name,
     category: network.category,
     blurb: network.blurb,
-    auth: { kind: network.auth.kind, note: network.auth.note, fields: network.auth.fields },
+    auth: { kind: network.auth.kind, note: network.auth.note, docsUrl: network.auth.docsUrl, fields: network.auth.fields },
     caps: network.caps,
   })),
 );

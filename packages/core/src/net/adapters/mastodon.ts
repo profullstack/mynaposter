@@ -84,6 +84,7 @@ function make(id: string, name: string, blurb: string, charLimit: number): Netwo
       note:
         "The instance is all myna needs: it registers itself there and opens your browser to an Authorize " +
         "button. Paste a token only if you would rather not use a browser (Preferences, Development, New application).",
+      docsUrl: "https://docs.joinmastodon.org/client/token/",
       fields: [
         { key: "instance", label: "Instance", placeholder: id === "pixelfed" ? "pixelfed.social" : "mastodon.social" },
         { key: "token", label: "Access token", secret: true, optional: true, help: "Optional. Leave blank to use the browser." },

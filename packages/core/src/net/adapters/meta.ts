@@ -28,6 +28,8 @@ function callbackFor(provider: keyof typeof HOSTED_REDIRECT, input: Record<strin
 
 const GRAPH = "https://graph.facebook.com/v21.0";
 const THREADS = "https://graph.threads.net/v1.0";
+// The token endpoints are unversioned, unlike the rest of the Threads API.
+const THREADS_HOST = "https://graph.threads.net";
 
 const facebookConfig = (clientId: string, clientSecret: string, scopes: string[]): OAuth2Config => ({
   authorizeUrl: "https://www.facebook.com/v21.0/dialog/oauth",
@@ -43,6 +45,30 @@ interface Page {
   id: string;
   name: string;
   access_token: string;
+}
+
+/**
+ * The Threads token to sign with, renewed when it is close to running out.
+ *
+ * Threads hands out a one-hour token at sign-in, exchanges it for a 60-day one,
+ * and then renews that from itself — there is no refresh token, so the call
+ * carries the token being replaced. A token can only be renewed once it is 24
+ * hours old and before it lapses, which is why the renewal happens on use
+ * rather than on a timer: an account posted to at all stays signed in.
+ */
+async function threadsToken(account: Account): Promise<string> {
+  const expiresAt = Number(account.meta.expiresAt || 0);
+  if (!expiresAt || Date.now() < expiresAt - 24 * 3600_000) return account.creds.token;
+
+  const renewed = await getJson<{ access_token: string; expires_in?: number }>(
+    `${THREADS_HOST}/refresh_access_token?grant_type=th_refresh_token` +
+      `&access_token=${encodeURIComponent(account.creds.token)}`,
+  );
+  account.creds.token = renewed.access_token;
+  account.meta.expiresAt = String(Date.now() + (renewed.expires_in ?? 60 * 24 * 3600) * 1000);
+  const { saveAccount } = await import("../../store/accounts.ts");
+  saveAccount(account);
+  return renewed.access_token;
 }
 
 /** Exchange the short-lived user token for the 60-day one. */
@@ -64,6 +90,7 @@ export const facebook: Network = {
     note:
       "Create an app at developers.facebook.com with the Facebook Login product, and add pages_manage_posts and pages_read_engagement. " +
       `You must be an admin of the Page. ${REDIRECT_NOTE}`,
+    docsUrl: "https://developers.facebook.com/apps",
     fields: [
       { key: "clientId", label: "App id" },
       { key: "clientSecret", label: "App secret", secret: true },
@@ -162,6 +189,7 @@ export const instagram: Network = {
     note:
       "Needs an Instagram Business or Creator account linked to a Facebook Page, and an app with instagram_basic and " +
       `instagram_content_publish. ${REDIRECT_NOTE}`,
+    docsUrl: "https://developers.facebook.com/apps",
     fields: [
       { key: "clientId", label: "App id" },
       { key: "clientSecret", label: "App secret", secret: true },
@@ -255,6 +283,7 @@ export const threads: Network = {
   auth: {
     kind: "oauth2",
     note: `Create a Threads app at developers.facebook.com with threads_basic and threads_content_publish. ${REDIRECT_NOTE}`,
+    docsUrl: "https://developers.facebook.com/apps",
     fields: [
       { key: "clientId", label: "App id" },
       { key: "clientSecret", label: "App secret", secret: true },
@@ -277,27 +306,39 @@ export const threads: Network = {
       },
       ctx,
     );
+    // The token from the code exchange lasts an hour, which is shorter than
+    // most queues. The long-lived one it buys lasts 60 days and renews itself.
+    ctx.report("Exchanging it for a long-lived token…");
+    const long = await getJson<{ access_token: string; expires_in?: number }>(
+      `${THREADS_HOST}/access_token?grant_type=th_exchange_token` +
+        `&client_secret=${encodeURIComponent(input.clientSecret)}` +
+        `&access_token=${encodeURIComponent(tokens.access_token)}`,
+    );
     const me = await getJson<{ id: string; username: string }>(
-      `${THREADS}/me?fields=id,username&access_token=${encodeURIComponent(tokens.access_token)}`,
+      `${THREADS}/me?fields=id,username&access_token=${encodeURIComponent(long.access_token)}`,
     );
     return {
       handle: `@${me.username}`,
       displayName: me.username,
-      creds: { token: tokens.access_token },
-      meta: { userId: me.id },
+      creds: { token: long.access_token },
+      meta: {
+        userId: me.id,
+        expiresAt: String(Date.now() + (long.expires_in ?? 60 * 24 * 3600) * 1000),
+      },
     };
   },
 
   async post(account, input) {
+    const token = await threadsToken(account);
     const container = await postJson<{ id: string }>(`${THREADS}/${account.meta.userId}/threads`, {
       media_type: "TEXT",
       text: input.text,
       ...(input.replyTo ? { reply_to_id: input.replyTo } : {}),
-      access_token: account.creds.token,
+      access_token: token,
     });
     const published = await postJson<{ id: string }>(`${THREADS}/${account.meta.userId}/threads_publish`, {
       creation_id: container.id,
-      access_token: account.creds.token,
+      access_token: token,
     });
     return { id: published.id };
   },
@@ -305,7 +346,7 @@ export const threads: Network = {
   async timeline(account, limit) {
     const result = await getJson<{ data: Record<string, any>[] }>(
       `${THREADS}/${account.meta.userId}/threads?limit=${limit}&fields=text,timestamp,permalink` +
-        `&access_token=${encodeURIComponent(account.creds.token)}`,
+        `&access_token=${encodeURIComponent(await threadsToken(account))}`,
     );
     return (result.data ?? []).map((post): TimelineItem => ({
       id: post.id,
@@ -319,7 +360,7 @@ export const threads: Network = {
 
   async stats(account, id) {
     const result = await getJson<{ data: { name: string; values: { value: number }[] }[] }>(
-      `${THREADS}/${id}/insights?metric=likes,replies,views&access_token=${encodeURIComponent(account.creds.token)}`,
+      `${THREADS}/${id}/insights?metric=likes,replies,views&access_token=${encodeURIComponent(await threadsToken(account))}`,
     );
     const read = (name: string) => result.data?.find((metric) => metric.name === name)?.values?.[0]?.value;
     return { likes: read("likes"), replies: read("replies"), views: read("views") };

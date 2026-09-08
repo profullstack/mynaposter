@@ -122,6 +122,7 @@ export const youtube: Network = {
       "type 'Web application'. Comments go out as your channel, so the Google account needs one. While the app's " +
       "consent screen is still in testing, Google expires the sign-in after seven days; publishing it makes the " +
       `sign-in permanent. ${REDIRECT_NOTE}`,
+    docsUrl: "https://console.cloud.google.com/apis/credentials",
     fields: [
       { key: "clientId", label: "Client id", placeholder: "….apps.googleusercontent.com" },
       { key: "clientSecret", label: "Client secret", secret: true },

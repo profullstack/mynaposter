@@ -262,7 +262,9 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
       await ensureUnlocked();
 
       out(`Connecting ${network.name}.`);
-      if (network.auth.note) out(`\n${network.auth.note}\n`);
+      if (network.auth.note) out(`\n${network.auth.note}`);
+      if (network.auth.docsUrl) out(`Get the values here: ${network.auth.docsUrl}`);
+      out("");
 
       const values: Record<string, string> = {};
       for (const field of network.auth.fields) {

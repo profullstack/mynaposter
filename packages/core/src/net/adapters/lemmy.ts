@@ -18,6 +18,7 @@ export const lemmy: Network = {
   auth: {
     kind: "password",
     note: "Your normal Lemmy account. If you have 2FA on, add the current code to the TOTP field.",
+    docsUrl: "https://join-lemmy.org/instances",
     fields: [
       { key: "instance", label: "Instance", placeholder: "lemmy.world" },
       { key: "username", label: "Username or email" },
