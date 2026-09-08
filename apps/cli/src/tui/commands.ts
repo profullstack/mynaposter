@@ -37,6 +37,8 @@ import {
   applyBundle,
   describeBundle,
   refreshEngagement,
+  checkForUpdate,
+  selfUpdate,
   type InfographicStyle,
 } from "@profullstack/myna-core";
 import { writeFileSync, readFileSync, existsSync, mkdtempSync } from "node:fs";
@@ -71,6 +73,33 @@ const requireTargets = (state: State) => {
 };
 
 export const COMMANDS: Command[] = [
+  {
+    name: "update",
+    args: "[--check]",
+    help: "Update myna to the newest release",
+    async run(state, args) {
+      // The TUI is the running binary, so an update swaps the file underneath
+      // it. That is safe (the old inode keeps executing) but it does mean the
+      // new version only appears on the next start, and saying so beats
+      // leaving somebody wondering why the header still reads the old number.
+      if (args.trim() === "--check" || args.trim() === "check") {
+        const check = await checkForUpdate();
+        toast(
+          state,
+          check.newer ? `myna ${check.latest} is out. Run /update to install it.` : `${check.current} is the latest.`,
+          check.newer ? "info" : "success",
+        );
+        return;
+      }
+      toast(state, "Updating…", "info");
+      const result = await selfUpdate();
+      if (!result.installed) {
+        toast(state, result.reason ?? `Nothing to do. You are on ${result.current}.`, "info");
+        return;
+      }
+      toast(state, `Updated to ${result.latest}. Restart myna to run it.`, "success");
+    },
+  },
   {
     name: "help",
     help: "Show every command",

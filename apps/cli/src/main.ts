@@ -28,6 +28,12 @@ Accounts:
   accounts                          List connected accounts
   networks                          List all supported networks
 
+Keeping myna current:
+  update [--check]                  Replace this binary with the newest release.
+                                    --check only reports, and exits 1 when an
+                                    update is waiting. --version <x.y.z> installs
+                                    a specific one, --force reinstalls
+
 Posting:
   post [target] [text]              Post. Target is "all", a network, or an
                                     account id. Text can also be piped in.
@@ -125,6 +131,7 @@ Flags:
 Examples:
   myna login bluesky
   myna login tsbb https://bbs.hqtui.com/ --forum app-showcase
+  myna update                        # or: myna update --check
   myna post all "the release notes are up"
   echo "shipping today" | myna post bluesky,mastodon
   myna link https://example.com/blog/post --to all
