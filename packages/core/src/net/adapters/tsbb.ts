@@ -106,6 +106,71 @@ async function rememberCursor(account: Account, next: number): Promise<void> {
   }
 }
 
+/** Longest title worth putting on a topic. Boards truncate past this anyway. */
+const TITLE_CAP = 90;
+/** Below this, a "sentence" is a fragment and the next one belongs in the title too. */
+const TITLE_FLOOR = 24;
+
+/**
+ * A topic title for a post that was not given one.
+ *
+ * A forum needs a title where the other networks do not, so a fan-out to
+ * `--to all` arrives here with nothing but body text. Taking the first line and
+ * cutting it at N characters produced titles that stopped mid-word, mid-clause
+ * and sometimes mid-URL, which is what a board's front page then shows forever.
+ *
+ * So: a markdown heading if the text has one, otherwise whole sentences up to
+ * the cap, and a word boundary rather than a character count when even the
+ * first sentence is too long.
+ */
+export function forumTitle(text: string): string {
+  const firstLine = text.split("\n").map((line) => line.trim()).find(Boolean) ?? "";
+
+  // A blog post's own H1 is a better title than anything derived from prose.
+  const heading = /^#{1,6}\s+(.+)$/.exec(firstLine);
+  if (heading) return trimTitle(heading[1]);
+
+  // A trailing link is how a social post ends and never how a title should.
+  const withoutUrl = firstLine.replace(/\s*https?:\/\/\S+\s*$/, "").trim() || firstLine;
+
+  // Sentence ends are ". " and friends. A period inside 0.15.0 is followed by a
+  // digit, not a space, so version numbers survive.
+  const sentences = withoutUrl.split(/(?<=[.!?])\s+/);
+  let title = "";
+  for (const sentence of sentences) {
+    const candidate = title ? `${title} ${sentence}` : sentence;
+    if (title && candidate.length > TITLE_CAP) break;
+    title = candidate;
+    if (title.length >= TITLE_FLOOR) break;
+  }
+
+  return trimTitle(title || withoutUrl);
+}
+
+/** Cap on a word boundary, and do not leave dangling punctuation behind. */
+function trimTitle(raw: string): string {
+  const text = raw.replace(/\s+/g, " ").trim().replace(/[.,;:]+$/, "");
+  if (text.length <= TITLE_CAP) return text;
+  const cut = text.slice(0, TITLE_CAP);
+  const boundary = cut.lastIndexOf(" ");
+  return `${(boundary > TITLE_CAP / 2 ? cut.slice(0, boundary) : cut).replace(/[.,;:]+$/, "")}…`;
+}
+
+/**
+ * The body to post under that title.
+ *
+ * When the title came from the text's own heading, repeating that heading as
+ * the first line of the topic is just the title twice.
+ */
+export function forumBody(text: string, title: string): string {
+  const lines = text.split("\n");
+  const first = lines.findIndex((line) => line.trim());
+  if (first < 0) return text;
+  const heading = /^#{1,6}\s+(.+)$/.exec(lines[first].trim());
+  if (!heading || trimTitle(heading[1]) !== title) return text;
+  return lines.slice(first + 1).join("\n").replace(/^\s+/, "");
+}
+
 /** Which forum is next, and where the cursor lands after it. */
 export function nextForum(forums: string[], cursor: number): { forum: string; next: number } {
   if (!forums.length) return { forum: "", next: 0 };
@@ -276,11 +341,15 @@ export const tsbb: Network = {
       throw new Error("tsbb needs a forum. Pass --forum <slug> or set some on the account with myna login.");
     }
 
+    // `--to all` sends body text and no title, because every other network
+    // takes one; the board is the only target that needs a headline.
+    const title = input.title?.trim() || forumTitle(input.text);
+
     const created = await postJson<{ id: number; slug?: string; url?: string; topic?: Topic }>(
       `${instance}/api/v1/forums/${encodeURIComponent(forum)}/topics`,
       {
-        title: input.title || input.text.split("\n")[0].slice(0, 200),
-        body: input.text,
+        title,
+        body: forumBody(input.text, title),
         format: "markdown",
       },
       { headers: auth(account) },
