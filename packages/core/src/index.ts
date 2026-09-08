@@ -164,7 +164,7 @@ export type {
   CancelledEvent,
 } from "./plugins/types.ts";
 
-export { countChars, splitThread, appendHashtags, toHashtag, extractHashtags, truncateTo } from "./util/text.ts";
+export { countChars, splitThread, appendHashtags, toHashtag, extractHashtags, truncateTo, deriveTitle, bodyUnderTitle } from "./util/text.ts";
 export { configDir, configPath } from "./util/paths.ts";
 export { HttpError, request, getJson, postJson, postForm } from "./util/http.ts";
 export { parseWhen, describeWhen, parseDuration } from "./util/when.ts";
