@@ -304,7 +304,10 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
           out(`  ${url}`);
           await openBrowser(url);
         },
-        ask: (prompt) => ask(`  ${prompt}`),
+        // Only offer to ask when there is somebody to answer. An adapter that
+        // asks a follow-up question mid-login (tsbb picks its forums that way)
+        // must not stall a scripted login on a prompt nothing will ever type.
+        ask: interactive ? (prompt) => ask(`  ${prompt}`) : undefined,
       });
 
       const account: Account = {

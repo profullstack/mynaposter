@@ -9,6 +9,13 @@
  * alternatives: no password crosses this process, and no loopback port has to
  * be free. The board prints a short code, a person approves it in a browser,
  * and the board hands over a token once.
+ *
+ * A board is not one destination, it is a set of forums, and which one is
+ * right depends on what is being posted. So login reads the board's forum list
+ * and takes one or several, and posts then **cycle** through them: the next
+ * announcement goes to the next forum in the list, rather than to every forum
+ * at once, which is what a board reads as spam. `--forum <slug>` overrides for
+ * a single post and leaves the rotation where it was.
  */
 import type { Account, Network, TimelineItem } from "../types.ts";
 import { getJson, normalizeInstance, postJson, request } from "../../util/http.ts";
@@ -30,6 +37,12 @@ interface DeviceStart {
   expiresAt?: number;
   /** Relative seconds, accepted in case a board sends this form instead. */
   expiresIn?: number;
+}
+
+interface Forum {
+  slug: string;
+  name?: string;
+  description?: string;
 }
 
 interface DevicePoll {
@@ -54,6 +67,54 @@ const auth = (account: Account) => ({ authorization: `Bearer ${account.creds.tok
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/** `app-showcase, announcements` and `app-showcase,announcements` are one thing. */
+const splitForums = (raw: string | undefined): string[] =>
+  String(raw ?? "")
+    .split(",")
+    .map((slug) => slug.trim().replace(/^\/?f\//, "").replace(/^\/+|\/+$/g, ""))
+    .filter(Boolean);
+
+/** The forums a board publishes. Reading them needs no token. */
+export async function listForums(instance: string): Promise<Forum[]> {
+  const result = await getJson<{ forums?: Forum[] } | Forum[]>(`${normalizeInstance(instance)}/api/v1/forums`);
+  const forums = Array.isArray(result) ? result : (result.forums ?? []);
+  return forums.filter((forum) => typeof forum?.slug === "string");
+}
+
+/**
+ * The forums an account posts to, in rotation order.
+ *
+ * Stored as one comma-separated `meta.forum` so an account connected before
+ * there was a rotation still reads as a list of one.
+ */
+export function forumsOf(account: Account): string[] {
+  return splitForums(account.meta.forum);
+}
+
+/**
+ * Move the rotation on, in the vault, the way the token refreshes do.
+ *
+ * A cursor that cannot be written is not worth failing a post that already
+ * succeeded over: the worst case is the next announcement repeating this forum.
+ */
+async function rememberCursor(account: Account, next: number): Promise<void> {
+  try {
+    const { saveAccount } = await import("../../store/accounts.ts");
+    saveAccount({ ...account, meta: { ...account.meta, forumCursor: String(next) } });
+  } catch {
+    // Posting is what matters; the rotation catches up on the next login.
+  }
+}
+
+/** Which forum is next, and where the cursor lands after it. */
+export function nextForum(forums: string[], cursor: number): { forum: string; next: number } {
+  if (!forums.length) return { forum: "", next: 0 };
+  // A cursor can outlive the list it indexed, so a shortened list must not
+  // start posting into undefined.
+  const index = Number.isFinite(cursor) && cursor >= 0 ? Math.floor(cursor) % forums.length : 0;
+  return { forum: forums[index], next: (index + 1) % forums.length };
+}
+
 export const tsbb: Network = {
   id: "tsbb",
   name: "tsbb",
@@ -67,7 +128,13 @@ export const tsbb: Network = {
     docsUrl: "https://tsbb.dev",
     fields: [
       { key: "instance", label: "Board URL", placeholder: "tsbb.dev" },
-      { key: "forum", label: "Default forum", optional: true, placeholder: "general", help: "Slug from /f/<slug>." },
+      {
+        key: "forum",
+        label: "Forums to post to",
+        optional: true,
+        placeholder: "app-showcase,announcements",
+        help: "Slugs from /f/<slug>, comma separated. Posts cycle through them, one forum per post.",
+      },
       { key: "label", label: "Name this device", optional: true, default: "myna", help: "Shown in the board's session list." },
     ],
   },
@@ -93,6 +160,32 @@ export const tsbb: Network = {
     });
     if (index.api !== "tsbb") {
       throw new Error(`${new URL(instance).host} answered /api/v1 but is not a tsbb board.`);
+    }
+
+    // Which forums to publish in is settled before the device flow starts: a
+    // typo'd slug should cost a retyped word, not an approval in a browser.
+    // The forum list is public, so this needs no token.
+    const available = await listForums(instance).catch(() => [] as Forum[]);
+    let chosen = splitForums(input.forum);
+
+    if (!chosen.length && available.length && ctx.ask) {
+      ctx.report(`Forums on this board: ${available.map((forum) => forum.slug).join(", ")}`);
+      chosen = splitForums(
+        await ctx.ask("Which forums should posts go to? (comma separated, blank to decide per post)"),
+      );
+    }
+
+    if (available.length) {
+      const known = new Set(available.map((forum) => forum.slug));
+      const unknown = chosen.filter((slug) => !known.has(slug));
+      if (unknown.length) {
+        throw new Error(
+          `${new URL(instance).host} has no forum ${unknown.join(", ")}. It has: ${[...known].join(", ")}`,
+        );
+      }
+    }
+    if (chosen.length > 1) {
+      ctx.report(`Posts will cycle through ${chosen.join(" → ")}, one forum per post.`);
     }
 
     const started = await postJson<DeviceStart>(`${instance}/api/v1/device/start`, {
@@ -145,7 +238,12 @@ export const tsbb: Network = {
       handle: `${username}@${new URL(instance).host}`,
       displayName: index.board?.name ? `${username} on ${index.board.name}` : username,
       creds: { token },
-      meta: { instance, forum: input.forum?.trim() ?? "", board: index.board?.name ?? "" },
+      meta: {
+        instance,
+        forum: chosen.join(","),
+        forumCursor: "0",
+        board: index.board?.name ?? "",
+      },
     };
   },
 
@@ -167,9 +265,15 @@ export const tsbb: Network = {
       };
     }
 
-    const forum = input.extra?.forum || account.meta.forum;
+    // `--forum` is for this post only and leaves the rotation alone; otherwise
+    // take the next forum in the account's list and move the cursor on, so a
+    // run of announcements spreads across the forums instead of piling into one.
+    const override = splitForums(input.extra?.forum)[0];
+    const forums = forumsOf(account);
+    const turn = nextForum(forums, Number(account.meta.forumCursor ?? 0));
+    const forum = override || turn.forum;
     if (!forum) {
-      throw new Error("tsbb needs a forum. Pass --forum <slug> or set a default on the account.");
+      throw new Error("tsbb needs a forum. Pass --forum <slug> or set some on the account with myna login.");
     }
 
     const created = await postJson<{ id: number; slug?: string; url?: string; topic?: Topic }>(
@@ -181,6 +285,10 @@ export const tsbb: Network = {
       },
       { headers: auth(account) },
     );
+
+    // Only a post that actually landed advances the rotation, and only the
+    // rotation's own turn does: an explicit --forum is a detour, not a step.
+    if (!override && forums.length > 1) await rememberCursor(account, turn.next);
 
     const id = created.topic?.id ?? created.id;
     const path = created.url ?? created.topic?.url;

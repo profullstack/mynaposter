@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { tsbb } from "../src/net/adapters/tsbb.ts";
+import { tsbb, forumsOf, nextForum } from "../src/net/adapters/tsbb.ts";
 import { getNetwork, authSummary } from "../src/net/registry.ts";
 import { tailor } from "../src/core/poster.ts";
 
@@ -37,6 +37,44 @@ test("claims only what the API offers", () => {
   expect(tsbb.remove).toBeUndefined();
   expect(tsbb.timeline).toBeDefined();
   expect(tsbb.notifications).toBeDefined();
+});
+
+test("a board is a set of forums, and login takes several", () => {
+  const field = tsbb.auth.fields.find((entry) => entry.key === "forum");
+  expect(field?.optional).toBe(true);
+  expect(field?.help).toMatch(/comma/i);
+});
+
+test("forums are read off the account, however they were written", () => {
+  const account = (forum: string) => ({ meta: { forum } }) as never;
+  expect(forumsOf(account("app-showcase"))).toEqual(["app-showcase"]);
+  expect(forumsOf(account("app-showcase, announcements ,news"))).toEqual([
+    "app-showcase",
+    "announcements",
+    "news",
+  ]);
+  // A slug pasted out of the address bar is still a slug.
+  expect(forumsOf(account("/f/app-showcase"))).toEqual(["app-showcase"]);
+  expect(forumsOf(account(""))).toEqual([]);
+});
+
+test("posts cycle through the chosen forums, one per post", () => {
+  const forums = ["app-showcase", "announcements", "news"];
+  const seen: string[] = [];
+  let cursor = 0;
+  for (let i = 0; i < 4; i++) {
+    const turn = nextForum(forums, cursor);
+    seen.push(turn.forum);
+    cursor = turn.next;
+  }
+  expect(seen).toEqual(["app-showcase", "announcements", "news", "app-showcase"]);
+});
+
+test("a cursor left behind by a shorter list does not post into nothing", () => {
+  // Two forums were dropped after the cursor had already reached the third.
+  expect(nextForum(["app-showcase"], 2)).toEqual({ forum: "app-showcase", next: 0 });
+  expect(nextForum([], 7)).toEqual({ forum: "", next: 0 });
+  expect(nextForum(["a", "b"], Number.NaN)).toEqual({ forum: "a", next: 1 });
 });
 
 test("posting without a forum says which flag to pass", async () => {
