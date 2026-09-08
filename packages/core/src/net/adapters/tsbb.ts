@@ -44,6 +44,16 @@ interface Forum {
   slug: string;
   name?: string;
   description?: string;
+  /** A container, not a destination. Nothing is posted into a category. */
+  kind?: string;
+  /**
+   * Whether the caller may start a topic here, from tsbb 0.5.1 on. Older
+   * boards omit it, and `undefined` has to mean "cannot tell" rather than
+   * "no": treating a silent board as forbidding everything would refuse a
+   * login that works.
+   */
+  canPost?: boolean;
+  locked?: boolean;
 }
 
 interface DevicePoll {
@@ -75,9 +85,18 @@ const splitForums = (raw: string | undefined): string[] =>
     .map((slug) => slug.trim().replace(/^\/?f\//, "").replace(/^\/+|\/+$/g, ""))
     .filter(Boolean);
 
-/** The forums a board publishes. Reading them needs no token. */
-export async function listForums(instance: string): Promise<Forum[]> {
-  const result = await getJson<{ forums?: Forum[] } | Forum[]>(`${normalizeInstance(instance)}/api/v1/forums`);
+/**
+ * The forums a board publishes.
+ *
+ * Reading the list needs no token, but `canPost` is answered for whoever asks:
+ * without a token that is a guest, who may post nowhere. Pass the token when
+ * the answer is meant to be about the member.
+ */
+export async function listForums(instance: string, token?: string): Promise<Forum[]> {
+  const result = await getJson<{ forums?: Forum[] } | Forum[]>(
+    `${normalizeInstance(instance)}/api/v1/forums`,
+    token ? { headers: { authorization: `Bearer ${token}` } } : {},
+  );
   const forums = Array.isArray(result) ? result : (result.forums ?? []);
   return forums.filter((forum) => typeof forum?.slug === "string");
 }
@@ -180,6 +199,17 @@ export const tsbb: Network = {
           `${new URL(instance).host} has no forum ${unknown.join(", ")}. It has: ${[...known].join(", ")}`,
         );
       }
+      // A category holds forums rather than topics, and that is true of
+      // everybody, so it can be refused before anyone approves anything.
+      const categories = chosen.filter(
+        (slug) => available.find((forum) => forum.slug === slug)?.kind === "category",
+      );
+      if (categories.length) {
+        throw new Error(
+          `${categories.join(", ")} ${categories.length === 1 ? "is a category" : "are categories"} on ` +
+            `${new URL(instance).host}, not a forum. Topics go in the forums underneath.`,
+        );
+      }
     }
     if (chosen.length > 1) {
       ctx.report(`Posts will cycle through ${chosen.join(" → ")}, one forum per post.`);
@@ -230,6 +260,36 @@ export const tsbb: Network = {
       headers: { authorization: `Bearer ${token}` },
     });
     const username = me.username ?? me.name ?? "member";
+
+    /*
+     * Now that there is a token, ask again as the member.
+     *
+     * The list read before the device flow answered for a guest, and a guest
+     * may post nowhere, so it could not be used to check this. From tsbb 0.5.1
+     * a forum says whether the caller may start a topic in it; a feed-only or
+     * locked forum is dropped here with a line saying so, rather than being
+     * discovered by a 403 on the first announcement. An older board omits the
+     * field, and "cannot tell" must not be read as "no".
+     */
+    if (chosen.length) {
+      const asMember = await listForums(instance, token).catch(() => [] as Forum[]);
+      const refused = chosen.filter(
+        (slug) => asMember.find((forum) => forum.slug === slug)?.canPost === false,
+      );
+      if (refused.length) {
+        const keep = chosen.filter((slug) => !refused.includes(slug));
+        if (!keep.length) {
+          throw new Error(
+            `${username} cannot start topics in ${refused.join(", ")} on ${new URL(instance).host}: ` +
+              "locked, reply-only, or above this member's rank. Pick a forum that takes topics.",
+          );
+        }
+        ctx.report(
+          `${refused.join(", ")} takes replies only, or is locked, so it is left out. Posting to ${keep.join(", ")}.`,
+        );
+        chosen = keep;
+      }
+    }
 
     return {
       handle: `${username}@${new URL(instance).host}`,
