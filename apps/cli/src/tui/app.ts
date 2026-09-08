@@ -30,6 +30,120 @@ import {
 
 const TOAST_MS = 6000;
 
+/**
+ * The whole screen, as a pure function of state.
+ *
+ * Lifted out of `runTui` so a frame can be rendered without a terminal:
+ * hqtui's renderToText takes this same function, which makes the layout
+ * assertable and lets the hqtui.com showcase capture a real frame rather
+ * than a reconstruction of one.
+ */
+export function drawApp(
+  { ui, theme, height }: { ui: Container; theme: Theme; height: number },
+  state: State,
+  /**
+   * Redraw after a mouse handler mutates state. The running app passes
+   * `app.invalidate`; a headless render has nothing to redraw and passes
+   * nothing, which is why this is optional rather than a required dependency.
+   */
+  invalidate: () => void = () => {},
+): void {
+  ui.column({ size: "1fr" }, (root) => {
+    root.row({ size: 1 }, (header) => {
+      header.tabs({
+        tabs: [...SCREENS],
+        active: SCREENS.indexOf(state.screen),
+        size: "fill",
+        // Without onSelect the tabs register no hit region, so clicking one
+        // does nothing at all. They look interactive either way.
+        onSelect: (index) => {
+          const screen = SCREENS[index];
+          if (!screen) return;
+          state.screen = screen;
+          // A click is a navigation, not an edit: leave the compose box.
+          if (state.mode === "compose") state.mode = "command";
+          invalidate();
+        },
+      });
+      const targets = selectedAccounts(state);
+      header.badge({
+        text: state.accounts.length
+          ? state.targets.size
+            ? `${targets.length} selected`
+            : `all ${targets.length}`
+          : "no accounts",
+        color: state.accounts.length ? theme.success : theme.warning,
+        size: 18,
+      });
+    });
+
+    root.spacer(1);
+
+    switch (state.screen) {
+      case "compose":
+        composeScreen(root, state, theme);
+        break;
+      case "accounts":
+        accountsScreen(root, state, theme);
+        break;
+      case "queue":
+        queueScreen(root, state, theme);
+        break;
+      case "history":
+        historyScreen(root, state, theme);
+        break;
+      case "performance":
+        performanceScreen(root, state, theme);
+        break;
+      case "feed":
+        feedScreen(root, state, theme);
+        break;
+      case "networks":
+        networksScreen(root, state, theme);
+        break;
+      case "help":
+        helpScreen(root, state, theme);
+        break;
+    }
+
+    root.spacer(1);
+    root.panel({ size: 3, title: state.mode === "command" ? "Command" : "Command (Esc to focus)" }, (box) => {
+      box.textInput({
+        value: state.command.value,
+        cursor: state.command.cursor,
+        focused: state.mode === "command",
+        placeholder: "/help    /login bluesky    /link <url>    /post",
+        size: 1,
+      });
+    });
+
+    const toastAlive = state.toast && Date.now() - state.toast.at < TOAST_MS;
+    root.statusBar({
+      size: 1,
+      items: [
+        { label: "myna", color: theme.primary },
+        state.busy
+          ? { label: state.busy, color: theme.warning }
+          : toastAlive
+            ? {
+                label: state.toast!.text,
+                color:
+                  state.toast!.kind === "error"
+                    ? theme.danger
+                    : state.toast!.kind === "success"
+                      ? theme.success
+                      : theme.muted,
+              }
+            : { label: hint(state), color: theme.muted },
+        { key: "accounts", label: String(state.accounts.length) },
+      ],
+    });
+    });
+
+    if (state.mode === "login" && state.login) drawLogin(ui, state, theme, height);
+    if (state.mode === "prompt" && state.prompt) drawPrompt(ui, state, theme);
+}
+
 export async function runTui(options: { theme?: string } = {}): Promise<void> {
   if (needsPassphrase()) {
     unlock(await promptPassphrase());
@@ -78,103 +192,7 @@ export async function runTui(options: { theme?: string } = {}): Promise<void> {
     app.invalidate();
   });
 
-  app.render(({ ui, theme, height }) => {
-    ui.column({ size: "1fr" }, (root) => {
-      root.row({ size: 1 }, (header) => {
-        header.tabs({
-          tabs: [...SCREENS],
-          active: SCREENS.indexOf(state.screen),
-          size: "fill",
-          // Without onSelect the tabs register no hit region, so clicking one
-          // does nothing at all. They look interactive either way.
-          onSelect: (index) => {
-            const screen = SCREENS[index];
-            if (!screen) return;
-            state.screen = screen;
-            // A click is a navigation, not an edit: leave the compose box.
-            if (state.mode === "compose") state.mode = "command";
-            app.invalidate();
-          },
-        });
-        const targets = selectedAccounts(state);
-        header.badge({
-          text: state.accounts.length
-            ? state.targets.size
-              ? `${targets.length} selected`
-              : `all ${targets.length}`
-            : "no accounts",
-          color: state.accounts.length ? theme.success : theme.warning,
-          size: 18,
-        });
-      });
-
-      root.spacer(1);
-
-      switch (state.screen) {
-        case "compose":
-          composeScreen(root, state, theme);
-          break;
-        case "accounts":
-          accountsScreen(root, state, theme);
-          break;
-        case "queue":
-          queueScreen(root, state, theme);
-          break;
-        case "history":
-          historyScreen(root, state, theme);
-          break;
-        case "performance":
-          performanceScreen(root, state, theme);
-          break;
-        case "feed":
-          feedScreen(root, state, theme);
-          break;
-        case "networks":
-          networksScreen(root, state, theme);
-          break;
-        case "help":
-          helpScreen(root, state, theme);
-          break;
-      }
-
-      root.spacer(1);
-      root.panel({ size: 3, title: state.mode === "command" ? "Command" : "Command (Esc to focus)" }, (box) => {
-        box.textInput({
-          value: state.command.value,
-          cursor: state.command.cursor,
-          focused: state.mode === "command",
-          placeholder: "/help    /login bluesky    /link <url>    /post",
-          size: 1,
-        });
-      });
-
-      const toastAlive = state.toast && Date.now() - state.toast.at < TOAST_MS;
-      root.statusBar({
-        size: 1,
-        items: [
-          { label: "myna", color: theme.primary },
-          state.busy
-            ? { label: state.busy, color: theme.warning }
-            : toastAlive
-              ? {
-                  label: state.toast!.text,
-                  color:
-                    state.toast!.kind === "error"
-                      ? theme.danger
-                      : state.toast!.kind === "success"
-                        ? theme.success
-                        : theme.muted,
-                }
-              : { label: hint(state), color: theme.muted },
-          { key: "accounts", label: String(state.accounts.length) },
-        ],
-      });
-    });
-
-    if (state.mode === "login" && state.login) drawLogin(ui, state, theme, height);
-    if (state.mode === "prompt" && state.prompt) drawPrompt(ui, state, theme);
-    if (state.mode === "targets") drawTargets(ui, state, app, theme);
-  });
+  app.render((args) => drawApp(args, state, () => app.invalidate()));
 
   try {
     await app.start();
