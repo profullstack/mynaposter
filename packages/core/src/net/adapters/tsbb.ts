@@ -91,21 +91,6 @@ export function forumsOf(account: Account): string[] {
   return splitForums(account.meta.forum);
 }
 
-/**
- * Move the rotation on, in the vault, the way the token refreshes do.
- *
- * A cursor that cannot be written is not worth failing a post that already
- * succeeded over: the worst case is the next announcement repeating this forum.
- */
-async function rememberCursor(account: Account, next: number): Promise<void> {
-  try {
-    const { saveAccount } = await import("../../store/accounts.ts");
-    saveAccount({ ...account, meta: { ...account.meta, forumCursor: String(next) } });
-  } catch {
-    // Posting is what matters; the rotation catches up on the next login.
-  }
-}
-
 /** Longest title worth putting on a topic. Boards truncate past this anyway. */
 const TITLE_CAP = 90;
 /** Below this, a "sentence" is a fragment and the next one belongs in the title too. */
@@ -335,33 +320,60 @@ export const tsbb: Network = {
     // run of announcements spreads across the forums instead of piling into one.
     const override = splitForums(input.extra?.forum)[0];
     const forums = forumsOf(account);
-    const turn = nextForum(forums, Number(account.meta.forumCursor ?? 0));
-    const forum = override || turn.forum;
-    if (!forum) {
+    if (!override && !forums.length) {
       throw new Error("tsbb needs a forum. Pass --forum <slug> or set some on the account with myna login.");
     }
 
     // `--to all` sends body text and no title, because every other network
     // takes one; the board is the only target that needs a headline.
     const title = input.title?.trim() || forumTitle(input.text);
+    const body = forumBody(input.text, title);
 
-    const created = await postJson<{ id: number; slug?: string; url?: string; topic?: Topic }>(
-      `${instance}/api/v1/forums/${encodeURIComponent(forum)}/topics`,
-      {
-        title,
-        body: forumBody(input.text, title),
-        format: "markdown",
-      },
-      { headers: auth(account) },
+    const create = (forum: string) =>
+      postJson<{ id: number; slug?: string; url?: string; topic?: Topic }>(
+        `${instance}/api/v1/forums/${encodeURIComponent(forum)}/topics`,
+        { title, body, format: "markdown" },
+        { headers: auth(account) },
+      );
+
+    if (override) {
+      const created = await create(override);
+      return locate(instance, created);
+    }
+
+    // Whether a member may start a topic in a given forum is not in the public
+    // forum list, so a feed-only or locked forum can only announce itself with
+    // a 403 on the first attempt. Rather than fail a release announcement over
+    // it, take that as the board's answer: skip to the next forum in the
+    // rotation, and stop keeping the refused one in the list.
+    let cursor = Number(account.meta.forumCursor ?? 0);
+    let remaining = [...forums];
+    const refused: string[] = [];
+
+    for (let attempt = 0; attempt < forums.length; attempt++) {
+      const turn = nextForum(remaining, cursor);
+      if (!turn.forum) break;
+      try {
+        const created = await create(turn.forum);
+        await remember(account, remaining, remaining.length > 1 ? turn.next : 0);
+        return locate(instance, created);
+      } catch (error) {
+        if (!isForbidden(error)) throw error;
+        refused.push(turn.forum);
+        remaining = remaining.filter((slug) => slug !== turn.forum);
+        // The refused forum is gone from the list, so the cursor now points at
+        // whatever moved into its place: do not advance it as well.
+        cursor = remaining.length ? cursor % remaining.length : 0;
+        await remember(account, remaining, cursor);
+      }
+    }
+
+    throw new Error(
+      `${new URL(instance).host} would not accept a new topic in ${refused.join(", ") || "any forum"}. ` +
+        "That forum is locked, or reply-only, or this member cannot start topics there. " +
+        "Pick different forums with: myna login tsbb " +
+        `${instance} --forum <slugs>`,
     );
-
-    // Only a post that actually landed advances the rotation, and only the
-    // rotation's own turn does: an explicit --forum is a detour, not a step.
-    if (!override && forums.length > 1) await rememberCursor(account, turn.next);
-
-    const id = created.topic?.id ?? created.id;
-    const path = created.url ?? created.topic?.url;
-    return { id: String(id), url: path ? `${instance}${path}` : undefined };
   },
 
   async timeline(account, limit) {
@@ -395,6 +407,37 @@ export const tsbb: Network = {
     }));
   },
 };
+
+/**
+ * A 403 from the board, as opposed to any other reason a post failed.
+ *
+ * Only a refusal is worth skipping a forum over. A 500, a timeout or an expired
+ * token must still fail loudly, or a broken board would quietly empty the
+ * account's forum list one post at a time.
+ */
+export function isForbidden(error: unknown): boolean {
+  const status = (error as { status?: number })?.status;
+  return status === 403 || /\b403\b/.test(String((error as Error)?.message ?? ""));
+}
+
+function locate(instance: string, created: { id: number; url?: string; topic?: Topic }) {
+  const id = created.topic?.id ?? created.id;
+  const path = created.url ?? created.topic?.url;
+  return { id: String(id), url: path ? `${instance}${path}` : undefined };
+}
+
+/** Persist the forum list and the rotation cursor together. */
+async function remember(account: Account, forums: string[], cursor: number): Promise<void> {
+  try {
+    const { saveAccount } = await import("../../store/accounts.ts");
+    saveAccount({
+      ...account,
+      meta: { ...account.meta, forum: forums.join(","), forumCursor: String(cursor) },
+    });
+  } catch {
+    // Posting is what matters; the rotation catches up on the next login.
+  }
+}
 
 /** Exported so `myna login tsbb` can check a URL before starting a device flow. */
 export async function isTsbbBoard(url: string): Promise<boolean> {
