@@ -53,6 +53,10 @@ import {
   saveSettings,
   startDaemon,
   runDaemonOnce,
+  checkForUpdate,
+  selfUpdate,
+  daemonHint,
+  isNewer,
   summarize,
   unlock,
   writerAvailable,
@@ -123,7 +127,7 @@ export function parseFlags(argv: string[]): { positional: string[]; flags: Flags
     // Boolean flags take no value. `--now`, `--off` and `--no-open` are as
     // much switches as `--json`; without them here the parser eats the next
     // argument, so `myna post all "hi" --now` died asking for a value.
-    const BOOLS = new Set(["json", "yes", "thread", "dryRun", "noThread", "force", "now", "off", "on", "noOpen", "front", "skipQueue", "send"]);
+    const BOOLS = new Set(["json", "yes", "thread", "dryRun", "noThread", "force", "now", "off", "on", "noOpen", "front", "skipQueue", "send", "check"]);
     if (BOOLS.has(name)) {
       flags[name === "noThread" ? "thread" : name] = name !== "noThread";
       continue;
@@ -142,7 +146,7 @@ const OWN_FLAGS = new Set([
   "to", "title", "media", "json", "yes", "style", "at", "thread", "dryRun", "limit", "output",
   "keepSvg", "server", "overwrite", "settings", "once", "interval", "refresh", "theme", "force", "weight", "source", "network",
   "now", "gap", "drip", "repost", "every", "cooldown", "off", "on", "port", "open", "noOpen",
-  "days", "send", "command",
+  "days", "send", "command", "check", "version",
 ]);
 
 /**
@@ -355,6 +359,49 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
           { key: "network", title: "NETWORK" },
         ],
       );
+      return 0;
+    }
+
+    case "update": {
+      // No vault here on purpose: replacing a binary has nothing to do with
+      // credentials, and asking for a passphrase to run an update is a good way
+      // to make people skip updates.
+      if (flags.check) {
+        const check = await checkForUpdate();
+        if (flags.json) {
+          out(JSON.stringify(check, null, 2));
+          return check.newer ? 1 : 0;
+        }
+        out(
+          check.newer
+            ? `myna ${check.latest} is out. You are on ${check.current}.\n${check.url}\n\nInstall it:  myna update`
+            : `myna ${check.current} is the latest.`,
+        );
+        // A check is a question, and "yes there is an update" is the answer a
+        // script wants to branch on.
+        return check.newer ? 1 : 0;
+      }
+
+      const result = await selfUpdate({
+        version: typeof flags.version === "string" ? flags.version : undefined,
+        force: Boolean(flags.force),
+        report: (line) => out(`  ${line}`),
+      });
+      if (flags.json) {
+        out(JSON.stringify(result, null, 2));
+        return 0;
+      }
+      if (!result.installed) {
+        out(result.reason ?? `Nothing to do. You are on ${result.current}.`);
+        return 0;
+      }
+      // "Updated" would be a lie about `--version 0.13.1`, which is a
+      // deliberate downgrade and worth naming as one.
+      const verb = isNewer(result.latest, result.current) ? "Updated" : "Installed";
+      out(`\n${verb} myna ${result.current} → ${result.latest}`);
+      out(result.url);
+      const hint = daemonHint();
+      if (hint) out(`\n${hint}`);
       return 0;
     }
 

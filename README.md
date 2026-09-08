@@ -70,6 +70,26 @@ bun add -g @profullstack/myna     # or: npm i -g @profullstack/myna
 
 That route needs Bun 1.1+ or Node 22.6+.
 
+### Updating
+
+```bash
+myna update           # replace this binary with the newest release
+myna update --check   # only say whether one is waiting
+```
+
+`update` does what the installer does, from inside myna: it picks the asset this
+machine can run (including the AVX2-free build on older CPUs), checks it against
+the published `SHA256SUMS`, and renames it over the running binary rather than
+writing into it, so a failed download leaves the working copy untouched.
+
+`--check` exits 1 when an update is waiting, which is the answer a cron job
+wants. `--version <x.y.z>` installs a specific release, up or down, and
+`--force` reinstalls the one you already have.
+
+A myna running from a checkout or a global `bun`/`npm` install has no binary to
+replace, so `update` says which release is newest and how to update the way it
+was installed, instead of overwriting Bun.
+
 ## Logging in
 
 `/login <network>` asks for whatever that network actually accepts. This is the

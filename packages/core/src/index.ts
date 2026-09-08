@@ -107,6 +107,17 @@ export { loadMedia, loadAllMedia } from "./core/media.ts";
 export { runDuePosts, startScheduler } from "./core/scheduler.ts";
 export { startDaemon, runDaemonOnce, builtinJobs, type DaemonJob, type DaemonOptions } from "./core/daemon.ts";
 export {
+  checkForUpdate,
+  selfUpdate,
+  assetFor,
+  cpuHasAvx2,
+  isNewer,
+  daemonHint,
+  type UpdateCheck,
+  type UpdateResult,
+  type UpdateOptions,
+} from "./core/update.ts";
+export {
   addSeeds,
   removeSeed,
   expandSeeds,
