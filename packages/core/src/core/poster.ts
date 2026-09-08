@@ -9,7 +9,7 @@
  */
 import type { Account, MediaItem, PostInput, PostResult } from "../net/types.ts";
 import { requireNetwork } from "../net/registry.ts";
-import { splitThread, truncateTo, appendHashtags, countChars } from "../util/text.ts";
+import { splitThread, truncateTo, appendHashtags, countChars, deriveTitle } from "../util/text.ts";
 import { recordHistory, listHistory } from "../store/history.ts";
 import { postedEvent, runAfterPost, runAfterSchedule, type HookOutcome } from "../plugins/hooks.ts";
 import { enqueue, listQueue, updateQueued, type QueuedPost } from "../store/queue.ts";
@@ -88,8 +88,11 @@ async function postOne(account: Account, options: ComposeOptions): Promise<Targe
 
   try {
     if (network.caps.needsTitle && !options.title && !options.extra?.title) {
-      // Blogs and link aggregators reject an untitled post outright.
-      options = { ...options, title: options.text.split("\n")[0].replace(/^#+\s*/, "").slice(0, 200) };
+      // Blogs, boards and link aggregators reject an untitled post outright, so
+      // text written for the networks that never asked for one still needs a
+      // headline. `deriveTitle` takes whole sentences: slicing the first line at
+      // a character count used to publish half a clause as the title.
+      options = { ...options, title: deriveTitle(options.text) };
     }
 
     const posts: PostResult[] = [];

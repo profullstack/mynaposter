@@ -118,3 +118,69 @@ export function truncateTo(text: string, limit: number, urlWeight?: number): str
   }
   return `${result.trimEnd()}…`;
 }
+
+/** Longest derived title worth sending. Boards and blogs truncate past this. */
+const TITLE_CAP = 90;
+/** Below this, a "sentence" is a fragment and the next one belongs in the title too. */
+const TITLE_FLOOR = 24;
+
+/**
+ * A title for a post that was written without one.
+ *
+ * Forums, blogs and link aggregators reject an untitled post, so a fan-out to
+ * `--to all` has to make a headline out of body text written for networks that
+ * never asked for one. Taking the first line and cutting it at N characters is
+ * what put "myna 0.15.1: a forum post fanned out with --to all now gets a real
+ * title. It takes whole sentences instead of slicing the first line mid-clause,
+ * drops a trailin" on a real board's front page.
+ *
+ * So: a markdown heading when the text has one, otherwise whole sentences up to
+ * a cap, and a word boundary rather than a character count when even the first
+ * sentence is too long.
+ */
+export function deriveTitle(text: string): string {
+  const firstLine = text.split("\n").map((line) => line.trim()).find(Boolean) ?? "";
+
+  // A post's own H1 is a better title than anything derived from its prose.
+  const heading = /^#{1,6}\s+(.+)$/.exec(firstLine);
+  if (heading) return trimTitle(heading[1]);
+
+  // A trailing link is how a social post ends and never how a title should.
+  const withoutUrl = firstLine.replace(/\s*https?:\/\/\S+\s*$/, "").trim() || firstLine;
+
+  // Sentence ends are ". " and friends. A period inside 0.15.2 is followed by a
+  // digit rather than a space, so version numbers survive the split.
+  let title = "";
+  for (const sentence of withoutUrl.split(/(?<=[.!?])\s+/)) {
+    const candidate = title ? `${title} ${sentence}` : sentence;
+    if (title && candidate.length > TITLE_CAP) break;
+    title = candidate;
+    if (title.length >= TITLE_FLOOR) break;
+  }
+
+  return trimTitle(title || withoutUrl);
+}
+
+/** Cap on a word boundary, and do not leave dangling punctuation behind. */
+function trimTitle(raw: string): string {
+  const text = raw.replace(/\s+/g, " ").trim().replace(/[.,;:]+$/, "");
+  if (text.length <= TITLE_CAP) return text;
+  const cut = text.slice(0, TITLE_CAP);
+  const boundary = cut.lastIndexOf(" ");
+  return `${(boundary > TITLE_CAP / 2 ? cut.slice(0, boundary) : cut).replace(/[.,;:]+$/, "")}…`;
+}
+
+/**
+ * The body to send under a derived title.
+ *
+ * When the title came from the text's own heading, repeating that heading as
+ * the first line of the post is just the title twice.
+ */
+export function bodyUnderTitle(text: string, title: string): string {
+  const lines = text.split("\n");
+  const first = lines.findIndex((line) => line.trim());
+  if (first < 0) return text;
+  const heading = /^#{1,6}\s+(.+)$/.exec(lines[first].trim());
+  if (!heading || trimTitle(heading[1]) !== title) return text;
+  return lines.slice(first + 1).join("\n").replace(/^\s+/, "");
+}
