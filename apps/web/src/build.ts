@@ -26,11 +26,20 @@ const passwordNetworks = NETWORKS.filter((network) => network.auth.kind === "pas
 const oauthNetworks = NETWORKS.filter((network) => network.auth.kind === "oauth2");
 const deviceNetworks = NETWORKS.filter((network) => network.auth.kind === "device");
 
+/** The provider page that issues the credentials, by the name people know it by. */
+const keysCell = (network: (typeof NETWORKS)[number]): string => {
+  const url = network.auth.docsUrl;
+  if (!url) return "&mdash;";
+  const label = new URL(url).hostname.replace(/^www\./, "");
+  return `<a href="${escape(url)}" rel="noopener nofollow" target="_blank">${escape(label)}</a>`;
+};
+
 const networkRows = NETWORKS.map(
   (network) => `<tr>
     <td><code>${network.id}</code></td>
     <td>${escape(network.name)}</td>
     <td>${escape(authSummary(network))}</td>
+    <td>${keysCell(network)}</td>
     <td class="num">${network.caps.charLimit || "&mdash;"}</td>
   </tr>`,
 ).join("\n");
@@ -240,7 +249,7 @@ myna accounts --json | jq '.[].id'</code></pre>
     <span><strong>Long-form</strong> ${byCategory("blog").length}</span>
   </div>
   <table class="networks">
-    <thead><tr><th>Command</th><th>Network</th><th>Login</th><th class="num">Chars</th></tr></thead>
+    <thead><tr><th>Command</th><th>Network</th><th>Login</th><th>Where the keys come from</th><th class="num">Chars</th></tr></thead>
     <tbody>
 ${networkRows}
     </tbody>

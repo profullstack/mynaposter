@@ -15,6 +15,7 @@ export const telegram: Network = {
   auth: {
     kind: "token",
     note: "Message @BotFather to create a bot and copy its token. Add the bot to your channel as an admin, then use @channelname or the numeric chat id.",
+    docsUrl: "https://t.me/BotFather",
     fields: [
       { key: "token", label: "Bot token", secret: true, placeholder: "123456:ABC-DEF…" },
       { key: "chatId", label: "Chat or channel", placeholder: "@mychannel" },
@@ -72,6 +73,7 @@ export const discord: Network = {
   auth: {
     kind: "token",
     note: "Channel → Edit Channel → Integrations → Webhooks → New Webhook, then copy the URL.",
+    docsUrl: "https://support.discord.com/hc/en-us/articles/228383668-Intro-to-Webhooks",
     fields: [
       { key: "webhook", label: "Webhook URL", secret: true, placeholder: "https://discord.com/api/webhooks/…" },
       { key: "name", label: "Post as", optional: true, placeholder: "myna" },
@@ -122,6 +124,7 @@ export const slack: Network = {
   auth: {
     kind: "token",
     note: "Create an app at api.slack.com/apps, add the chat:write scope, install it to the workspace and copy the Bot User OAuth Token (xoxb-…).",
+    docsUrl: "https://api.slack.com/apps",
     fields: [
       { key: "token", label: "Bot token", secret: true, placeholder: "xoxb-…" },
       { key: "channel", label: "Channel", placeholder: "#general" },
@@ -174,6 +177,7 @@ export const matrix: Network = {
   auth: {
     kind: "password",
     note: "Your normal Matrix account. The room can be an alias (#room:server) or an internal id (!abc:server).",
+    docsUrl: "https://matrix.org/ecosystem/clients/",
     fields: [
       { key: "homeserver", label: "Homeserver", placeholder: "matrix.org" },
       { key: "username", label: "Username", placeholder: "alice" },
@@ -245,6 +249,8 @@ export const mattermost: Network = {
   blurb: "Self-hosted team chat. Password or personal access token.",
   auth: {
     kind: "password",
+    note: "Your normal Mattermost account, or a personal access token if the server allows them (Profile → Security → Personal Access Tokens).",
+    docsUrl: "https://developers.mattermost.com/integrate/reference/personal-access-token/",
     fields: [
       { key: "server", label: "Server URL", placeholder: "https://chat.example.com" },
       { key: "username", label: "Username or email", optional: true },

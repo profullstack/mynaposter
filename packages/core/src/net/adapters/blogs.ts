@@ -26,6 +26,7 @@ export const devto: Network = {
   auth: {
     kind: "token",
     note: "dev.to → Settings → Extensions → DEV Community API Keys → Generate API Key.",
+    docsUrl: "https://dev.to/settings/extensions",
     fields: [{ key: "apiKey", label: "API key", secret: true }],
   },
   caps: { charLimit: 0, mediaLimit: 0, threads: false, delete: false, timeline: true, notifications: false, stats: true, needsTitle: true, explicitTarget: true },
@@ -86,6 +87,7 @@ export const hashnode: Network = {
   auth: {
     kind: "token",
     note: "hashnode.com/settings/developer → Generate New Token. The publication id is in your blog dashboard URL.",
+    docsUrl: "https://hashnode.com/settings/developer",
     fields: [
       { key: "token", label: "Personal access token", secret: true },
       { key: "publicationId", label: "Publication id" },
@@ -146,6 +148,7 @@ export const ghost: Network = {
   auth: {
     kind: "token",
     note: "Ghost admin → Settings → Integrations → Add custom integration, then copy the Admin API Key (it looks like id:secret).",
+    docsUrl: "https://ghost.org/docs/admin-api/#token-authentication",
     fields: [
       { key: "url", label: "Blog URL", placeholder: "https://blog.example.com" },
       { key: "adminApiKey", label: "Admin API key", secret: true, placeholder: "6421…:9f8e…" },
@@ -217,6 +220,7 @@ export const wordpress: Network = {
   auth: {
     kind: "password",
     note: "Users → Profile → Application Passwords → Add New. Use that, not your login password.",
+    docsUrl: "https://developer.wordpress.org/rest-api/reference/application-passwords/",
     fields: [
       { key: "url", label: "Site URL", placeholder: "https://example.com" },
       { key: "username", label: "Username" },
@@ -282,6 +286,7 @@ export const microblog: Network = {
   auth: {
     kind: "token",
     note: "micro.blog/account/apps → generate an app token.",
+    docsUrl: "https://micro.blog/account/apps",
     fields: [
       { key: "token", label: "App token", secret: true },
       { key: "endpoint", label: "Micropub endpoint", optional: true, default: "https://micro.blog/micropub" },
@@ -325,6 +330,7 @@ export const tumblr: Network = {
     note:
       "Register an app at tumblr.com/oauth/apps, then use the API console (api.tumblr.com/console) to get the OAuth token " +
       "and secret for your account. All four values go here.",
+    docsUrl: "https://www.tumblr.com/oauth/apps",
     fields: [
       { key: "consumerKey", label: "Consumer key" },
       { key: "consumerSecret", label: "Consumer secret", secret: true },

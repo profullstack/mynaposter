@@ -41,6 +41,7 @@ export const reddit: Network = {
   auth: {
     kind: "password",
     note: "Create a 'script' app at reddit.com/prefs/apps to get the client id and secret. Script apps do not work on accounts with 2FA.",
+    docsUrl: "https://www.reddit.com/prefs/apps",
     fields: [
       { key: "clientId", label: "Client id", placeholder: "from reddit.com/prefs/apps" },
       { key: "clientSecret", label: "Client secret", secret: true },

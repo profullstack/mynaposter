@@ -91,6 +91,8 @@ textarea { min-height: 260px; resize: vertical; line-height: 1.6; }
 .writer { display: grid; grid-template-columns: 1fr auto auto auto auto; gap: 8px; margin-top: 12px; }
 .writer select { width: auto; }
 .note { color: var(--muted); font-size: 12px; margin-top: 8px; min-height: 16px; }
+.docs { display: block; color: var(--accent, #6ea8fe); text-decoration: none; }
+.docs:hover { text-decoration: underline; }
 .error { color: var(--danger); font-size: 13px; min-height: 18px; }
 .progress { color: var(--muted); font-size: 12px; font-family: ui-monospace, monospace; word-break: break-all; max-height: 90px; overflow: auto; }
 

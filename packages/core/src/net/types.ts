@@ -171,6 +171,13 @@ export interface Network {
     fields: CredentialField[];
     /** Shown in the login dialog — where to get these values. */
     note?: string;
+    /**
+     * The page that issues these credentials, shown as a link under the note.
+     * Prose can say "Settings → Developer"; this is the URL you can click.
+     * Omitted only where there is nothing to open: a local directory, or an
+     * instance whose address is itself one of the fields.
+     */
+    docsUrl?: string;
   };
   caps: NetworkCapabilities;
 

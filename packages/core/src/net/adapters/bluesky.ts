@@ -47,6 +47,7 @@ export const bluesky: Network = {
   auth: {
     kind: "password",
     note: "Create an App Password at Settings → Privacy and Security → App Passwords. Your main password works but is a bad idea.",
+    docsUrl: "https://bsky.app/settings/app-passwords",
     fields: [
       { key: "handle", label: "Handle", placeholder: "alice.bsky.social" },
       { key: "password", label: "App password", secret: true, placeholder: "xxxx-xxxx-xxxx-xxxx" },

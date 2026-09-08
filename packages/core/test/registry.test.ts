@@ -79,3 +79,20 @@ test("hashtags go only where they belong", () => {
   // A Ghost blog post with a hashtag glued on the end would just look wrong.
   expect(tailor("ghost", options)[0]).not.toContain("#terminal");
 });
+
+test("every network says where to get its credentials", () => {
+  for (const network of NETWORKS) {
+    const url = network.auth.docsUrl;
+    expect(url, `${network.id} has no docsUrl`).toBeTruthy();
+    expect(new URL(url!).protocol, `${network.id} docsUrl is not https`).toBe("https:");
+  }
+});
+
+test("X asks for OAuth 2.0 only", () => {
+  const keys = requireNetwork("x").auth.fields.map((field) => field.key);
+  // OAuth 1.0a is gone: those four keys sign as the app owner rather than the
+  // person connecting, and every request path here refreshes a bearer instead.
+  expect(keys).not.toContain("apiKey");
+  expect(keys).not.toContain("accessSecret");
+  expect(keys).toContain("clientId");
+});

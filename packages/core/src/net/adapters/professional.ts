@@ -1,7 +1,7 @@
 /** LinkedIn, Pinterest and TikTok. All browser OAuth; none accept a password. */
-import type { Network, TimelineItem } from "../types.ts";
+import type { Account, Network, TimelineItem } from "../types.ts";
 import { getJson, postJson, request } from "../../util/http.ts";
-import { authorize, callbackFrom, PASTE_FIELD, REDIRECT_NOTE } from "../oauth2.ts";
+import { authorize, callbackFrom, currentToken, PASTE_FIELD, REDIRECT_NOTE } from "../oauth2.ts";
 
 /**
  * LinkedIn only accepts absolute HTTPS redirect URLs, so the loopback address
@@ -10,6 +10,26 @@ import { authorize, callbackFrom, PASTE_FIELD, REDIRECT_NOTE } from "../oauth2.t
  * browser is on. The token exchange still happens here, with the secret.
  */
 export const LINKEDIN_REDIRECT_URI = "https://mynaposter.com/api/linkedin/callback";
+
+/**
+ * LinkedIn access tokens last 60 days and refresh tokens are only issued to
+ * apps LinkedIn has approved for them, so `refreshToken` is often empty. When
+ * it is, the stored token is used until LinkedIn rejects it and the answer is
+ * `myna login linkedin` again — there is nothing else the API will accept.
+ */
+const linkedinToken = (account: Account): Promise<string> =>
+  currentToken(
+    account,
+    {
+      authorizeUrl: "https://www.linkedin.com/oauth/v2/authorization",
+      tokenUrl: "https://www.linkedin.com/oauth/v2/accessToken",
+      clientId: account.creds.clientId ?? "",
+      clientSecret: account.creds.clientSecret,
+      scopes: [],
+      pkce: false,
+    },
+    { key: "token", lifetime: 60 * 24 * 3600 },
+  );
 
 export const linkedin: Network = {
   id: "linkedin",
@@ -22,6 +42,7 @@ export const linkedin: Network = {
       "Create an app at linkedin.com/developers, add the 'Share on LinkedIn' and 'Sign In with OpenID Connect' products, " +
       `then request w_member_social. Under Auth, add ${LINKEDIN_REDIRECT_URI} as a redirect URL: LinkedIn only ` +
       "accepts HTTPS redirects, so the sign-in always ends on that page and you paste the code it shows back here.",
+    docsUrl: "https://www.linkedin.com/developers/apps",
     fields: [
       { key: "clientId", label: "Client id" },
       { key: "clientSecret", label: "Client secret", secret: true },
@@ -62,11 +83,17 @@ export const linkedin: Network = {
     return {
       handle: me.name,
       displayName: me.name,
-      creds: { token: tokens.access_token },
+      creds: {
+        token: tokens.access_token,
+        refreshToken: tokens.refresh_token ?? "",
+        clientId: input.clientId,
+        clientSecret: input.clientSecret,
+      },
       meta: {
         // The API addresses people and companies as URNs, not ids.
         author: input.organization ? `urn:li:organization:${input.organization}` : `urn:li:person:${me.sub}`,
         person: `urn:li:person:${me.sub}`,
+        expiresAt: String(Date.now() + (tokens.expires_in ?? 60 * 24 * 3600) * 1000),
       },
     };
   },
@@ -90,7 +117,7 @@ export const linkedin: Network = {
       },
       {
         headers: {
-          authorization: `Bearer ${account.creds.token}`,
+          authorization: `Bearer ${await linkedinToken(account)}`,
           "x-restli-protocol-version": "2.0.0",
         },
       },
@@ -101,10 +128,26 @@ export const linkedin: Network = {
   async remove(account, id) {
     await request(`https://api.linkedin.com/v2/ugcPosts/${encodeURIComponent(id)}`, {
       method: "DELETE",
-      headers: { authorization: `Bearer ${account.creds.token}`, "x-restli-protocol-version": "2.0.0" },
+      headers: { authorization: `Bearer ${await linkedinToken(account)}`, "x-restli-protocol-version": "2.0.0" },
     });
   },
 };
+
+/** Pinterest access tokens last 30 days; the refresh token lasts a year. */
+const pinterestToken = (account: Account): Promise<string> =>
+  currentToken(
+    account,
+    {
+      authorizeUrl: "https://www.pinterest.com/oauth/",
+      tokenUrl: "https://api.pinterest.com/v5/oauth/token",
+      clientId: account.creds.clientId ?? "",
+      clientSecret: account.creds.clientSecret,
+      scopes: [],
+      pkce: false,
+      basicAuth: true,
+    },
+    { key: "token", lifetime: 30 * 24 * 3600 },
+  );
 
 export const pinterest: Network = {
   id: "pinterest",
@@ -114,6 +157,7 @@ export const pinterest: Network = {
   auth: {
     kind: "oauth2",
     note: `Create an app at developers.pinterest.com with boards:read, pins:read and pins:write. ${REDIRECT_NOTE}`,
+    docsUrl: "https://developers.pinterest.com/apps/",
     fields: [
       { key: "clientId", label: "App id" },
       { key: "clientSecret", label: "App secret", secret: true },
@@ -157,8 +201,13 @@ export const pinterest: Network = {
     return {
       handle: me.username,
       displayName: me.username,
-      creds: { token: tokens.access_token, refreshToken: tokens.refresh_token ?? "" },
-      meta: { boardId },
+      creds: {
+        token: tokens.access_token,
+        refreshToken: tokens.refresh_token ?? "",
+        clientId: input.clientId,
+        clientSecret: input.clientSecret,
+      },
+      meta: { boardId, expiresAt: String(Date.now() + (tokens.expires_in ?? 30 * 24 * 3600) * 1000) },
     };
   },
 
@@ -183,7 +232,7 @@ export const pinterest: Network = {
         media_source: source,
         ...(input.extra?.url ? { link: input.extra.url } : {}),
       },
-      { headers: { authorization: `Bearer ${account.creds.token}` } },
+      { headers: { authorization: `Bearer ${await pinterestToken(account)}` } },
     );
     return { id: created.id, url: `https://pinterest.com/pin/${created.id}` };
   },
@@ -191,13 +240,13 @@ export const pinterest: Network = {
   async remove(account, id) {
     await request(`https://api.pinterest.com/v5/pins/${id}`, {
       method: "DELETE",
-      headers: { authorization: `Bearer ${account.creds.token}` },
+      headers: { authorization: `Bearer ${await pinterestToken(account)}` },
     });
   },
 
   async timeline(account, limit) {
     const result = await getJson<{ items: Record<string, any>[] }>(`https://api.pinterest.com/v5/pins?page_size=${limit}`, {
-      headers: { authorization: `Bearer ${account.creds.token}` },
+      headers: { authorization: `Bearer ${await pinterestToken(account)}` },
     });
     return (result.items ?? []).map((pin): TimelineItem => ({
       id: pin.id,
@@ -210,6 +259,25 @@ export const pinterest: Network = {
   },
 };
 
+/**
+ * TikTok access tokens last 24 hours, which is shorter than plenty of queues.
+ * Its token endpoint names the app client_key rather than client_id, on the
+ * exchange as well as the refresh.
+ */
+const tiktokToken = (account: Account): Promise<string> =>
+  currentToken(
+    account,
+    {
+      authorizeUrl: "https://www.tiktok.com/v2/auth/authorize/",
+      tokenUrl: "https://open.tiktokapis.com/v2/oauth/token/",
+      clientId: account.creds.clientKey ?? "",
+      clientSecret: account.creds.clientSecret,
+      scopes: [],
+      tokenParams: { client_key: account.creds.clientKey ?? "" },
+    },
+    { key: "token", lifetime: 24 * 3600 },
+  );
+
 export const tiktok: Network = {
   id: "tiktok",
   name: "TikTok",
@@ -220,6 +288,7 @@ export const tiktok: Network = {
     note:
       "Create an app at developers.tiktok.com with the Content Posting API and video.publish scope. Until the app passes " +
       `audit, every post is forced to SELF_ONLY visibility — that is TikTok's rule. ${REDIRECT_NOTE}`,
+    docsUrl: "https://developers.tiktok.com/apps",
     fields: [
       { key: "clientKey", label: "Client key" },
       { key: "clientSecret", label: "Client secret", secret: true },
@@ -237,8 +306,10 @@ export const tiktok: Network = {
         clientSecret: input.clientSecret,
         scopes: ["user.info.basic", "video.publish"],
         pkce: true,
-        // TikTok names the parameter client_key, not client_id.
+        // TikTok names the parameter client_key, not client_id, on the
+        // authorize URL and on the token endpoint alike.
         authParams: { client_key: input.clientKey },
+        tokenParams: { client_key: input.clientKey },
         ...callbackFrom(input, ctx),
       },
       ctx,
@@ -250,8 +321,16 @@ export const tiktok: Network = {
     return {
       handle: me.data.user.display_name,
       displayName: me.data.user.display_name,
-      creds: { token: tokens.access_token, refreshToken: tokens.refresh_token ?? "" },
-      meta: { openId: me.data.user.open_id },
+      creds: {
+        token: tokens.access_token,
+        refreshToken: tokens.refresh_token ?? "",
+        clientKey: input.clientKey,
+        clientSecret: input.clientSecret,
+      },
+      meta: {
+        openId: me.data.user.open_id,
+        expiresAt: String(Date.now() + (tokens.expires_in ?? 24 * 3600) * 1000),
+      },
     };
   },
 
@@ -267,7 +346,7 @@ export const tiktok: Network = {
         },
         source_info: { source: "PULL_FROM_URL", video_url: videoUrl },
       },
-      { headers: { authorization: `Bearer ${account.creds.token}` } },
+      { headers: { authorization: `Bearer ${await tiktokToken(account)}` } },
     );
     return { id: created.data.publish_id };
   },

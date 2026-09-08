@@ -179,6 +179,7 @@ export const gitblog: Network = {
     note:
       "The post is committed straight to the branch through the GitHub API, so the site's own deploy publishes it. " +
       "A fine-grained token needs Contents: read and write on the repository. Leave the token empty to use GH_TOKEN or `gh auth token`.",
+    docsUrl: "https://github.com/settings/personal-access-tokens",
     fields: [
       { key: "repo", label: "Repository", placeholder: "owner/name" },
       { key: "dir", label: "Posts directory", default: "content/blog", help: "Where a post file goes, relative to the repository root." },
@@ -492,6 +493,7 @@ export const htmlblog: Network = {
     note:
       "Posts are NNN-post.html files beside an index.html; the feed is rebuilt by the blog's own build-feed.mjs when it has one. " +
       "If profullstack/cli-tools' `blog-post` is installed the page is written by it, byline and all.",
+    docsUrl: "https://github.com/profullstack/cli-tools",
     fields: [
       { key: "dir", label: "Blog directory", default: join(homedir(), "public_html", "blog") },
       { key: "siteUrl", label: "Where it is served", placeholder: "https://example.com/~you/blog", help: "The post's URL is this plus the file name." },

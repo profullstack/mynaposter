@@ -128,6 +128,7 @@ export const nostr: Network = {
   auth: {
     kind: "token",
     note: "Paste your nsec (or 64 hex characters). It is encrypted into the local vault and never sent anywhere except as a signature.",
+    docsUrl: "https://nostr.how/en/get-started",
     fields: [
       { key: "nsec", label: "Secret key", secret: true, placeholder: "nsec1…" },
       { key: "relays", label: "Relays", optional: true, default: DEFAULT_RELAYS.join(","), help: "Comma separated." },
