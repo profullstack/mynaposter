@@ -9,6 +9,7 @@ import { test, expect, afterEach } from "bun:test";
 import { buildListing, deriveDescription, deriveName } from "../src/directories/submit.ts";
 import { saasrow } from "../src/directories/adapters/saasrow.ts";
 import { getDirectory, requireDirectory, registerDirectory, unregisterDirectory, DIRECTORIES } from "../src/directories/registry.ts";
+import { looksMistyped } from "../src/directories/adapters/saasrow.ts";
 import type { PageSummary } from "../src/ai/extract.ts";
 import type { DirectoryAccount } from "../src/directories/types.ts";
 
@@ -181,4 +182,17 @@ test("a registered directory replaces one with the same id, and can be taken bac
   unregisterDirectory("stub");
   expect(getDirectory("stub")).toBeUndefined();
   expect(DIRECTORIES.length).toBe(before);
+});
+
+test("a near-miss top-level domain is caught before the code is sent", () => {
+  // The address is the one thing that cannot be checked afterwards: SaaSRow
+  // answers the same for an address that does not exist, on purpose.
+  expect(looksMistyped("anthony@profullstack.om")).toMatch(/Did you mean \.com/);
+  expect(looksMistyped("someone@example.con")).toMatch(/Did you mean \.com/);
+  expect(looksMistyped("someone@example")).toMatch(/does not look like an email/);
+
+  // And a real address, including a real ccTLD that is not a typo, passes.
+  expect(looksMistyped("anthony@profullstack.com")).toBeUndefined();
+  expect(looksMistyped("someone@example.co.uk")).toBeUndefined();
+  expect(looksMistyped("someone@example.dev")).toBeUndefined();
 });

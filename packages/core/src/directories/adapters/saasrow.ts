@@ -104,6 +104,42 @@ function toListing(payload: unknown): Listing {
   };
 }
 
+/**
+ * Near misses for the common top-level domains.
+ *
+ * `.om` is a real country code, and so are several of these, which is why this
+ * warns rather than refuses. It exists because the one address a person types
+ * in this flow is the one thing that cannot be checked afterwards: a code sent
+ * to the wrong address looks exactly like a code that is on its way.
+ */
+const TLD_TYPOS: Record<string, string> = {
+  om: "com",
+  cm: "com",
+  ocm: "com",
+  cpm: "com",
+  con: "com",
+  comm: "com",
+  clm: "com",
+  xom: "com",
+  vom: "com",
+  ent: "net",
+  nte: "net",
+  ner: "net",
+  orgg: "org",
+  ogr: "org",
+  or: "org",
+};
+
+/** A sentence about what looks wrong with an address, or nothing. */
+export function looksMistyped(email: string): string | undefined {
+  const domain = email.split("@")[1]?.toLowerCase();
+  if (!domain || !domain.includes(".")) return `"${email}" does not look like an email address.`;
+  const tld = domain.split(".").pop() ?? "";
+  const meant = TLD_TYPOS[tld];
+  if (meant) return `"${email}" ends in .${tld}. Did you mean .${meant}?`;
+  return undefined;
+}
+
 interface VerifyResponse {
   api_key?: string;
   key?: { id?: string; name?: string; prefix?: string };
@@ -167,10 +203,21 @@ export const saasrow: Directory = {
     if (!email) throw new Error("An email address is required.");
     if (!ctx.ask) throw new Error("Signing in to SaaSRow needs to ask for the emailed code, and nothing here can ask.");
 
+    // A mistyped address is indistinguishable from a right one from here:
+    // SaaSRow answers the same either way, deliberately, so that nobody can
+    // use this endpoint to find out which addresses have accounts. That means
+    // the only chance to catch a typo is before sending.
+    const suspect = looksMistyped(email);
+    if (suspect) {
+      const answer = (await ctx.ask(`${suspect} Send the code to ${email} anyway? [y/N]`)).trim().toLowerCase();
+      if (answer !== "y" && answer !== "yes") throw new Error("Stopped. Run it again with the address you meant.");
+    }
+
     await postJson(`${site}/api/v1/auth/cli`, { email });
     ctx.report(`SaaSRow emailed a code to ${email}. It is good for 15 minutes.`);
+    ctx.report("If nothing arrives, that address is the first thing to check: SaaSRow replies the same way to one that does not exist.");
 
-    const code = (await ctx.ask("Code from the email (XXXX-XXXX): ")).trim();
+    const code = (await ctx.ask("Code from the email (XXXX-XXXX)")).trim();
     if (!code) throw new Error("No code entered.");
 
     const result = await postJson<VerifyResponse>(`${site}/api/v1/auth/cli/verify`, {
