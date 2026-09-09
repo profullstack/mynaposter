@@ -40,6 +40,10 @@ machine and nothing is sent anywhere except the posts you make.
 - **Grow the right audience.** Seed a follow graph with people worth learning
   from, let myna read who *they* follow, and follow the accounts they agree
   on, a few an hour, from `myna run`. See [The follow graph](#the-follow-graph).
+- **List the product itself.** `myna directory saasrow <url>` reads the page and
+  submits it to a software directory over that directory's MCP server. A listing
+  is not a post, so it has its own command and its own credentials. See
+  [Directories](#directories).
 - **Plugins.** A plugin can add a network, a command, a daemon task or a source
   of people to follow. The bundled one pulls seeds from
   [OutreachGraph](https://outreachgraph.com). See [Plugins](#plugins).
@@ -266,7 +270,7 @@ under twenty videos disappears.
 ## The TUI
 
 ```
-  compose    accounts    queue    history    feed    networks    help      all 4
+  compose  accounts  directories  queue  history  feed  networks  help    all 4
 
 ╭─ Compose ─────────────────────────────────────────╮ ╭─ Goes to ──────────────╮
 │ myna is a terminal social media manager. One      │ │ bluesky:alice   139/300│
@@ -286,7 +290,7 @@ the others read 139: X bills every URL at 23 characters regardless of length.
 
 **Keys.** `/` command bar, `Enter` edit the post, `Ctrl+S` or `F2` send, `Ctrl+T` pick
 targets, `Esc` back, `Tab` next tab (or complete a half-typed command), `Shift+Tab`
-previous tab, `1`–`8` switch screen, `Ctrl+C` quit. Pasting works in every field.
+previous tab, `1`–`9` switch screen, `Ctrl+C` quit. Pasting works in every field.
 
 ## Commands
 
@@ -307,6 +311,7 @@ myna search [network] <query>     myna follow <account> <handle>
 myna following <account> [handle] myna graph <subcommand>
 myna plugins [add|remove]         myna outreachgraph <subcommand>
 myna crawlproof <subcommand>      myna calendar <subcommand>
+myna directory <id> <url>         myna directory listings [id]
 ```
 
 Flags: `--to`, `--title`, `--media`, `--style`, `--json`, `--dry-run`,
@@ -365,6 +370,48 @@ release needs `myna login x` again so its token carries the `follows` scopes.
 relays**: a follow is a new kind 3 event that replaces the old one everywhere,
 so myna will only extend a list it can find, never publish one that would wipe
 what another client wrote. Follow one person from any other Nostr client first.
+
+## Directories
+
+Posting tells people about the product. A directory lists the product itself,
+which is a different thing: a name, a website, a description and a category,
+reviewed by somebody and then indexed by search engines and assistants. myna
+does both, and keeps them apart.
+
+```bash
+myna directory                            # what myna can submit to
+myna directory login saasrow              # emails you a one-time code
+myna directory saasrow https://example.com --dry-run
+myna directory saasrow https://example.com
+myna directory listings                   # yours, and where each one stands
+```
+
+Give it a URL and myna reads the page, works out the name, writes the
+description and picks the category and vocabulary terms the directory accepts.
+Anything it got wrong is a flag: `--name`, `--description`, `--category`,
+`--tags a,b`, `--platforms cli,web`, `--pricing free`. `--dry-run` prints the
+listing and sends nothing, which is worth doing first — a submission is public
+and a person reads it.
+
+Without a writing model configured, the listing falls back to the page's own
+metadata. That is worse than a written one and still usually good enough;
+`--no-ai` asks for it deliberately.
+
+**How it talks to the directory.** Listings go over the directory's MCP server:
+the tool schemas describe the fields, so a directory that adds one needs no
+release here. Signing in is the exception and goes over its REST API, because
+the emailed code is a conversation with a person rather than something a tool
+call can carry. The API key it hands back is kept in myna's encrypted vault,
+apart from your posting accounts — deliberately, so that `--to all` can never
+turn a stray thought into a product submission.
+
+**What ships.** [SaaSRow](https://saasrow.com), which publishes each listing to
+search engines, AI assistants, a free API and its own MCP server. A plugin can
+add another with `registerDirectory`, exactly as it can add a network.
+
+The same thing is on every surface: `/directory` in the TUI, a Directories
+screen in the desktop app, and `myna_directories`, `myna_directory_preview`,
+`myna_directory_submit` and `myna_directory_listings` over [MCP](#mcp).
 
 ## Plugins
 
@@ -537,6 +584,9 @@ all of them, because they read the same vault.
 | `apps/api` | An HTTP API for scripts and cron |
 | `packages/mcp` | An MCP server, so an agent can post for you |
 
+myna is also an MCP *client*, in one place: a software directory that accepts
+listings over MCP is submitted to that way. See [Directories](#directories).
+
 ### Several accounts on one network
 
 Accounts are keyed by `network:handle`, so as many as you like can coexist:
@@ -581,15 +631,18 @@ bun run db:migrate
 { "mcpServers": { "myna": { "command": "bunx", "args": ["@profullstack/myna-mcp"] } } }
 ```
 
-Eleven tools: `myna_accounts`, `myna_networks`, `myna_preview`, `myna_post`,
+Fifteen tools: `myna_accounts`, `myna_networks`, `myna_preview`, `myna_post`,
 `myna_schedule`, `myna_queue`, `myna_cancel`, `myna_history`, `myna_draft`,
-`myna_timeline`, `myna_search`.
+`myna_timeline`, `myna_search`, and for [directories](#directories)
+`myna_directories`, `myna_directory_preview`, `myna_directory_submit` and
+`myna_directory_listings`.
 
-There is deliberately no login tool. Connecting an account means typing a
-password or completing a browser flow, and that belongs to a person. `myna_post`
-publishes immediately and cannot be undone on every network, which its
-description says plainly; `myna_preview` is there to check the targets and the
-per-network tailoring first.
+There is deliberately no login tool, for a network or a directory. Connecting
+one means typing a password, completing a browser flow or reading a code out of
+an email, and that belongs to a person. `myna_post` publishes immediately and
+cannot be undone on every network, which its description says plainly;
+`myna_preview` is there to check the targets and the per-network tailoring
+first, and `myna_directory_preview` does the same for a listing.
 
 ### Deploying
 

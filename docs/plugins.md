@@ -13,6 +13,7 @@ export default {
   description: "One line for `myna plugins`.",
 
   networks: [ /* Network adapters, see below */ ],
+  directories: [ /* Software directories, see below */ ],
 
   commands: [
     {
@@ -104,6 +105,21 @@ optional and each is gated by a `caps` flag. Read
 `packages/core/src/net/types.ts` for the full contract and any adapter under
 `packages/core/src/net/adapters/` for a worked example. Registering an id that
 already exists replaces the built-in, on purpose.
+
+## Directories
+
+A plugin's `directories` are `Directory` objects: where a *product* is listed,
+as opposed to where a post goes. The contract is deliberately smaller than a
+network's — `auth` and `login` work exactly as a network's do, and then
+`submit`, `listings`, and optionally `update`, `remove`, `categories` and
+`vocabulary`. Read `packages/core/src/directories/types.ts` for the full
+contract and `packages/core/src/directories/adapters/saasrow.ts` for a worked
+example.
+
+Two things a directory adapter gets for free. `McpClient` speaks streamable
+HTTP MCP, so a directory that publishes an MCP server needs no HTTP code of its
+own. And its credentials are kept apart from posting accounts in the vault, so
+a directory can never end up in `--to all`.
 
 ## Seeds and the daemon
 

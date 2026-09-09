@@ -1,5 +1,13 @@
-/** Accounts live in the encrypted vault; nothing else in myna touches it. */
+/**
+ * Accounts live in the encrypted vault; nothing else in myna touches it.
+ *
+ * Directory credentials live here too, and for a reason worth stating: the
+ * vault is read into one module-level cache, so a second module opening it
+ * would hold a second copy and the last writer would silently drop the other's
+ * changes. Everything that persists into the vault goes through this file.
+ */
 import type { Account } from "../net/types.ts";
+import type { DirectoryAccount } from "../directories/types.ts";
 import { readVault, writeVault, vaultExists, vaultMode } from "../util/crypto/vault.ts";
 import { getNetwork } from "../net/registry.ts";
 
@@ -11,6 +19,13 @@ interface VaultPayload {
    * an account password is.
    */
   plugins?: Record<string, Record<string, string>>;
+  /**
+   * Directory credentials, by directory id. Deliberately not in `accounts`:
+   * `resolveTargets("all")` fans out over every account, so a directory key
+   * kept there would be a posting target, and a stray thought would go out as
+   * a product submission.
+   */
+  directories?: Record<string, DirectoryAccount>;
 }
 
 let cache: VaultPayload | null = null;
@@ -68,6 +83,33 @@ export function setPluginSecrets(pluginId: string, values: Record<string, string
   if (Object.keys(values).length) plugins[pluginId] = { ...values };
   else delete plugins[pluginId];
   save({ ...payload, plugins });
+}
+
+/** Every directory this machine is signed in to, by id. */
+export function listDirectoryAccounts(): DirectoryAccount[] {
+  const stored = load().directories ?? {};
+  return Object.values(stored).sort((a, b) => a.directory.localeCompare(b.directory));
+}
+
+export function getDirectoryAccount(directory: string): DirectoryAccount | undefined {
+  return load().directories?.[directory.trim().toLowerCase()];
+}
+
+export function saveDirectoryAccount(account: DirectoryAccount): void {
+  const payload = load();
+  const directories = { ...(payload.directories ?? {}) };
+  directories[account.directory] = account;
+  save({ ...payload, directories });
+}
+
+export function removeDirectoryAccount(directory: string): boolean {
+  const payload = load();
+  const id = directory.trim().toLowerCase();
+  if (!payload.directories?.[id]) return false;
+  const directories = { ...payload.directories };
+  delete directories[id];
+  save({ ...payload, directories });
+  return true;
 }
 
 export function removeAccount(id: string): boolean {

@@ -5,17 +5,27 @@
  * password network shows a password box and an OAuth network shows the app
  * fields and then hands off to the browser — same command either way.
  */
-import { listAccounts, openBrowser, saveAccount, type Account, type Network } from "@profullstack/myna-core";
+import {
+  listAccounts,
+  openBrowser,
+  saveAccount,
+  saveDirectoryAccount,
+  type Account,
+  type Directory,
+  type DirectoryAccount,
+  type Network,
+} from "@profullstack/myna-core";
 import { Field } from "./field.ts";
 import { toast, type State } from "./state.ts";
 
 export function startLogin(
   state: State,
-  network: Network,
+  target: Network | Directory,
   redraw: () => void,
   values: Record<string, string> = {},
+  kind: "network" | "directory" = "network",
 ): void {
-  const fields = network.auth.fields.map(
+  const fields = target.auth.fields.map(
     (field) =>
       new Field(field.key, field.label, {
         secret: field.secret,
@@ -29,7 +39,8 @@ export function startLogin(
   // difference between typing nothing and re-reading a URL you just typed.
   const firstEmpty = fields.findIndex((field) => !field.value.trim());
   state.login = {
-    network,
+    target,
+    kind,
     fields,
     active: firstEmpty < 0 ? Math.max(0, fields.length - 1) : firstEmpty,
     log: [],
@@ -51,7 +62,7 @@ export async function submitLogin(state: State, redraw: () => void): Promise<voi
 
   const values: Record<string, string> = {};
   for (const field of flow.fields) {
-    const spec = flow.network.auth.fields.find((entry) => entry.key === field.key);
+    const spec = flow.target.auth.fields.find((entry) => entry.key === field.key);
     if (!field.value.trim() && !spec?.optional) {
       flow.error = `${field.label} is required.`;
       flow.active = flow.fields.indexOf(field);
@@ -67,7 +78,7 @@ export async function submitLogin(state: State, redraw: () => void): Promise<voi
   redraw();
 
   try {
-    const partial = await flow.network.login(values, {
+    const partial = await flow.target.login(values, {
       report(message) {
         flow.log.push(message);
         redraw();
@@ -98,19 +109,32 @@ export async function submitLogin(state: State, redraw: () => void): Promise<voi
         }),
     });
 
-    const account: Account = {
-      ...partial,
-      id: `${flow.network.id}:${partial.handle}`,
-      network: flow.network.id,
-      addedAt: new Date().toISOString(),
-    };
-    saveAccount(account);
+    if (flow.kind === "directory") {
+      const account: DirectoryAccount = {
+        ...partial,
+        directory: flow.target.id,
+        addedAt: new Date().toISOString(),
+      };
+      saveDirectoryAccount(account);
+      state.login = undefined;
+      state.mode = "command";
+      state.screen = "directories";
+      toast(state, `Connected ${account.directory} as ${account.handle}`, "success");
+    } else {
+      const account: Account = {
+        ...partial,
+        id: `${flow.target.id}:${partial.handle}`,
+        network: flow.target.id,
+        addedAt: new Date().toISOString(),
+      };
+      saveAccount(account);
 
-    state.accounts = listAccounts();
-    state.login = undefined;
-    state.mode = "command";
-    state.screen = "accounts";
-    toast(state, `Connected ${account.id}`, "success");
+      state.accounts = listAccounts();
+      state.login = undefined;
+      state.mode = "command";
+      state.screen = "accounts";
+      toast(state, `Connected ${account.id}`, "success");
+    }
   } catch (error) {
     flow.busy = false;
     flow.error = (error as Error).message;

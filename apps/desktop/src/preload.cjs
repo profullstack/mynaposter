@@ -26,6 +26,16 @@ contextBridge.exposeInMainWorld("myna", {
     preview: (options) => call("post:preview", options),
   },
 
+  directories: {
+    list: () => call("directories:list"),
+    login: (directory, values) => call("directories:login", directory, values),
+    logout: (directory) => call("directories:logout", directory),
+    preview: (directory, url) => call("directories:preview", directory, url),
+    submit: (directory, listing) => call("directories:submit", directory, listing),
+    listings: (directory) => call("directories:listings", directory),
+    remove: (directory, listingId) => call("directories:remove", directory, listingId),
+  },
+
   queue: {
     list: () => call("queue:list"),
     add: (options) => call("queue:add", options),
@@ -55,6 +65,17 @@ contextBridge.exposeInMainWorld("myna", {
     ipcRenderer.on("login:progress", listener);
     return () => ipcRenderer.off("login:progress", listener);
   },
+
+  // A sign-in that has to ask something mid-flow: a mailed one-time code, or a
+  // device flow waiting on a browser. The handler shows a prompt and calls
+  // `answerLogin`; until it does, the sign-in is still waiting.
+  onLoginAsk: (handler) => {
+    const listener = (_event, payload) => handler(payload);
+    ipcRenderer.on("login:ask", listener);
+    return () => ipcRenderer.off("login:ask", listener);
+  },
+  answerLogin: (id, value) => ipcRenderer.send("login:answer", { id, value }),
+  cancelLogin: (id) => ipcRenderer.send("login:answer", { id, cancelled: true }),
   onSchedulerRan: (handler) => {
     const listener = (_event, payload) => handler(payload);
     ipcRenderer.on("scheduler:ran", listener);

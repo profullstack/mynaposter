@@ -25,6 +25,12 @@ import {
   summarize,
   tailor,
   writerAvailable,
+  buildListing,
+  submitListing,
+  directoryStatus,
+  requireDirectory,
+  requireDirectoryAccount,
+  type ListingInput,
 } from "@profullstack/myna-core";
 
 export interface ToolResult {
@@ -182,6 +188,72 @@ export const TOOLS = [
       additionalProperties: false,
     },
   },
+  {
+    name: "myna_directories",
+    description:
+      "List the software directories myna can submit a product to, and which of them this machine " +
+      "is signed in to. A directory listing is a product entry, not a post: submitting one is a " +
+      "different act from myna_post and goes to a different place.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+  },
+  {
+    name: "myna_directory_preview",
+    description:
+      "Read a product's URL and return the listing that would be submitted, without submitting it. " +
+      "Use this first: a submission is public and is reviewed by a person, so the fields are worth " +
+      "checking, and anything wrong can be corrected by passing it to myna_directory_submit.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        directory: { type: "string", description: "Directory id; call myna_directories for the list." },
+        url: { type: "string", description: "The product's website." },
+        ai: {
+          type: "boolean",
+          description:
+            "Let myna's writer describe the product. Default true where a model is configured; " +
+            "false uses the page's own metadata.",
+        },
+      },
+      required: ["directory", "url"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "myna_directory_submit",
+    description:
+      "Submit a product to a directory. This is public and cannot be taken back quietly, so confirm " +
+      "the wording with the person first — myna_directory_preview shows exactly what would be sent. " +
+      "Any field given here overrides what was read from the page.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        directory: { type: "string", description: "Directory id; call myna_directories for the list." },
+        url: { type: "string", description: "The product's website. Read to fill anything not given." },
+        name: { type: "string", description: "Product name." },
+        description: { type: "string", description: "What the product does." },
+        category: { type: "string", description: "Category name the directory accepts." },
+        tags: { type: "array", items: { type: "string" }, description: "Free-text tags." },
+        use_cases: { type: "array", items: { type: "string" } },
+        audiences: { type: "array", items: { type: "string" } },
+        platforms: { type: "array", items: { type: "string" } },
+        pricing_model: { type: "string" },
+        alternatives: { type: "array", items: { type: "string" } },
+      },
+      required: ["directory", "url"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "myna_directory_listings",
+    description: "The listings this machine's account owns in a directory, and where each one stands.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        directory: { type: "string", description: "Directory id. Omit for every connected directory." },
+      },
+      additionalProperties: false,
+    },
+  },
 ];
 
 /**
@@ -194,6 +266,28 @@ export const TOOLS = [
 const text = (value: unknown): ToolResult => ({
   content: [{ type: "text" as const, text: typeof value === "string" ? value : JSON.stringify(value, null, 2) }],
 });
+
+/**
+ * Listing fields an agent supplied, in the directory's snake_case, mapped to
+ * myna's. Only what was given: an absent field must not overwrite what reading
+ * the page worked out.
+ */
+function listingOverrides(args: Record<string, unknown>): Partial<ListingInput> {
+  const str = (value: unknown) => (typeof value === "string" && value.trim() ? value.trim() : undefined);
+  const arr = (value: unknown) =>
+    Array.isArray(value) && value.length ? value.filter((entry): entry is string => typeof entry === "string") : undefined;
+  return {
+    name: str(args.name),
+    description: str(args.description),
+    category: str(args.category),
+    tags: arr(args.tags),
+    useCases: arr(args.use_cases),
+    audiences: arr(args.audiences),
+    platforms: arr(args.platforms),
+    pricingModel: str(args.pricing_model),
+    alternatives: arr(args.alternatives),
+  };
+}
 
 export async function callTool(name: string, args_: Record<string, unknown> = {}): Promise<ToolResult> {
   const args = args_ as Record<string, never>;
@@ -332,6 +426,64 @@ export async function callTool(name: string, args_: Record<string, unknown> = {}
         if (!account) throw new Error("None of those accounts can read a timeline.");
         const items = (await requireNetwork(account.network).timeline!(account, Number(args.limit ?? 20))) ?? [];
         return text({ account: account.id, items });
+      }
+
+      case "myna_directories":
+        return text(
+          directoryStatus().map(({ directory, account }) => ({
+            id: directory.id,
+            name: directory.name,
+            homepage: directory.homepage,
+            blurb: directory.blurb,
+            connected: Boolean(account),
+            handle: account?.handle ?? null,
+            review: directory.caps.review,
+          })),
+        );
+
+      case "myna_directory_preview": {
+        const directory = requireDirectory(args.directory);
+        const built = await buildListing(directory, args.url, {
+          ai: args.ai === undefined ? undefined : Boolean(args.ai),
+        });
+        return text({
+          directory: directory.id,
+          listing: built.listing,
+          describedBy: built.source,
+          submitted: false,
+        });
+      }
+
+      case "myna_directory_submit": {
+        const directory = requireDirectory(args.directory);
+        // Fail on a missing credential before reading the page: a person has
+        // to run `myna directory login`, and nothing here can do it for them.
+        requireDirectoryAccount(directory.id);
+        const built = await buildListing(directory, args.url, {
+          overrides: listingOverrides(args_),
+        });
+        const result = await submitListing(directory.id, built.listing);
+        return text({ directory: result.directory, listing: result.listing, sent: result.input });
+      }
+
+      case "myna_directory_listings": {
+        const ids = args.directory
+          ? [requireDirectory(args.directory).id]
+          : directoryStatus().filter((row) => row.account).map((row) => row.directory.id);
+        if (!ids.length) {
+          throw new Error(
+            "No directory is connected. A person needs to run `myna directory login <id>` first; " +
+              "it needs an emailed code and cannot be done from here.",
+          );
+        }
+        const listings = [];
+        for (const id of ids) {
+          const directory = requireDirectory(id);
+          for (const listing of await directory.listings(requireDirectoryAccount(id))) {
+            listings.push({ directory: id, ...listing });
+          }
+        }
+        return text(listings);
       }
 
       default:

@@ -1,10 +1,29 @@
 /** Everything the TUI draws from. One object, mutated in place, read each frame. */
-import type { Account, Network, TimelineItem } from "@profullstack/myna-core";
+import type { Account, Directory, Listing, Network, TimelineItem } from "@profullstack/myna-core";
 import { Field, TextArea } from "./field.ts";
 
-export type Screen = "compose" | "accounts" | "queue" | "history" | "performance" | "feed" | "networks" | "help";
+export type Screen =
+  | "compose"
+  | "accounts"
+  | "queue"
+  | "history"
+  | "performance"
+  | "feed"
+  | "networks"
+  | "directories"
+  | "help";
 
-export const SCREENS: Screen[] = ["compose", "accounts", "queue", "history", "performance", "feed", "networks", "help"];
+export const SCREENS: Screen[] = [
+  "compose",
+  "accounts",
+  "queue",
+  "history",
+  "performance",
+  "feed",
+  "networks",
+  "directories",
+  "help",
+];
 
 export type Mode =
   /** Typing a slash command in the bar at the bottom. */
@@ -27,7 +46,13 @@ export interface Toast {
 }
 
 export interface LoginFlow {
-  network: Network;
+  /**
+   * What is being connected. A directory logs in exactly the way a network
+   * does — a few fields, then a call that verifies them — so the same dialog
+   * serves both, and `kind` decides only where the result is stored.
+   */
+  target: Network | Directory;
+  kind: "network" | "directory";
   fields: Field[];
   active: number;
   /** Progress lines from the adapter, e.g. "Opening your browser…". */
@@ -83,6 +108,10 @@ export interface State {
   feedSource: string;
   feedCursor: number;
 
+  /** Listings pulled by `/directory listings`, newest fetch wins. */
+  listings: Array<Listing & { directory: string }>;
+  listingsSource: string;
+
   listCursor: number;
 
   toast?: Toast;
@@ -115,6 +144,8 @@ export function createState(accounts: Account[]): State {
     feed: [],
     feedSource: "",
     feedCursor: 0,
+    listings: [],
+    listingsSource: "",
     listCursor: 0,
     busy: "",
     history: [],
