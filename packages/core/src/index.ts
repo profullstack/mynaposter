@@ -46,7 +46,42 @@ export {
   resetAccountCache,
   getPluginSecrets,
   setPluginSecrets,
+  listDirectoryAccounts,
+  getDirectoryAccount,
+  saveDirectoryAccount,
+  removeDirectoryAccount,
 } from "./store/accounts.ts";
+
+export type {
+  Directory,
+  DirectoryAccount,
+  DirectoryCapabilities,
+  Listing,
+  ListingInput,
+  Vocabulary,
+} from "./directories/types.ts";
+export {
+  DIRECTORIES,
+  getDirectory,
+  requireDirectory,
+  registerDirectory,
+  unregisterDirectory,
+} from "./directories/registry.ts";
+export {
+  buildListing,
+  submitListing,
+  submitUrl,
+  loginDirectory,
+  logoutDirectory,
+  directoryStatus,
+  requireDirectoryAccount,
+  deriveName,
+  deriveDescription,
+  type BuildOptions,
+  type BuiltListing,
+  type SubmitResult,
+} from "./directories/submit.ts";
+export { McpClient, McpToolError, parseMessage, MCP_PROTOCOL_VERSION, type McpTool, type McpServerInfo } from "./directories/mcp.ts";
 export { listQueue, enqueue, updateQueued, removeQueued, duePosts, type QueuedPost } from "./store/queue.ts";
 export { listHistory, recordHistory, clearHistory, type HistoryEntry } from "./store/history.ts";
 export { listEngagement, recordEngagement, clearEngagement } from "./store/engagement.ts";
@@ -169,7 +204,18 @@ export { configDir, configPath } from "./util/paths.ts";
 export { HttpError, request, getJson, postJson, postForm } from "./util/http.ts";
 export { parseWhen, describeWhen, parseDuration } from "./util/when.ts";
 
-export { draft, revise, infographicCopy, infographicHtml, writerAvailable, type Draft, type InfographicCopy } from "./ai/writer.ts";
+export {
+  draft,
+  revise,
+  infographicCopy,
+  infographicHtml,
+  listingCopy,
+  writerAvailable,
+  type Draft,
+  type InfographicCopy,
+  type ListingCopy,
+  type ListingCopyRequest,
+} from "./ai/writer.ts";
 export { fetchPage, type PageSummary } from "./ai/extract.ts";
 export { renderInfographic, renderSvg, type InfographicStyle, type RenderOptions } from "./graphics/infographic.ts";
 export { availableRasterizers } from "./graphics/raster.ts";

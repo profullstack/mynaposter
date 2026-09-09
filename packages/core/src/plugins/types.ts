@@ -5,6 +5,7 @@
  * function, possibly async, that returns one). It can bring any mix of:
  *
  *   - networks    adapters, registered beside the built-ins
+ *   - directories software directories a product can be listed in
  *   - commands    `myna <name> ...` subcommands
  *   - tasks       work the daemon (`myna run`) does on a schedule
  *   - seeds       sources of people for the follow graph
@@ -13,6 +14,7 @@
  * `@profullstack/myna-core` is types only.
  */
 import type { Account, Network } from "../net/types.ts";
+import type { Directory } from "../directories/types.ts";
 import type { Settings } from "../store/settings.ts";
 import type { SeedInput } from "../core/graph.ts";
 
@@ -111,6 +113,8 @@ export interface MynaPlugin {
   version?: string;
   description?: string;
   networks?: Network[];
+  /** Software directories to submit listings to, registered beside the built-ins. */
+  directories?: Directory[];
   commands?: PluginCommand[];
   tasks?: DaemonTask[];
   seeds?: SeedProvider[];

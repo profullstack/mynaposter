@@ -47,7 +47,10 @@ export async function handleMcp(message: JsonRpcRequest): Promise<object | null>
           "myna posts to social networks. Call myna_accounts first to see what is connected; " +
           "posting to an account that is not connected will fail. myna_post publishes immediately " +
           "and several networks cannot delete afterwards, so confirm wording with the user and use " +
-          "myna_preview or dry_run when unsure.",
+          "myna_preview or dry_run when unsure. myna also submits products to software directories, " +
+          "which is a different act from posting: a listing is a product entry, it is reviewed by a " +
+          "person, and myna_directory_preview shows what would be sent before myna_directory_submit " +
+          "sends it.",
       });
 
     // Notifications carry no id and expect no response.

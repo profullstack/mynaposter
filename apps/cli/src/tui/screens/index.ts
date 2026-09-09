@@ -1,7 +1,8 @@
-/** The seven screens. Each one draws into a container and reads only state. */
+/** The screens. Each one draws into a container and reads only state. */
 import type { Container, Theme } from "@profullstack/hqtui";
 import {
   charsFor,
+  directoryStatus,
   listHistory,
   listQueue,
   requireNetwork,
@@ -267,6 +268,64 @@ export function networksScreen(ui: Container, state: State, theme: Theme): void 
   });
 }
 
+/**
+ * Directories: where a product can be listed, and what is listed already.
+ *
+ * The listings half is only filled once something has fetched it, because it
+ * is a network call and a screen must draw without making one.
+ */
+export function directoriesScreen(ui: Container, state: State, theme: Theme): void {
+  const rows = directoryStatus().map(({ directory, account }) => ({
+    id: directory.id,
+    name: directory.name,
+    connected: account ? account.handle : "—",
+    blurb: directory.blurb,
+  }));
+
+  ui.panel({ title: `Directories (${rows.length})`, size: rows.length + 5 }, (panel) => {
+    panel.table({
+      rows,
+      columns: [
+        { key: "id", title: "Command", width: 13 },
+        { key: "name", title: "Directory", width: 14 },
+        { key: "connected", title: "Connected", width: 26 },
+        { key: "blurb", title: "Notes" },
+      ],
+    });
+    panel.spacer(1);
+    panel.label("/directory login <id> connects one. /directory <id> <url> submits a product.", {
+      size: 1,
+      fg: theme.muted,
+    });
+  });
+
+  ui.panel({ title: state.listingsSource || "Listings", size: "1fr" }, (panel) => {
+    if (!state.listings.length) {
+      panel.label("Nothing fetched yet. /directory listings reads what you have listed.", {
+        size: 1,
+        fg: theme.muted,
+      });
+      return;
+    }
+    panel.table({
+      rows: state.listings.map((listing) => ({
+        directory: listing.directory,
+        status: listing.status ?? "",
+        name: oneLine(listing.name, 30),
+        website: oneLine(listing.website, 36),
+        id: listing.id,
+      })),
+      columns: [
+        { key: "directory", title: "Directory", width: 11 },
+        { key: "status", title: "Status", width: 10 },
+        { key: "name", title: "Name", width: 32 },
+        { key: "website", title: "Website", width: 38 },
+        { key: "id", title: "Id" },
+      ],
+    });
+  });
+}
+
 export function helpScreen(ui: Container, state: State, theme: Theme): void {
   ui.row({ size: "1fr", gap: 1 }, (row) => {
     row.panel({ title: "Commands", size: "2fr" }, (panel) => {
@@ -289,7 +348,7 @@ export function helpScreen(ui: Container, state: State, theme: Theme): void {
         { label: "Tab", value: "next tab, or complete a half-typed command" },
         { label: "Shift+Tab", value: "previous tab" },
         { label: "↑ ↓", value: "command history" },
-        { label: "1-8", value: "switch screen" },
+        { label: "1-9", value: "switch screen" },
         { label: "Ctrl+C", value: "quit" },
       ]);
       panel.spacer(1);

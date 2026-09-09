@@ -286,3 +286,101 @@ export async function infographicHtml(copy: InfographicCopy, width: number, heig
   );
   return extractJson<Draft>(raw).text.trim();
 }
+
+/** What a directory wants said about a product, as the model returns it. */
+export interface ListingCopy {
+  name: string;
+  description: string;
+  category: string;
+  tags: string[];
+  useCases: string[];
+  audiences: string[];
+  platforms: string[];
+  pricingModel: string;
+  alternatives: string[];
+}
+
+export interface ListingCopyRequest {
+  page: PageSummary;
+  /** Categories the directory accepts. The model must pick from these. */
+  categories?: string[];
+  /** The directory's closed vocabularies. Terms outside them are dropped anyway. */
+  vocabulary?: {
+    useCases?: string[];
+    audiences?: string[];
+    platforms?: string[];
+    pricingModels?: string[];
+  };
+  /** Roughly how long the description should be. Directories cap it hard. */
+  maxDescription?: number;
+}
+
+/**
+ * Describe a product for a directory listing.
+ *
+ * Not `draft`: a listing is not a post. Nothing here has a voice, a hashtag or
+ * a call to action — a directory entry is read by someone deciding whether the
+ * product does what they need, and by the assistants that index it. The
+ * controlled vocabularies are handed to the model rather than filtered
+ * afterwards, because a model told to choose from twelve terms picks a real
+ * one far more often than one told to guess and be corrected.
+ */
+export async function listingCopy(request: ListingCopyRequest): Promise<ListingCopy> {
+  const max = request.maxDescription ?? 600;
+  const vocab = request.vocabulary ?? {};
+  const choices = (label: string, terms?: string[]) =>
+    terms?.length ? `${label}: choose only from — ${terms.join(", ")}` : "";
+
+  const prompt = [
+    "Describe the product below as an entry in a software directory.",
+    "",
+    sourceBlock(request.page),
+    "",
+    "Rules:",
+    `- The description is prose, ${Math.round(max / 3)} to ${max} characters, saying what the product does and who it is for.`,
+    "- No marketing superlatives, no hashtags, no emoji, no call to action, no first person.",
+    "- Every claim must come from the page. Never invent a feature, a price or a platform.",
+    "- The name is the product's name, not the page title and not the tagline.",
+    "- Leave a field as an empty string or an empty array when the page does not say.",
+    request.categories?.length ? `- Category: choose exactly one of — ${request.categories.join(", ")}` : "",
+    choices("- Use cases", vocab.useCases),
+    choices("- Audiences", vocab.audiences),
+    choices("- Platforms", vocab.platforms),
+    choices("- Pricing model, one term", vocab.pricingModels),
+    "",
+    "Return JSON:",
+    `{"name": "", "description": "", "category": "", "tags": [], "use_cases": [],`,
+    ` "audiences": [], "platforms": [], "pricing_model": "", "alternatives": []}`,
+    "",
+    "At most 10 tags, lowercase and specific. `alternatives` names established products this one competes with, and only where the page says so.",
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  const raw = await providerComplete(
+    "You write factual directory entries. Return only the JSON described, with no preamble and no code fences.",
+    prompt,
+    2000,
+  );
+  const parsed = extractJson<Record<string, unknown>>(raw);
+  const strings = (value: unknown, limit: number): string[] =>
+    Array.isArray(value)
+      ? value
+          .filter((item): item is string => typeof item === "string" && !!item.trim())
+          .map((item) => item.trim())
+          .slice(0, limit)
+      : [];
+  const text = (value: unknown): string => (typeof value === "string" ? value.trim() : "");
+
+  return {
+    name: text(parsed.name),
+    description: text(parsed.description).slice(0, max),
+    category: text(parsed.category),
+    tags: strings(parsed.tags, 10),
+    useCases: strings(parsed.use_cases, 10),
+    audiences: strings(parsed.audiences, 10),
+    platforms: strings(parsed.platforms, 10),
+    pricingModel: text(parsed.pricing_model),
+    alternatives: strings(parsed.alternatives, 10),
+  };
+}

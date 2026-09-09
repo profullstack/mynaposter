@@ -39,6 +39,13 @@ import {
   refreshEngagement,
   checkForUpdate,
   selfUpdate,
+  DIRECTORIES,
+  requireDirectory,
+  requireDirectoryAccount,
+  directoryStatus,
+  buildListing,
+  submitListing,
+  logoutDirectory,
   type InfographicStyle,
 } from "@profullstack/myna-core";
 import { writeFileSync, readFileSync, existsSync, mkdtempSync } from "node:fs";
@@ -154,6 +161,113 @@ export const COMMANDS: Command[] = [
     help: "List every supported network and how it logs in",
     run(state) {
       state.screen = "networks";
+    },
+  },
+  {
+    name: "directory",
+    args: "[<id> <url>]",
+    help: "Submit a product to a directory. No arguments lists them",
+    async run(state, args, redraw) {
+      const [first, ...rest] = args.trim().split(/\s+/).filter(Boolean);
+
+      if (!first) {
+        state.screen = "directories";
+        return;
+      }
+
+      if (first === "login") {
+        const id = rest[0];
+        if (!id) throw new Error(`Which directory? Try /directory login ${DIRECTORIES[0]?.id ?? "saasrow"}`);
+        startLogin(state, requireDirectory(id), redraw, {}, "directory");
+        return;
+      }
+
+      if (first === "logout") {
+        const id = rest[0];
+        if (!id) throw new Error("Which directory?");
+        toast(state, logoutDirectory(id) ? `Forgot ${id}` : `Not signed in to ${id}`, "success");
+        state.screen = "directories";
+        return;
+      }
+
+      if (first === "listings") {
+        const ids = rest[0]
+          ? [requireDirectory(rest[0]).id]
+          : directoryStatus().filter((row) => row.account).map((row) => row.directory.id);
+        if (!ids.length) throw new Error("No directory connected. Try /directory login saasrow");
+
+        state.busy = "Reading your listings…";
+        state.screen = "directories";
+        redraw();
+        try {
+          const found: State["listings"] = [];
+          for (const id of ids) {
+            const directory = requireDirectory(id);
+            for (const listing of await directory.listings(requireDirectoryAccount(id))) {
+              found.push({ ...listing, directory: id });
+            }
+          }
+          state.listings = found;
+          state.listingsSource = `Listings (${found.length}) — ${ids.join(", ")}`;
+          toast(state, `${found.length} listing${found.length === 1 ? "" : "s"}`, "success");
+        } finally {
+          state.busy = "";
+        }
+        return;
+      }
+
+      // `/directory saasrow <url>` — read the page, then confirm before it goes.
+      const directory = requireDirectory(first);
+      const url = rest[0];
+      if (!url) throw new Error(`Which URL? Try /directory ${directory.id} https://example.com`);
+      requireDirectoryAccount(directory.id);
+
+      state.busy = `Reading ${url}…`;
+      state.screen = "directories";
+      redraw();
+
+      let built: Awaited<ReturnType<typeof buildListing>>;
+      try {
+        built = await buildListing(directory, url);
+      } finally {
+        state.busy = "";
+      }
+
+      // A listing is public and is read by whoever reviews it, so it is shown
+      // and confirmed rather than sent the moment the command is typed.
+      state.confirm = {
+        title: `Submit to ${directory.name}?`,
+        message: [
+          built.listing.name,
+          built.listing.website,
+          built.listing.category ? `category: ${built.listing.category}` : "",
+          built.listing.tags?.length ? `tags: ${built.listing.tags.join(", ")}` : "",
+          "",
+          built.listing.description,
+        ]
+          .filter(Boolean)
+          .join("\n"),
+        onYes: () => {
+          state.busy = `Submitting to ${directory.name}…`;
+          redraw();
+          void submitListing(directory.id, built.listing)
+            .then((result) => {
+              state.listings = [
+                { ...result.listing, directory: directory.id },
+                ...state.listings.filter((entry) => entry.id !== result.listing.id),
+              ];
+              state.listingsSource = `Listings — ${directory.id}`;
+              toast(state, `Submitted ${result.listing.name} to ${directory.name}`, "success");
+            })
+            .catch((error: Error) => toast(state, error.message, "error"))
+            .finally(() => {
+              state.busy = "";
+              redraw();
+            });
+        },
+      };
+      state.previousMode = state.mode;
+      state.mode = "confirm";
     },
   },
   {

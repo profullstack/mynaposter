@@ -12,6 +12,7 @@
     <div class="brand">myna</div>
     <button class="nav" data-view="compose" aria-current="true">Compose</button>
     <button class="nav" data-view="accounts">Accounts</button>
+    <button class="nav" data-view="directories">Directories</button>
     <button class="nav" data-view="queue">Queue</button>
     <button class="nav" data-view="history">History</button>
     <button class="nav" data-view="settings">Settings</button>
@@ -68,6 +69,17 @@
       <div id="account-list" class="cards"></div>
     </section>
 
+    <!-- Directories: listing the product itself, not posting about it -->
+    <section class="view" data-view="directories" hidden>
+      <header><h1>Directories</h1><div class="spacer"></div>
+        <input id="directory-url" class="title-input" placeholder="The product's URL">
+        <button id="btn-directory-preview" class="primary">Read it</button>
+      </header>
+      <div id="directory-list" class="cards"></div>
+      <div class="pane-title">Your listings</div>
+      <div id="listing-list" class="rows"></div>
+    </section>
+
     <!-- Queue -->
     <section class="view" data-view="queue" hidden>
       <header><h1>Queue</h1></header>
@@ -109,6 +121,29 @@
   <footer>
     <button data-close class="ghost">Cancel</button>
     <button id="login-submit" class="primary">Connect</button>
+  </footer>
+</dialog>
+
+<!-- A question asked in the middle of a sign-in: a mailed code, a device flow -->
+<dialog id="askbox">
+  <h2 id="ask-title">One more thing</h2>
+  <p id="ask-note" class="note"></p>
+  <input id="ask-value" autocomplete="off">
+  <footer>
+    <button id="ask-cancel" class="ghost">Cancel</button>
+    <button id="ask-submit" class="primary">Continue</button>
+  </footer>
+</dialog>
+
+<!-- The listing that would be submitted, before it is -->
+<dialog id="listingbox">
+  <h2 id="listing-title">Submit this listing?</h2>
+  <p id="listing-note" class="note"></p>
+  <form id="listing-form"></form>
+  <div id="listing-error" class="error"></div>
+  <footer>
+    <button data-close class="ghost">Cancel</button>
+    <button id="listing-submit" class="primary">Submit</button>
   </footer>
 </dialog>
 

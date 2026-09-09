@@ -79,6 +79,47 @@ function handle(channel, fn) {
 // Credentials never cross the IPC boundary.
 const publicAccount = ({ creds, ...rest }) => rest;
 
+/**
+ * Ask the person a question in the middle of a sign-in.
+ *
+ * Some sign-ins are a conversation rather than a form: a directory mails a
+ * one-time code, a device flow waits for a browser. The adapter calls `ask`,
+ * which shows a prompt in the window and resolves when it comes back. A
+ * question with no window to show it in fails rather than hanging forever.
+ */
+let nextAskId = 1;
+const pendingAsks = new Map();
+
+function askRenderer(prompt) {
+  return new Promise((resolve, reject) => {
+    if (!window) {
+      reject(new Error("There is no window to ask in."));
+      return;
+    }
+    const id = nextAskId++;
+    pendingAsks.set(id, { resolve, reject });
+    window.webContents.send("login:ask", { id, prompt });
+  });
+}
+
+ipcMain.on("login:answer", (_event, { id, value, cancelled }) => {
+  const pending = pendingAsks.get(id);
+  if (!pending) return;
+  pendingAsks.delete(id);
+  if (cancelled) pending.reject(new Error("Cancelled."));
+  else pending.resolve(String(value ?? ""));
+});
+
+/** The login context every adapter gets, network or directory alike. */
+const loginContext = () => ({
+  report: (message) => window?.webContents.send("login:progress", message),
+  openUrl: async (url) => {
+    window?.webContents.send("login:progress", url);
+    await shell.openExternal(url);
+  },
+  ask: askRenderer,
+});
+
 handle("networks:list", () =>
   core.NETWORKS.map((network) => ({
     id: network.id,
@@ -94,13 +135,7 @@ handle("accounts:list", () => core.listAccounts().map(publicAccount));
 
 handle("accounts:login", async (networkId, values) => {
   const network = core.requireNetwork(networkId);
-  const partial = await network.login(values, {
-    report: (message) => window?.webContents.send("login:progress", message),
-    openUrl: async (url) => {
-      window?.webContents.send("login:progress", url);
-      await shell.openExternal(url);
-    },
-  });
+  const partial = await network.login(values, loginContext());
   const account = {
     ...partial,
     id: `${network.id}:${partial.handle}`,
@@ -112,6 +147,61 @@ handle("accounts:login", async (networkId, values) => {
 });
 
 handle("accounts:logout", (id) => core.removeAccount(id));
+
+/* ------------------------------------------------------------- directories */
+
+handle("directories:list", () =>
+  core.directoryStatus().map(({ directory, account }) => ({
+    id: directory.id,
+    name: directory.name,
+    blurb: directory.blurb,
+    homepage: directory.homepage,
+    caps: directory.caps,
+    auth: { note: directory.auth.note, docsUrl: directory.auth.docsUrl, fields: directory.auth.fields },
+    connected: Boolean(account),
+    handle: account?.handle ?? null,
+  })),
+);
+
+handle("directories:login", async (directoryId, values) => {
+  const account = await core.loginDirectory(directoryId, values, loginContext());
+  return { directory: account.directory, handle: account.handle };
+});
+
+handle("directories:logout", (directoryId) => core.logoutDirectory(directoryId));
+
+// Preview and submit are separate calls on purpose: a listing is public and is
+// read by whoever reviews it, so the window shows it before anything is sent.
+handle("directories:preview", async (directoryId, url) => {
+  const built = await core.buildListing(core.requireDirectory(directoryId), url);
+  return { listing: built.listing, describedBy: built.source };
+});
+
+handle("directories:submit", async (directoryId, listing) => {
+  const result = await core.submitListing(directoryId, listing);
+  return result.listing;
+});
+
+handle("directories:listings", async (directoryId) => {
+  const ids = directoryId
+    ? [core.requireDirectory(directoryId).id]
+    : core.directoryStatus().filter((row) => row.account).map((row) => row.directory.id);
+  const listings = [];
+  for (const id of ids) {
+    const directory = core.requireDirectory(id);
+    for (const listing of await directory.listings(core.requireDirectoryAccount(id))) {
+      listings.push({ directory: id, ...listing });
+    }
+  }
+  return listings;
+});
+
+handle("directories:remove", async (directoryId, listingId) => {
+  const directory = core.requireDirectory(directoryId);
+  if (!directory.remove) throw new Error(`${directory.name} does not allow withdrawing a listing.`);
+  await directory.remove(core.requireDirectoryAccount(directoryId), listingId);
+  return true;
+});
 
 handle("post:send", async ({ text, title, targets, mediaPaths, thread }) => {
   const accounts = targets?.length

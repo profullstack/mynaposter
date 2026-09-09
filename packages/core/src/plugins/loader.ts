@@ -11,6 +11,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { registerNetwork } from "../net/registry.ts";
+import { registerDirectory } from "../directories/registry.ts";
 import { loadSettings } from "../store/settings.ts";
 import { configPath, PLUGINS_DIR } from "../util/paths.ts";
 import type { DaemonTask, LoadedPlugin, MynaPlugin, PluginCommand, SeedProvider } from "./types.ts";
@@ -26,6 +27,7 @@ export function registerPlugin(plugin: MynaPlugin, origin = "bundled"): LoadedPl
     const existing = loaded.findIndex((item) => item.plugin?.id === plugin.id);
     if (existing >= 0) loaded.splice(existing, 1);
     for (const network of plugin.networks ?? []) registerNetwork(network);
+    for (const directory of plugin.directories ?? []) registerDirectory(directory);
     entry.plugin = plugin;
   } catch (error) {
     entry.error = (error as Error).message;

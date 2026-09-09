@@ -74,6 +74,19 @@ Following (Bluesky, Mastodon, Misskey, X, Nostr):
     graph on | off                  Let the daemon do all of this
     graph status | seeds | skip | unseed | clear
 
+Directories (submitting the product, not a post):
+  directory                         The directories myna can submit to, and
+                                    which of them this machine is signed in to
+  directory login <id>              Connect one. SaaSRow emails a one-time code
+  directory <id> <url>              Submit a product. myna reads the page and
+       [--name] [--description]     fills the listing in; every field can be
+       [--category] [--tags a,b]    given instead. --dry-run shows what would
+       [--dry-run] [--no-ai]        be sent without sending it
+  directory listings [id]           Your listings, and where each one stands
+  directory update <id> <listing>   Change a listing you own
+  directory remove <id> <listing>   Withdraw one
+  directory categories | vocabulary What a directory accepts
+
 Seeing it:
   dashboard                         A local dashboard: the queue, the drip,
                                     what each network is holding, what went out
@@ -139,6 +152,8 @@ Examples:
   myna search youtube "terminal social media manager"
   myna post youtube "myna does this from the terminal" --video dQw4w9WgXcQ
   myna infographic https://example.com/report --style html
+  myna directory login saasrow
+  myna directory saasrow https://example.com --dry-run
   myna graph seed bluesky jay.bsky.team --weight 2
   myna graph expand && myna graph candidates
   myna graph on && myna run          # follow 10/hour from who your seeds follow

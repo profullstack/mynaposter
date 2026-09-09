@@ -10,6 +10,7 @@ const api = window.myna;
 const state = {
   accounts: [],
   networks: [],
+  directories: [],
   targets: new Set(),
   media: [],
   graphicPath: null,
@@ -50,6 +51,7 @@ for (const button of $$(".nav")) {
 
 function refresh(view) {
   if (view === "accounts") renderAccounts();
+  if (view === "directories") renderDirectories();
   if (view === "queue") renderQueue();
   if (view === "history") renderHistory();
   if (view === "settings") renderSettings();
@@ -307,10 +309,15 @@ function renderPicker(filter) {
   }
 }
 
+// What the login dialog is currently connecting. A directory logs in exactly
+// the way a network does — a few fields, then a call that verifies them — so
+// the same dialog serves both, and `kind` decides only where it is saved.
+let activeLogin = null;
 let activeNetwork = null;
 
-function openLogin(network) {
+function openLogin(network, kind = "network") {
   activeNetwork = network;
+  activeLogin = { kind, target: network };
   $("#login-title").textContent = `Connect ${network.name}`;
   $("#login-note").textContent = network.auth.note ?? "";
   const docs = $("#login-docs");
@@ -361,16 +368,57 @@ $("#login-submit").addEventListener("click", async () => {
   $("#login-submit").disabled = true;
   $("#login-error").textContent = "";
   try {
-    const account = await api.accounts.login(activeNetwork.id, values);
-    $("#login").close();
-    await renderAccounts();
-    status(`Connected ${account.id}`, "success");
+    if (activeLogin?.kind === "directory") {
+      const account = await api.directories.login(activeNetwork.id, values);
+      $("#login").close();
+      await renderDirectories();
+      status(`Connected ${account.directory} as ${account.handle}`, "success");
+    } else {
+      const account = await api.accounts.login(activeNetwork.id, values);
+      $("#login").close();
+      await renderAccounts();
+      status(`Connected ${account.id}`, "success");
+    }
   } catch (error) {
     $("#login-error").textContent = error.message;
   } finally {
     $("#login-submit").disabled = false;
   }
 });
+
+/**
+ * A sign-in that asks something mid-flow: SaaSRow mails a one-time code, a
+ * device flow waits for a browser. Until this is answered the sign-in in the
+ * main process is still waiting, so closing the box has to cancel it rather
+ * than leave it hanging.
+ */
+let activeAsk = null;
+
+api.onLoginAsk(({ id, prompt }) => {
+  activeAsk = id;
+  $("#ask-title").textContent = prompt;
+  $("#ask-note").textContent = $("#login-progress").textContent.trim().split("\n").slice(-1)[0] ?? "";
+  $("#ask-value").value = "";
+  $("#askbox").showModal();
+  $("#ask-value").focus();
+});
+
+function answerAsk(value) {
+  if (activeAsk === null) return;
+  if (value === null) api.cancelLogin(activeAsk);
+  else api.answerLogin(activeAsk, value);
+  activeAsk = null;
+  $("#askbox").close();
+}
+
+$("#ask-submit").addEventListener("click", () => answerAsk($("#ask-value").value.trim()));
+$("#ask-cancel").addEventListener("click", () => answerAsk(null));
+$("#ask-value").addEventListener("keydown", (event) => {
+  if (event.key === "Enter") answerAsk($("#ask-value").value.trim());
+});
+// Escape closes a <dialog> without a click, and a cancelled question that is
+// never answered leaves the sign-in waiting forever.
+$("#askbox").addEventListener("close", () => answerAsk(null));
 
 api.onLoginProgress((message) => {
   const box = $("#login-progress");
@@ -513,6 +561,147 @@ async function renderSettings() {
       ].join("\n")
     : "";
 }
+
+/* -------------------------------------------------------------- directories */
+
+/**
+ * Directories list the product; the rest of the app posts about it. They are a
+ * separate screen for that reason, and submitting is two steps — read the page,
+ * then look at what would be sent — because a listing is public and a person
+ * reviews it.
+ */
+async function renderDirectories() {
+  state.directories = (await guard(() => api.directories.list())) ?? [];
+  const list = $("#directory-list");
+  list.innerHTML = "";
+
+  for (const directory of state.directories) {
+    const card = document.createElement("div");
+    card.className = "card";
+    card.innerHTML =
+      `<div><div class="title">${escapeHtml(directory.name)}</div>` +
+      `<div class="sub">${escapeHtml(directory.connected ? directory.handle : directory.blurb)}</div></div>` +
+      `<div class="spacer"></div>`;
+
+    const button = document.createElement("button");
+    button.className = directory.connected ? "ghost" : "primary";
+    button.textContent = directory.connected ? "Disconnect" : "Connect";
+    button.addEventListener("click", async () => {
+      if (!directory.connected) {
+        openLogin(directory, "directory");
+        return;
+      }
+      await guard(() => api.directories.logout(directory.id));
+      await renderDirectories();
+      status(`Forgot ${directory.id}`, "success");
+    });
+
+    card.append(button);
+    list.append(card);
+  }
+
+  await renderListings();
+}
+
+async function renderListings() {
+  const list = $("#listing-list");
+  const connected = (state.directories ?? []).some((directory) => directory.connected);
+  if (!connected) {
+    list.innerHTML = `<div class="note">Connect a directory to submit a product to it.</div>`;
+    return;
+  }
+
+  const listings = (await guard(() => api.directories.listings())) ?? [];
+  if (!listings.length) {
+    list.innerHTML = `<div class="note">Nothing listed yet. Paste the product's URL above.</div>`;
+    return;
+  }
+
+  list.innerHTML = "";
+  for (const listing of listings) {
+    const row = document.createElement("div");
+    row.className = "row";
+    row.innerHTML =
+      `<div class="title">${escapeHtml(listing.name)}</div>` +
+      `<div class="sub">${escapeHtml(listing.directory)} · ${escapeHtml(listing.status ?? "listed")} · ` +
+      `${escapeHtml(listing.url ?? listing.website)}</div>`;
+    list.append(row);
+  }
+}
+
+/** The listing fields shown before anything is sent, and edited in place. */
+const LISTING_FIELDS = [
+  { key: "name", label: "Name" },
+  { key: "website", label: "Website" },
+  { key: "category", label: "Category" },
+  { key: "tags", label: "Tags", list: true },
+  { key: "description", label: "Description", area: true },
+];
+
+let pendingListing = null;
+
+$("#btn-directory-preview").addEventListener("click", async () => {
+  const url = $("#directory-url").value.trim();
+  if (!url) return status("Paste the product's URL first.", "error");
+
+  const connected = (state.directories ?? []).filter((directory) => directory.connected);
+  if (!connected.length) return status("Connect a directory first.", "error");
+  // One connected directory is the common case; more than one is a choice, and
+  // the first is a poor guess to make silently.
+  const directory = connected[0];
+
+  const built = await guard(() => api.directories.preview(directory.id, url), `Reading ${url}…`);
+  if (!built) return;
+
+  pendingListing = { directory: directory.id, listing: built.listing };
+  $("#listing-title").textContent = `Submit to ${directory.name}?`;
+  $("#listing-note").textContent =
+    built.describedBy === "ai"
+      ? "Written by myna's writer from the page. Edit anything that is wrong."
+      : "Taken from the page's own metadata. Edit anything that is wrong.";
+  $("#listing-error").textContent = "";
+
+  const form = $("#listing-form");
+  form.innerHTML = "";
+  for (const field of LISTING_FIELDS) {
+    const label = document.createElement("label");
+    label.textContent = field.label;
+    const input = document.createElement(field.area ? "textarea" : "input");
+    input.name = field.key;
+    const value = built.listing[field.key];
+    input.value = Array.isArray(value) ? value.join(", ") : (value ?? "");
+    label.append(input);
+    form.append(label);
+  }
+
+  $("#listingbox").showModal();
+});
+
+$("#listing-submit").addEventListener("click", async () => {
+  if (!pendingListing) return;
+  const listing = { ...pendingListing.listing };
+  for (const input of $$("#listing-form input, #listing-form textarea")) {
+    const field = LISTING_FIELDS.find((entry) => entry.key === input.name);
+    const value = input.value.trim();
+    if (field?.list) listing[input.name] = value ? value.split(",").map((entry) => entry.trim()).filter(Boolean) : undefined;
+    else listing[input.name] = value || undefined;
+  }
+
+  $("#listing-submit").disabled = true;
+  $("#listing-error").textContent = "";
+  try {
+    const submitted = await api.directories.submit(pendingListing.directory, listing);
+    $("#listingbox").close();
+    $("#directory-url").value = "";
+    pendingListing = null;
+    await renderListings();
+    status(`Submitted ${submitted.name}`, "success");
+  } catch (error) {
+    $("#listing-error").textContent = error.message;
+  } finally {
+    $("#listing-submit").disabled = false;
+  }
+});
 
 /* -------------------------------------------------------------------- misc */
 

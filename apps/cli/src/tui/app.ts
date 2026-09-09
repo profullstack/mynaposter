@@ -24,6 +24,7 @@ import {
   helpScreen,
   historyScreen,
   networksScreen,
+  directoriesScreen,
   performanceScreen,
   queueScreen,
 } from "./screens/index.ts";
@@ -100,6 +101,9 @@ export function drawApp(
         break;
       case "networks":
         networksScreen(root, state, theme);
+        break;
+      case "directories":
+        directoriesScreen(root, state, theme);
         break;
       case "help":
         helpScreen(root, state, theme);
@@ -210,16 +214,16 @@ function hint(state: State): string {
 
 function drawLogin(ui: Container, state: State, theme: Theme, height: number): void {
   const flow = state.login!;
-  const noteLines = flow.network.auth.note ? wrapText(flow.network.auth.note, 70) : [];
+  const noteLines = flow.target.auth.note ? wrapText(flow.target.auth.note, 70) : [];
   // Wrapped rather than clipped: half a URL is no use to anyone.
-  const docsLines = flow.network.auth.docsUrl
-    ? wrapText(`Get the values here: ${flow.network.auth.docsUrl}`, 70)
+  const docsLines = flow.target.auth.docsUrl
+    ? wrapText(`Get the values here: ${flow.target.auth.docsUrl}`, 70)
     : [];
   const rows = flow.fields.length * 2 + flow.log.length + noteLines.length + docsLines.length + 9;
 
   ui.modal(
     {
-      title: `Connect ${flow.network.name}`,
+      title: `Connect ${flow.target.name}`,
       width: 76,
       height: Math.min(rows, Math.max(12, height - 4)),
     },
@@ -229,7 +233,7 @@ function drawLogin(ui: Container, state: State, theme: Theme, height: number): v
       if (noteLines.length || docsLines.length) panel.spacer(1);
 
       flow.fields.forEach((field, index) => {
-        const spec = flow.network.auth.fields[index];
+        const spec = flow.target.auth.fields[index];
         panel.textInput({
           value: field.value,
           cursor: field.cursor,

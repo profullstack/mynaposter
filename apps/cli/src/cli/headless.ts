@@ -88,6 +88,8 @@ import {
 } from "@profullstack/myna-core";
 import { spawnSync } from "node:child_process";
 import { ask, askSecret, confirm, readStdin } from "./prompt.ts";
+import { out, table } from "./io.ts";
+import { runDirectory } from "./directory.ts";
 import { parseWhen, describeWhen, parseDuration } from "../tui/when.ts";
 import { loginValuesFromArgs } from "../login-args.ts";
 
@@ -127,7 +129,7 @@ export function parseFlags(argv: string[]): { positional: string[]; flags: Flags
     // Boolean flags take no value. `--now`, `--off` and `--no-open` are as
     // much switches as `--json`; without them here the parser eats the next
     // argument, so `myna post all "hi" --now` died asking for a value.
-    const BOOLS = new Set(["json", "yes", "thread", "dryRun", "noThread", "force", "now", "off", "on", "noOpen", "front", "skipQueue", "send", "check"]);
+    const BOOLS = new Set(["json", "yes", "thread", "dryRun", "noThread", "force", "now", "off", "on", "noOpen", "front", "skipQueue", "send", "check", "noAi"]);
     if (BOOLS.has(name)) {
       flags[name === "noThread" ? "thread" : name] = name !== "noThread";
       continue;
@@ -162,25 +164,14 @@ export function extraFrom(flags: Flags): Record<string, string> | undefined {
   return Object.keys(extra).length ? extra : undefined;
 }
 
-const out = (line = "") => process.stdout.write(`${line}\n`);
+// `out` and `table` live in ./io.ts so that a command in its own file can
+// print identically without importing this module back.
 
 /** One line per plugin that reacted to a post, a schedule or a cancel. */
 function printHooks(hooks: HookOutcome[]): void {
   for (const hook of hooks) {
     if (hook.error) out(`FAIL  ${hook.plugin}  ${hook.error}`);
     else if (hook.line) out(`ok    ${hook.plugin}  ${hook.line}`);
-  }
-}
-
-function table(rows: Record<string, string>[], columns: { key: string; title: string }[]): void {
-  if (!rows.length) return;
-  const widths = columns.map((column) =>
-    Math.max(column.title.length, ...rows.map((row) => String(row[column.key] ?? "").length)),
-  );
-  out(columns.map((column, i) => column.title.padEnd(widths[i])).join("  "));
-  out(widths.map((width) => "-".repeat(width)).join("  "));
-  for (const row of rows) {
-    out(columns.map((column, i) => String(row[column.key] ?? "").padEnd(widths[i])).join("  "));
   }
 }
 
@@ -433,6 +424,12 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
         ],
       );
       return 0;
+    }
+
+    case "directory":
+    case "dir": {
+      await ensureUnlocked();
+      return await runDirectory(positional, flags);
     }
 
     case "post": {
