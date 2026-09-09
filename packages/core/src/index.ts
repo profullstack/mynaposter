@@ -62,11 +62,17 @@ export type {
 } from "./directories/types.ts";
 export {
   DIRECTORIES,
+  listDirectories,
   getDirectory,
   requireDirectory,
   registerDirectory,
   unregisterDirectory,
+  addCustomDirectory,
+  removeCustomDirectory,
+  resetDirectoryCache,
 } from "./directories/registry.ts";
+export { CATALOG, catalogEntry, type CatalogEntry } from "./directories/catalog.ts";
+export { mcpDirectory, resolveTools, type CustomDirectoryConfig } from "./directories/custom.ts";
 export {
   buildListing,
   submitListing,
@@ -99,7 +105,7 @@ export {
   type EngagementRecord,
 } from "./core/analytics.ts";
 export { refreshEngagement, type RefreshResult } from "./core/refresh.ts";
-export { loadSettings, saveSettings, DEFAULT_SETTINGS, type Settings } from "./store/settings.ts";
+export { loadSettings, saveSettings, DEFAULT_SETTINGS, type Settings, type CustomDirectorySetting } from "./store/settings.ts";
 export {
   collect,
   seal,

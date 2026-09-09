@@ -39,7 +39,7 @@ import {
   refreshEngagement,
   checkForUpdate,
   selfUpdate,
-  DIRECTORIES,
+  listDirectories,
   requireDirectory,
   requireDirectoryAccount,
   directoryStatus,
@@ -177,7 +177,7 @@ export const COMMANDS: Command[] = [
 
       if (first === "login") {
         const id = rest[0];
-        if (!id) throw new Error(`Which directory? Try /directory login ${DIRECTORIES[0]?.id ?? "saasrow"}`);
+        if (!id) throw new Error(`Which directory? Try /directory login ${listDirectories()[0]?.id ?? "saasrow"}`);
         startLogin(state, requireDirectory(id), redraw, {}, "directory");
         return;
       }
