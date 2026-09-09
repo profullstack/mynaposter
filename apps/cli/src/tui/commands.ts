@@ -9,6 +9,7 @@ import {
   NETWORKS,
   authSummary,
   getNetwork,
+  getDirectory,
   listAccounts,
   removeAccount,
   requireNetwork,
@@ -123,6 +124,13 @@ export const COMMANDS: Command[] = [
       if (!id) throw new Error("Which network? Try /networks to see them all.");
       const network = getNetwork(id);
       if (!network) {
+        // A directory is deliberately not a network, but somebody reaching for
+        // `/login saasrow` needs to be sent where it actually lives rather than
+        // told it does not exist.
+        const directory = getDirectory(id);
+        if (directory) {
+          throw new Error(`${directory.name} is a directory, not a network. Try /directory login ${directory.id}`);
+        }
         throw new Error(`Unknown network "${id}". /networks lists all ${NETWORKS.length}.`);
       }
       // `/login tsbb https://bbs.hqtui.com/ app-showcase` fills the dialog in

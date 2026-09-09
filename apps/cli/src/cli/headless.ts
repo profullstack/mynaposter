@@ -26,6 +26,8 @@ import {
   runAfterCancel,
   type HookOutcome,
   getNetwork,
+  getDirectory,
+  listDirectories,
   infographicCopy,
   infographicHtml,
   listAccounts,
@@ -180,6 +182,24 @@ async function ensureUnlocked(): Promise<void> {
 }
 
 /**
+ * "saasrow is not a network" is true and useless on its own.
+ *
+ * A directory is deliberately not in the network registry — that separation is
+ * what keeps one out of `--to all` — but somebody who has read about SaaSRow
+ * will reach for `myna login saasrow` and `myna networks` first, and both of
+ * those are a dead end unless they say where the thing actually lives.
+ */
+function directoryHint(id: string): string | undefined {
+  const directory = getDirectory(id);
+  if (!directory) return undefined;
+  return (
+    `${directory.name} is a directory, not a network: it lists the product itself rather than posting about it.\n` +
+    `Connect it with:  myna directory login ${directory.id}\n` +
+    `Then submit with: myna directory ${directory.id} <url>`
+  );
+}
+
+/**
  * Work out targets and text from `myna post [target] [text]`.
  * "all", a network name and an account id are all valid first positionals, so
  * `myna post all` with piped stdin does what it looks like it does.
@@ -254,7 +274,7 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
       const id = positional[0];
       if (!id) throw new Error("Which network? Run: myna networks");
       const network = getNetwork(id);
-      if (!network) throw new Error(`Unknown network "${id}". Run: myna networks`);
+      if (!network) throw new Error(directoryHint(id) ?? `Unknown network "${id}". Run: myna networks`);
       await ensureUnlocked();
 
       const given = loginValuesFromArgs(network, positional.slice(1), flags);
@@ -423,6 +443,16 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
           { key: "notes", title: "NOTES" },
         ],
       );
+      // Directories are not networks and never appear above. Say so here, or
+      // the only way to find out is to run `myna login saasrow` and be told no.
+      const directories = listDirectories();
+      if (directories.length) {
+        out("");
+        out(
+          `Directories are separate, because a listing is the product rather than a post: ` +
+            `${directories.map((entry) => entry.id).join(", ")}. Run: myna directory`,
+        );
+      }
       return 0;
     }
 

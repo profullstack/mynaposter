@@ -20,6 +20,7 @@ import {
   catalogEntry,
   directoryStatus,
   getDirectory,
+  getNetwork,
   getDirectoryAccount,
   loginDirectory,
   logoutDirectory,
@@ -479,6 +480,15 @@ export async function runDirectory(positional: string[], flags: Flags): Promise<
         const url = rest[0];
         if (!url) throw new Error(`Usage: myna directory ${first} <url>`);
         return await submit(first, url, flags);
+      }
+      // The mirror of the hint in `myna login`: somebody who types a network
+      // here is one word away from what they meant.
+      const network = getNetwork(first);
+      if (network) {
+        throw new Error(
+          `${network.name} is a network, not a directory: you post to it rather than listing a product in it.\n` +
+            `Try: myna post --to ${network.id} "…"   or   myna login ${network.id}`,
+        );
       }
       throw new Error(
         `Unknown directory or subcommand "${first}". Known directories: ${listDirectories().map((entry) => entry.id).join(", ")}\n\n${USAGE}`,

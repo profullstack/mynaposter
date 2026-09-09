@@ -265,6 +265,12 @@ export function networksScreen(ui: Container, state: State, theme: Theme): void 
       size: 1,
       fg: theme.muted,
     });
+    // Directories are not networks and never appear in this table. Without
+    // this line the only way to discover that is to try /login saasrow.
+    panel.label("Directories, where a product is listed rather than posted about, are on /directory.", {
+      size: 1,
+      fg: theme.muted,
+    });
   });
 }
 
