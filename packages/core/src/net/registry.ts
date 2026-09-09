@@ -13,6 +13,7 @@ import { linkedin, pinterest, tiktok } from "./adapters/professional.ts";
 import { youtube } from "./adapters/youtube.ts";
 import { devto, hashnode, ghost, wordpress, microblog, tumblr } from "./adapters/blogs.ts";
 import { tsbb } from "./adapters/tsbb.ts";
+import { agenticjobs } from "./adapters/agenticjobs.ts";
 import { gitblog, htmlblog } from "./adapters/ownblogs.ts";
 
 export const NETWORKS: Network[] = [
@@ -34,6 +35,8 @@ export const NETWORKS: Network[] = [
   lemmy,
   nostr,
   tsbb,
+  // Boards you run yourself, where a status post is a status post.
+  agenticjobs,
   // Chat.
   telegram,
   discord,
@@ -116,6 +119,9 @@ const ALIASES: Record<string, string> = {
   nostril: "nostr",
   forum: "tsbb",
   board: "tsbb",
+  jobs: "agenticjobs",
+  "agentic-jobs": "agenticjobs",
+  "agenticjobs.work": "agenticjobs",
   repo: "gitblog",
   github: "gitblog",
   html: "htmlblog",

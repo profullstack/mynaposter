@@ -76,7 +76,15 @@ test("a contact list's p tags become profiles, once each, with the petname kept"
 
 test("every network that claims follow implements both halves", () => {
   const claimed = NETWORKS.filter((network) => network.caps.follow).map((network) => network.id);
-  expect(claimed.sort()).toEqual(["bluesky", "mastodon", "misskey", "nostr", "pixelfed", "x"]);
+  expect(claimed.sort()).toEqual([
+    "agenticjobs",
+    "bluesky",
+    "mastodon",
+    "misskey",
+    "nostr",
+    "pixelfed",
+    "x",
+  ]);
   for (const network of NETWORKS) {
     if (network.caps.follow) {
       expect(network.follow, `${network.id} claims follow`).toBeDefined();
