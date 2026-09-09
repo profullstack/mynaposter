@@ -77,6 +77,10 @@ Following (Bluesky, Mastodon, Misskey, X, Nostr):
 Directories (submitting the product, not a post):
   directory                         The directories myna can submit to, and
                                     which of them this machine is signed in to
+  directory catalog                 The ones myna knows the address of
+  directory add <id> <mcp url>      Add any MCP directory by URL. myna reads
+  directory drop <id>               its tools to learn what it accepts
+  directory tools <id>              What that MCP server actually offers
   directory login <id>              Connect one. SaaSRow emails a one-time code
   directory <id> <url>              Submit a product. myna reads the page and
        [--name] [--description]     fills the listing in; every field can be

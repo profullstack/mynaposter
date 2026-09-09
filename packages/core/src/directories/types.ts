@@ -82,6 +82,12 @@ export interface Directory {
   /** One line for `myna directory list`. */
   blurb: string;
   homepage: string;
+  /**
+   * The MCP endpoint, where the directory speaks MCP. Declared so that
+   * `myna directory tools <id>` can read the tool table without knowing which
+   * kind of directory it is holding.
+   */
+  endpoint?: string;
   auth: {
     fields: CredentialField[];
     /** Shown in the login prompt — where the credential comes from. */

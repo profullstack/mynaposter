@@ -41,9 +41,10 @@ machine and nothing is sent anywhere except the posts you make.
   from, let myna read who *they* follow, and follow the accounts they agree
   on, a few an hour, from `myna run`. See [The follow graph](#the-follow-graph).
 - **List the product itself.** `myna directory saasrow <url>` reads the page and
-  submits it to a software directory over that directory's MCP server. A listing
-  is not a post, so it has its own command and its own credentials. See
-  [Directories](#directories).
+  submits it to a software directory over that directory's MCP server — any MCP
+  server, including one myna has never heard of, since it reads the server's own
+  tool schemas to work out the fields. A listing is not a post, so it has its own
+  command and its own credentials. See [Directories](#directories).
 - **Plugins.** A plugin can add a network, a command, a daemon task or a source
   of people to follow. The bundled one pulls seeds from
   [OutreachGraph](https://outreachgraph.com). See [Plugins](#plugins).
@@ -435,9 +436,29 @@ call can carry. The API key it hands back is kept in myna's encrypted vault,
 apart from your posting accounts — deliberately, so that `--to all` can never
 turn a stray thought into a product submission.
 
-**What ships.** [SaaSRow](https://saasrow.com), which publishes each listing to
-search engines, AI assistants, a free API and its own MCP server. A plugin can
-add another with `registerDirectory`, exactly as it can add a network.
+**Any MCP server, not just the ones myna ships.** `myna directory catalog` lists
+the endpoints myna knows; anything else is a URL:
+
+```bash
+myna directory add acme https://acme.example/api/mcp
+myna directory login acme          # paste the key that directory issued you
+myna directory acme https://example.com
+myna directory tools acme          # what that server actually offers
+myna directory drop acme
+```
+
+Nothing is hard-coded about the second one. myna reads the server's tool table,
+picks out the tool that creates a listing whatever it is called, and sends your
+fields under whatever names *that tool's schema* uses — a directory whose field
+is `product_url` rather than `website` needs no code here. A field the server
+marks required and myna could not work out fails before the call rather than
+after it. What a custom directory cannot do is sign you in: there is no MCP
+method for that, so it takes a key you already have.
+
+[SaaSRow](https://saasrow.com) has a written adapter for one reason: its sign-in
+is an emailed code, which is a conversation with a person rather than a tool
+call. A plugin can add a directory too, with `directories: [...]`, exactly as it
+adds a network.
 
 The same thing is on every surface: `/directory` in the TUI, a Directories
 screen in the desktop app, and `myna_directories`, `myna_directory_preview`,

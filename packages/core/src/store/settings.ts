@@ -55,6 +55,21 @@ export interface Settings {
   recap: RecapSettings;
   /** Plugin specs: an absolute path, or a package name installed by `myna plugins add`. */
   plugins: string[];
+  /**
+   * Directories added by URL with `myna directory add`. Not secret — the id,
+   * the endpoint and a name. The API key for each lives in the vault, like
+   * every other credential.
+   */
+  directories: CustomDirectorySetting[];
+}
+
+/** A directory reached generically over MCP, as it is stored. */
+export interface CustomDirectorySetting {
+  id: string;
+  url: string;
+  name?: string;
+  homepage?: string;
+  blurb?: string;
 }
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -87,6 +102,7 @@ export const DEFAULT_SETTINGS: Settings = {
   evergreen: { ...DEFAULT_EVERGREEN },
   recap: { ...DEFAULT_RECAP },
   plugins: [],
+  directories: [],
 };
 
 export function loadSettings(): Settings {

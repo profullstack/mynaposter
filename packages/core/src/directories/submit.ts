@@ -14,7 +14,7 @@ import {
   removeDirectoryAccount,
   listDirectoryAccounts,
 } from "../store/accounts.ts";
-import { DIRECTORIES, requireDirectory } from "./registry.ts";
+import { listDirectories, requireDirectory } from "./registry.ts";
 import type { Directory, DirectoryAccount, Listing, ListingInput } from "./types.ts";
 
 export interface BuildOptions {
@@ -235,5 +235,5 @@ export function logoutDirectory(directoryId: string): boolean {
 /** Every directory, with whether this machine is signed in to it. */
 export function directoryStatus(): Array<{ directory: Directory; account?: DirectoryAccount }> {
   const accounts = new Map(listDirectoryAccounts().map((account) => [account.directory, account]));
-  return DIRECTORIES.map((directory) => ({ directory, account: accounts.get(directory.id) }));
+  return listDirectories().map((directory) => ({ directory, account: accounts.get(directory.id) }));
 }

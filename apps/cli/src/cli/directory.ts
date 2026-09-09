@@ -12,13 +12,18 @@
  * so it is worth being able to look before it goes.
  */
 import {
-  DIRECTORIES,
+  listDirectories,
+  addCustomDirectory,
+  removeCustomDirectory,
   buildListing,
+  CATALOG,
+  catalogEntry,
   directoryStatus,
   getDirectory,
   getDirectoryAccount,
   loginDirectory,
   logoutDirectory,
+  McpClient,
   openBrowser,
   requireDirectory,
   requireDirectoryAccount,
@@ -34,6 +39,9 @@ import type { Flags } from "./headless.ts";
 
 const USAGE = `Usage:
   myna directory                              List directories and what is connected
+  myna directory catalog                      Directories myna knows the address of
+  myna directory add <id> <mcp url>           Add any MCP directory by URL
+  myna directory drop <id>                    Forget one added that way
   myna directory login <id>                   Connect a directory
   myna directory logout <id>                  Forget its credentials
   myna directory <id> <url> [flags]           Submit a product, read from its page
@@ -41,7 +49,8 @@ const USAGE = `Usage:
   myna directory update <id> <listing> [flags]
   myna directory remove <id> <listing>
   myna directory categories [id]              What the directory accepts
-  myna directory vocabulary [id]`;
+  myna directory vocabulary [id]
+  myna directory tools <id>                   What that MCP server actually offers`;
 
 /** `--tags a,b` and `--tags a --tags b` both mean the same list. */
 function listFlag(value: unknown): string[] | undefined {
@@ -294,7 +303,7 @@ export async function runDirectory(positional: string[], flags: Flags): Promise<
   switch (first) {
     case "login": {
       const id = rest[0];
-      if (!id) throw new Error(`Which directory? Known: ${DIRECTORIES.map((entry) => entry.id).join(", ")}`);
+      if (!id) throw new Error(`Which directory? Known: ${listDirectories().map((entry) => entry.id).join(", ")}`);
       return await login(id, flags);
     }
 
@@ -302,6 +311,87 @@ export async function runDirectory(positional: string[], flags: Flags): Promise<
       const id = rest[0];
       if (!id) throw new Error("Which directory?");
       out(logoutDirectory(id) ? `Forgot ${id}.` : `Not signed in to ${id}.`);
+      return 0;
+    }
+
+    case "catalog": {
+      if (flags.json) {
+        out(JSON.stringify(CATALOG, null, 2));
+        return 0;
+      }
+      table(
+        CATALOG.map((entry) => ({
+          id: entry.id,
+          name: entry.name,
+          how: entry.builtIn ? "built in" : "by URL",
+          url: entry.url,
+        })),
+        [
+          { key: "id", title: "COMMAND" },
+          { key: "name", title: "DIRECTORY" },
+          { key: "how", title: "REACHED" },
+          { key: "url", title: "MCP ENDPOINT" },
+        ],
+      );
+      out("");
+      out("Any MCP server that can take a listing works, catalogued or not:");
+      out("  myna directory add <id> https://example.com/api/mcp");
+      return 0;
+    }
+
+    case "add": {
+      const [id, url] = rest;
+      if (!id || !url) throw new Error("Usage: myna directory add <id> <mcp url>");
+      const directory = await addCustomDirectory(
+        {
+          id,
+          url,
+          name: text(flags.name),
+          homepage: text(flags.homepage),
+          blurb: text(flags.blurb),
+        },
+        // Said only once the id has passed, so a rejected id does not first
+        // claim myna is reading a URL it never touches.
+        (message) => out(message),
+      );
+      out(`Added ${directory.id} (${directory.name}).`);
+      out(`Connect it with: myna directory login ${directory.id}`);
+      return 0;
+    }
+
+    case "drop": {
+      const id = rest[0];
+      if (!id) throw new Error("Usage: myna directory drop <id>");
+      // The credential goes with it: keeping a key for a directory myna can no
+      // longer reach is just a secret nobody will ever look at again. An id
+      // that is not registered still has its settings entry dropped below.
+      try {
+        logoutDirectory(id);
+      } catch {
+        /* not registered, so there is nothing signed in to forget */
+      }
+      out(removeCustomDirectory(id) ? `Dropped ${id}.` : `${id} was not added by URL. Built-in directories cannot be dropped.`);
+      return 0;
+    }
+
+    case "tools": {
+      const directory = requireDirectory(rest[0] ?? "");
+      const account = getDirectoryAccount(directory.id);
+      const url = account?.meta?.url || directory.endpoint || catalogEntry(directory.id)?.url;
+      if (!url) throw new Error(`myna does not know an MCP endpoint for ${directory.id}.`);
+      const tools = await new McpClient({ url, token: account?.creds?.key, clientName: "myna" }).listTools();
+      if (flags.json) {
+        out(JSON.stringify(tools, null, 2));
+        return 0;
+      }
+      out(`${url}`);
+      table(
+        tools.map((tool) => ({ name: tool.name, description: (tool.description ?? "").split(". ")[0] ?? "" })),
+        [
+          { key: "name", title: "TOOL" },
+          { key: "description", title: "WHAT IT DOES" },
+        ],
+      );
       return 0;
     }
 
@@ -344,24 +434,32 @@ export async function runDirectory(positional: string[], flags: Flags): Promise<
     }
 
     case "categories": {
-      const directory = requireDirectory(rest[0] ?? DIRECTORIES[0]?.id ?? "");
+      const directory = requireDirectory(rest[0] ?? listDirectories()[0]?.id ?? "");
       if (!directory.categories) throw new Error(`${directory.name} publishes no category list.`);
       const rows = await directory.categories(getDirectoryAccount(directory.id));
-      if (flags.json) out(JSON.stringify(rows, null, 2));
-      else
-        table(
-          rows.map((row) => ({ name: row.name, count: row.count === undefined ? "" : String(row.count) })),
-          [
-            { key: "name", title: "CATEGORY" },
-            { key: "count", title: "LISTINGS" },
-          ],
-        );
+      if (flags.json) {
+        out(JSON.stringify(rows, null, 2));
+        return 0;
+      }
+      // An empty table prints nothing at all, which reads as a command that
+      // did not run rather than a directory with nothing to say.
+      if (!rows.length) {
+        out(`${directory.name} returned no categories.`);
+        return 0;
+      }
+      table(
+        rows.map((row) => ({ name: row.name, count: row.count === undefined ? "" : String(row.count) })),
+        [
+          { key: "name", title: "CATEGORY" },
+          { key: "count", title: "LISTINGS" },
+        ],
+      );
       return 0;
     }
 
     case "vocabulary":
     case "vocab": {
-      const directory = requireDirectory(rest[0] ?? DIRECTORIES[0]?.id ?? "");
+      const directory = requireDirectory(rest[0] ?? listDirectories()[0]?.id ?? "");
       if (!directory.vocabulary) throw new Error(`${directory.name} publishes no vocabulary.`);
       const vocabulary = await directory.vocabulary(getDirectoryAccount(directory.id));
       if (flags.json) {
@@ -383,7 +481,7 @@ export async function runDirectory(positional: string[], flags: Flags): Promise<
         return await submit(first, url, flags);
       }
       throw new Error(
-        `Unknown directory or subcommand "${first}". Known directories: ${DIRECTORIES.map((entry) => entry.id).join(", ")}\n\n${USAGE}`,
+        `Unknown directory or subcommand "${first}". Known directories: ${listDirectories().map((entry) => entry.id).join(", ")}\n\n${USAGE}`,
       );
     }
   }

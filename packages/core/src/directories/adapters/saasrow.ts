@@ -115,6 +115,7 @@ export const saasrow: Directory = {
   name: "SaaSRow",
   blurb: "A software directory that publishes each listing to search, AI assistants, an API and MCP",
   homepage: DEFAULT_SITE,
+  endpoint: `${DEFAULT_SITE}/api/mcp`,
   auth: {
     fields: [
       {
