@@ -196,6 +196,13 @@ myna post --to agenticjobs "we closed the backend role https://acme.dev/blog"
 myna follow agenticjobs acme                         # or candidate:ada, or a page URL
 ```
 
+An update goes through the board's own MCP endpoint (`/api/mcp`, its
+`post_update` tool, the same bearer token the device flow handed over), which is
+the door an agent uses; a board too old to have one is answered over REST, and
+`MYNA_AGENTICJOBS_TRANSPORT=rest` picks REST outright. The same update is one
+tool call away for an agent driving myna: `myna_update` on myna's MCP server
+takes `body`, `link`, `org` and `dry_run`.
+
 Leave `--org` off and you post as yourself, which the board only allows if you
 have published a resume there, so an update always has a page behind it. A
 trailing URL moves into the board's own link field rather than being printed
@@ -757,7 +764,7 @@ bun run db:migrate
 ```
 
 Seventeen tools: `myna_accounts`, `myna_networks`, `myna_skills`,
-`myna_skill`, `myna_preview`, `myna_post`, `myna_schedule`, `myna_queue`,
+`myna_skill`, `myna_preview`, `myna_post`, `myna_update`, `myna_schedule`, `myna_queue`,
 `myna_cancel`, `myna_history`, `myna_draft`, `myna_timeline`, `myna_search`,
 and for [directories](#directories) `myna_directories`,
 `myna_directory_preview`, `myna_directory_submit` and
