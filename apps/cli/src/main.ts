@@ -118,6 +118,13 @@ DID (a decentralized identifier, proved at CoinPay, attached to accounts):
   did assign <account...|all>       Attach it as the accounts' owner, or
        [--role owner|operator]      operator for accounts that are agents
   did show | unassign | logout      What carries it; the OpenProfile says so
+AT Protocol (the network behind Bluesky; a directory of its servers):
+  atproto [q] [--kind pds|relay|feed|labeler] [--online]
+                                    The directory at mynaposter.com/listing/atproto
+  atproto add <url>                 List a server: probed first, shown as what it
+       [--description] [--tags]     said about itself. Needs myna cloud login
+  atproto probe <url>               What the directory would find, listing nothing
+  atproto refresh <id> | rm <id>
 
 Follow-ups (the people who replied, reposted or followed you):
   engage                            The queue: who engaged, the reply the

@@ -99,6 +99,7 @@ import { out, table } from "./io.ts";
 import { runDirectory } from "./directory.ts";
 import { runSkill } from "./skill.ts";
 import { runProfile, runReshareCommand } from "./reshare.ts";
+import { runAtproto } from "./atproto.ts";
 import { runEngage } from "./engage.ts";
 import { runDid } from "./did.ts";
 import { parseWhen, describeWhen, parseDuration } from "../tui/when.ts";
@@ -512,6 +513,11 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
     case "reshare": {
       await ensureUnlocked();
       return await runReshareCommand(positional, flags);
+    }
+
+    case "atproto":
+    case "at": {
+      return await runAtproto(positional, flags);
     }
 
     case "engage":

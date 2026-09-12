@@ -372,3 +372,6 @@ export { DEFAULT_ENGAGE, type EngageSettings } from "./store/settings.ts";
 export { loginWithCoinPay, loginWithCoinPayCli, assignDid, unassignDid, didStatus, resolveDidTargets, didFromUserInfo, coinpayCliSessionPath, DEFAULT_DID_SERVER, type DidRole, type DidStatus, type DidLoginOptions } from "./core/did.ts";
 export { didSession, saveDidSession, clearDidSession, requireDidSession, isDid, type DidSession } from "./store/did.ts";
 export { DEFAULT_DID, type DidSettings } from "./store/settings.ts";
+// AT Protocol servers: the probe, and the directory at mynaposter.com/listing/atproto.
+export { probeAtproto, atprotoOrigin, type AtprotoProbe, type AtprotoKind } from "./core/atproto.ts";
+export * as atproto from "./store/atproto.ts";

@@ -720,6 +720,20 @@ under the post they shared; everyone gets a follow-back. One per person per
 week, at most `maxPerDay` an account, `gapMinutes` apart, likes ignored unless
 asked. Off by default. The whole thing is in [docs/engage.md](docs/engage.md).
 
+## AT Protocol servers
+
+The network behind Bluesky is servers anyone can run: a PDS holds accounts, a
+relay streams the firehose, a feed generator serves a feed. myna keeps a public
+directory of them at [mynaposter.com/listing/atproto](https://mynaposter.com/listing/atproto),
+probed before they are shown and every half hour after. A PDS listed there is a
+place to make an account; `myna login bluesky` takes its URL as the service.
+
+```bash
+myna atproto                         # the list
+myna atproto probe https://bsky.social
+myna atproto add https://pds.example --tags community,open-signup   # after myna cloud login
+```
+
 ## Cloud backup, if you want it
 
 Optional. myna never contacts a server unless you run a `cloud` command.

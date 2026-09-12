@@ -167,3 +167,27 @@ create table if not exists reshare_claims (
 
 create index if not exists reshare_claims_request_idx on reshare_claims(request_id);
 create index if not exists reshare_claims_sharer_idx on reshare_claims(sharer_id, created_at desc);
+
+-- The atproto directory: PDSes, relays, feed generators and labelers anyone
+-- can list, each probed before it is shown and again on a schedule. What is
+-- listed is what the server said about itself.
+create table if not exists atproto_servers (
+  id            text primary key,
+  url           text not null unique,
+  user_id       uuid references users(id) on delete set null,
+  kind          text not null default 'unknown',
+  online        boolean not null default false,
+  did           text,
+  user_domains  text[] not null default '{}',
+  invite_code_required boolean,
+  version       text,
+  name          text,
+  description   text,
+  tags          text[] not null default '{}',
+  seen_at       timestamptz,
+  first_seen_at timestamptz not null default now(),
+  failures      integer not null default 0,
+  last_error    text
+);
+
+create index if not exists atproto_servers_kind_idx on atproto_servers(kind, online);
