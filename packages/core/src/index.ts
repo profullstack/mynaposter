@@ -257,6 +257,10 @@ export {
   type Seed,
   type Candidate,
   type FollowRecord,
+  followAllFollowing,
+  followsListRef,
+  type FollowAllOptions,
+  type FollowAllResult,
 } from "./core/graph.ts";
 export {
   registerPlugin,

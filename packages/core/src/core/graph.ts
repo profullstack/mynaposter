@@ -398,3 +398,105 @@ export function graphStatus(): GraphStatus {
 }
 
 export { readGraph, clearGraph, graphPath, type Seed, type Candidate, type FollowRecord } from "../store/graph.ts";
+
+/**
+ * A pasted "who they follow" page, as a person copies it: the Bluesky
+ * `/profile/x/follows`, the Mastodon `/@x/following`, a Misskey
+ * `/@x/following`. The suffix says "everyone on this list"; what is left is
+ * the profile the adapters already understand.
+ */
+export function followsListRef(ref: string): { profile: string; all: boolean } {
+  const trimmed = ref.trim();
+  const match = /^(.*?)\/(follows|following|followings)\/?(?:[?#].*)?$/i.exec(trimmed);
+  if (match && /^https?:\/\//i.test(trimmed)) return { profile: match[1] as string, all: true };
+  return { profile: trimmed, all: false };
+}
+
+export interface FollowAllOptions {
+  account: Account;
+  /** The person whose follows to copy: a handle, a profile URL, or the pasted follows page. */
+  ref: string;
+  /** At most this many follows this call, on top of the per-account budget. */
+  limit?: number;
+  /** How far down their list to read. */
+  readLimit?: number;
+  ignoreBudget?: boolean;
+  dryRun?: boolean;
+  settings?: Settings;
+  log?: (line: string) => void;
+}
+
+export interface FollowAllResult {
+  /** Who they follow, as read. */
+  read: number;
+  followed: FollowRecord[];
+  /** Skipped because already followed, or is this account, or the budget ran out. */
+  skipped: { handle: string; reason: string }[];
+  /** Left unread because `limit` or the budget stopped the run; run again later. */
+  remaining: number;
+}
+
+/**
+ * Follow everyone somebody follows.
+ *
+ * The list is read from the network, then each person is followed through
+ * the same ledger and the same hourly and daily ceilings the graph uses, so
+ * a pasted page of four hundred people becomes a few an hour, not a burst
+ * that gets the account flagged. People already followed, and the account
+ * itself, are skipped without spending anything. Run it again tomorrow to
+ * continue; the ledger remembers.
+ */
+export async function followAllFollowing(options: FollowAllOptions): Promise<FollowAllResult> {
+  const { account } = options;
+  const network = getNetwork(account.network);
+  if (!network?.following) throw new Error(`${network?.name ?? account.network} cannot list who someone follows.`);
+  if (!network.follow) throw new Error(`${network.name} has no follow API.`);
+  const settings = options.settings ?? loadSettings();
+  const log = options.log ?? (() => {});
+  const { profile } = followsListRef(options.ref);
+
+  const people = await network.following(account, profile, options.readLimit ?? 500);
+  const result: FollowAllResult = { read: people.length, followed: [], skipped: [], remaining: 0 };
+
+  const graph = readGraph();
+  const done = new Set(graph.follows.filter((record) => record.accountId === account.id && record.ok).map((record) => graphKey(record.network, record.handle)));
+  const self = graphKey(network.id, account.handle);
+  let budget = options.ignoreBudget ? Number.POSITIVE_INFINITY : followBudget(account.id, settings);
+  let allowance = options.limit ?? Number.POSITIVE_INFINITY;
+
+  for (let index = 0; index < people.length; index++) {
+    const person = people[index] as Profile;
+    const key = graphKey(network.id, person.handle);
+    if (key === self) {
+      result.skipped.push({ handle: person.handle, reason: "that is this account" });
+      continue;
+    }
+    if (done.has(key)) {
+      result.skipped.push({ handle: person.handle, reason: "already followed" });
+      continue;
+    }
+    if (allowance <= 0 || budget <= 0) {
+      result.remaining = people.length - index;
+      log(allowance <= 0 ? `stopped at --limit; ${result.remaining} left for next time` : `hourly or daily budget spent; ${result.remaining} left for next time`);
+      break;
+    }
+    if (options.dryRun) {
+      log(`would follow ${person.handle}${person.displayName ? ` (${person.displayName})` : ""}`);
+      result.followed.push({ accountId: account.id, network: network.id, handle: person.handle.replace(/^@/, ""), at: new Date().toISOString(), ok: true });
+      allowance--;
+      budget--;
+      continue;
+    }
+    const record = await followOne(account, person.id || person.handle, person.handle);
+    result.followed.push(record);
+    if (record.ok) {
+      done.add(key);
+      allowance--;
+      budget--;
+      log(`followed ${person.handle}`);
+    } else {
+      log(`could not follow ${person.handle}: ${record.error}`);
+    }
+  }
+  return result;
+}

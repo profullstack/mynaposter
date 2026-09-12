@@ -76,6 +76,8 @@ import {
   followBudget,
   followNext,
   followOne,
+  followAllFollowing,
+  followsListRef,
   graphStatus,
   readGraph,
   clearGraph,
@@ -1008,11 +1010,35 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
 
     case "follow": {
       // myna follow <account|network> <handle...>
+      // myna follow <account> https://bsky.app/profile/x/follows   everyone x follows
       await ensureUnlocked();
       const [spec, ...handles] = positional;
       if (!spec || !handles.length) throw new Error("Usage: myna follow <account or network> <handle> [more handles]");
       const accounts = accountsWith(spec, "follow");
       let failed = 0;
+
+      // A pasted "follows" page, or --all-following: copy their list, on the
+      // graph's pace. Four hundred people become a few an hour, not a burst.
+      const lists = handles.filter((handle) => followsListRef(handle).all || flags.allFollowing);
+      if (lists.length) {
+        for (const account of accounts) {
+          for (const ref of lists) {
+            const result = await followAllFollowing({
+              account,
+              ref,
+              limit: numberFlag(flags, "limit", 25),
+              dryRun: Boolean(flags.dryRun),
+              ignoreBudget: Boolean(flags.force),
+              log: (line) => out(`  ${line}`),
+            });
+            const ok = result.followed.filter((record) => record.ok).length;
+            failed += result.followed.length - ok;
+            out(`${account.id}  ${followsListRef(ref).profile} follows ${result.read}: ${flags.dryRun ? "would follow" : "followed"} ${ok}, skipped ${result.skipped.length}${result.remaining ? `, ${result.remaining} left for next time (run it again)` : ""}`);
+          }
+        }
+        if (lists.length === handles.length) return failed ? 1 : 0;
+        handles.splice(0, handles.length, ...handles.filter((handle) => !lists.includes(handle)));
+      }
       for (const account of accounts) {
         for (const handle of handles) {
           const record = await followOne(account, handle);
