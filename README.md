@@ -49,6 +49,10 @@ machine and nothing is sent anywhere except the posts you make.
   posts, matched by topic, each with their own myna and their own limits.
   Optionally a few cents a reshare, settled through CoinPay. Your profile is an
   [OpenProfile.md](docs/openprofile.md). See [The reshare network](#the-reshare-network).
+- **Answer the people who answer you.** `myna engage` turns replies, reposts,
+  quotes and new followers into a queue of follow-ups: a reply the writer
+  drafts from what they said, and a follow-back, sent on a pace. See
+  [Follow-ups](#follow-ups).
 - **Plugins.** A plugin can add a network, a command, a daemon task or a source
   of people to follow. The bundled one pulls seeds from
   [OutreachGraph](https://outreachgraph.com). See [Plugins](#plugins).
@@ -672,6 +676,23 @@ where the network has one, a post carrying the link where it does not, at most
 `perDay` a day. `rateUsd` is what a reshare by you costs, `bountyUsd` what you
 offer; `myna reshare owed` shows what to settle through CoinPay. The whole thing
 is in [docs/reshare.md](docs/reshare.md).
+
+## Follow-ups
+
+The people who reply, repost, quote or follow are the point of posting and the
+easiest to ignore. `myna engage` answers them from a queue you can read first.
+
+```bash
+myna engage on        # the daemon scans notifications every 15 minutes
+myna engage           # who engaged, what they said, the drafted reply, follow or not
+myna engage send      # send what is due (--dry-run to rehearse)
+```
+
+A reply is drafted by the writer from what they wrote, with your original post
+as context, in your voice, and goes under their post; a repost gets a thank-you
+under the post they shared; everyone gets a follow-back. One per person per
+week, at most `maxPerDay` an account, `gapMinutes` apart, likes ignored unless
+asked. Off by default. The whole thing is in [docs/engage.md](docs/engage.md).
 
 ## Cloud backup, if you want it
 

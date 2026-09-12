@@ -147,13 +147,25 @@ export const bluesky: Network = {
       `${base}/xrpc/app.bsky.notification.listNotifications?limit=${limit}`,
       { headers: auth(accessJwt) },
     );
-    return result.notifications.map((item): TimelineItem => ({
-      id: item.uri,
-      author: item.author?.displayName || item.author?.handle || "",
-      handle: item.author?.handle ?? "",
-      text: `${item.reason}: ${item.record?.text ?? ""}`.trim(),
-      createdAt: item.indexedAt ?? "",
-    }));
+    return result.notifications.map((item): TimelineItem => {
+      const reason = String(item.reason ?? "other");
+      const theirs = reason === "reply" || reason === "mention" || reason === "quote";
+      // A reply under their post needs the thread root as well as the parent,
+      // in the composite form `post` takes; the root is in their record when
+      // their post is itself a reply, and is their post otherwise.
+      const root = item.record?.reply?.root ?? { uri: item.uri, cid: item.cid };
+      return {
+        id: item.uri,
+        author: item.author?.displayName || item.author?.handle || "",
+        handle: item.author?.handle ?? "",
+        text: `${reason}: ${item.record?.text ?? ""}`.trim(),
+        createdAt: item.indexedAt ?? "",
+        kind: reason === "like" || reason === "repost" || reason === "follow" || theirs ? reason : "other",
+        ...(theirs && item.cid ? { postId: `${root.uri}|${root.cid}|${item.uri}|${item.cid}` } : {}),
+        ...(item.reasonSubject ? { subjectId: String(item.reasonSubject) } : {}),
+        ...(reason === "reply" && item.record?.reply?.parent?.uri ? { subjectId: String(item.record.reply.parent.uri) } : {}),
+      };
+    });
   },
 
   async stats(account, id) {

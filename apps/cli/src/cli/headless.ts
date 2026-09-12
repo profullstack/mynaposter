@@ -97,6 +97,7 @@ import { out, table } from "./io.ts";
 import { runDirectory } from "./directory.ts";
 import { runSkill } from "./skill.ts";
 import { runProfile, runReshareCommand } from "./reshare.ts";
+import { runEngage } from "./engage.ts";
 import { parseWhen, describeWhen, parseDuration } from "../tui/when.ts";
 import { loginValuesFromArgs } from "../login-args.ts";
 
@@ -508,6 +509,13 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
     case "reshare": {
       await ensureUnlocked();
       return await runReshareCommand(positional, flags);
+    }
+
+    case "engage":
+    case "followup":
+    case "followups": {
+      await ensureUnlocked();
+      return await runEngage(positional, flags);
     }
 
     case "post": {

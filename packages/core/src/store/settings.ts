@@ -65,6 +65,8 @@ export interface Settings {
   profile: ProfileSettings;
   /** The reshare network: what you offer to reshare for others, and what you ask for your own posts. */
   reshare: ReshareSettings;
+  /** Follow-ups: who replied, reposted or followed, and what to send them back. */
+  engage: EngageSettings;
   /** Plugin specs: an absolute path, or a package name installed by `myna plugins add`. */
   plugins: string[];
   /**
@@ -167,6 +169,42 @@ export const DEFAULT_RESHARE: ReshareSettings = {
   maxSharers: 10,
 };
 
+export interface EngageSettings {
+  /** Off until a person turns it on. Replying to people is not something to do by accident. */
+  enabled: boolean;
+  /** Follow-ups sent per account in a rolling day. */
+  maxPerDay: number;
+  /** Least time between two follow-ups from the same account. */
+  gapMinutes: number;
+  /** One follow-up per person per account inside this window. */
+  cooldownDays: number;
+  /** Follow whoever replied, reposted or followed. */
+  followBack: boolean;
+  /** Answer a reply, mention or quote with a drafted reply. */
+  replyToMentions: boolean;
+  /** Thank a repost under the post they shared. */
+  thankReposts: boolean;
+  /** Follow people who only liked. Off: a like is not a conversation. */
+  followLikers: boolean;
+  /** Which networks to engage on: "all" or a comma list. */
+  networks: string;
+  /** How far back a scan reads, per account. */
+  scanLimit: number;
+}
+
+export const DEFAULT_ENGAGE: EngageSettings = {
+  enabled: false,
+  maxPerDay: 20,
+  gapMinutes: 10,
+  cooldownDays: 7,
+  followBack: true,
+  replyToMentions: true,
+  thankReposts: true,
+  followLikers: false,
+  networks: "all",
+  scanLimit: 40,
+};
+
 export const DEFAULT_SETTINGS: Settings = {
   defaultTargets: "all",
   signature: "",
@@ -200,6 +238,7 @@ export const DEFAULT_SETTINGS: Settings = {
   skills: { defaults: {}, rotate: {}, cursor: {} },
   profile: { ...DEFAULT_PROFILE },
   reshare: { ...DEFAULT_RESHARE },
+  engage: { ...DEFAULT_ENGAGE },
   plugins: [],
   directories: [],
 };
@@ -218,6 +257,7 @@ export function loadSettings(): Settings {
     blog: { ...DEFAULT_SETTINGS.blog, ...stored.blog },
     profile: { ...DEFAULT_PROFILE, ...stored.profile },
     reshare: { ...DEFAULT_RESHARE, ...stored.reshare },
+    engage: { ...DEFAULT_ENGAGE, ...stored.engage },
     skills: {
       defaults: { ...(stored.skills?.defaults ?? {}) },
       rotate: { ...(stored.skills?.rotate ?? {}) },

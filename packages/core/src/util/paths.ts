@@ -27,6 +27,8 @@ export const SETTINGS_FILE = "settings.json";
 export const GRAPH_FILE = "graph.json";
 /** What this install has reshared for others, and when it joined the network. */
 export const RESHARE_FILE = "reshare.json";
+/** The follow-up queue: who engaged, what to send them, what was sent. */
+export const ENGAGE_FILE = "engage.json";
 /** A hand-written OpenProfile.md wins over the one `myna profile` would build. */
 export const PROFILE_FILE = "openprofile.md";
 /** When the daily recap was last sent. State, not preference, so not in settings. */

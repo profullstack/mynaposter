@@ -6,7 +6,7 @@
  * draft lands in the compose box for you to edit first.
  */
 import { loadSettings } from "../store/settings.ts";
-import { requireNetwork } from "../net/registry.ts";
+import { getNetwork, requireNetwork } from "../net/registry.ts";
 import { fetchPage, type PageSummary } from "./extract.ts";
 import { complete as completeAnthropic, hasCredentials as hasAnthropic } from "./anthropic.ts";
 import { completeOpenAI, completeOllama } from "./openai.ts";
@@ -383,4 +383,65 @@ export async function listingCopy(request: ListingCopyRequest): Promise<ListingC
     pricingModel: text(parsed.pricing_model),
     alternatives: strings(parsed.alternatives, 10),
   };
+}
+
+export interface ReplyRequest {
+  /** What they did: reply, mention, quote, repost. */
+  kind: string;
+  /** Who, as the network names them, with whatever prefix a mention there needs. */
+  handle: string;
+  /** What they wrote, when they wrote something. */
+  theirText: string;
+  /** The post of ours it was about, when known. */
+  ourText?: string;
+  network?: string;
+  /** True when this account has just followed them, so the reply may say so. */
+  followed?: boolean;
+  /** Overrides the saved voice for this reply only. */
+  voice?: string;
+}
+
+const REPLY_SYSTEM = `You write short replies on social networks, as the author of the original post, for someone who despises marketing voice.
+
+Rules, all of them load-bearing:
+- Answer what the person actually said. Pick up one specific thing from their message and respond to it. A reply that could have been sent to anyone is a failure.
+- One or two sentences. Conversational, plain, specific. Contractions are fine.
+- No em dashes. No hashtags. No emoji. No exclamation marks in a row. No "great question", no "thanks for reaching out", no "love this".
+- Never invent facts about the product, the person, or what happens next. If they asked something the original post does not answer, say so plainly or ask one clarifying question.
+- If they only shared or reposted (no words of their own), a short thank-you that names what they shared is enough.
+- If told the author has followed them, you may mention it in passing, once, casually. Never promise anything else.
+- Respect the character limit exactly.
+- Return only the JSON described. No preamble, no code fences.`;
+
+/** A reply to what somebody said about a post, in the author's voice. */
+export async function replyDraft(request: ReplyRequest): Promise<string> {
+  const { ai } = loadSettings();
+  const limit = request.network ? (getNetwork(request.network)?.caps.charLimit ?? 0) : 0;
+  const what =
+    request.kind === "repost"
+      ? "reposted (shared) the post below"
+      : request.kind === "quote"
+        ? "quoted the post below with their own words"
+        : request.kind === "mention"
+          ? "mentioned the author in a post of their own"
+          : "replied to the post below";
+  const prompt = [
+    `Voice of the author: ${request.voice ?? ai.voice}`,
+    limit ? `Hard limit: ${limit} characters, including their handle if you use it.` : "",
+    "",
+    `${request.handle} ${what}.`,
+    request.theirText ? `What they wrote:\n${request.theirText}` : "They wrote nothing of their own.",
+    "",
+    request.ourText ? `The author's original post:\n${request.ourText}` : "The author's original post is not available; do not guess at it.",
+    "",
+    request.followed ? "The author has just followed them back." : "",
+    `Return JSON: {"text": "<the reply>"}`,
+  ]
+    .filter((line) => line !== "")
+    .join("\n");
+
+  const raw = await providerComplete(REPLY_SYSTEM, prompt, 800);
+  const text = extractJson<{ text: string }>(raw).text.trim();
+  if (!text) throw new Error("The writer returned an empty reply.");
+  return limit && text.length > limit ? `${text.slice(0, limit - 1).trimEnd()}…` : text;
 }

@@ -102,13 +102,30 @@ export const misskey: Network = {
       i: account.creds.token,
       limit,
     });
-    return items.map((item): TimelineItem => ({
-      id: item.id,
-      author: item.user?.name || item.user?.username || "",
-      handle: `@${item.user?.username ?? ""}`,
-      text: `${item.type}${item.note?.text ? `: ${item.note.text}` : ""}`,
-      createdAt: item.createdAt,
-    }));
+    return items.map((item): TimelineItem => {
+      const type = String(item.type ?? "other");
+      const kind =
+        type === "reply" || type === "mention" || type === "quote" || type === "follow"
+          ? type
+          : type === "renote"
+            ? "repost"
+            : type === "reaction"
+              ? "like"
+              : "other";
+      const theirs = kind === "reply" || kind === "mention" || kind === "quote";
+      return {
+        id: item.id,
+        author: item.user?.name || item.user?.username || "",
+        handle: `@${item.user?.username ?? ""}`,
+        text: `${item.type}${item.note?.text ? `: ${item.note.text}` : ""}`,
+        createdAt: item.createdAt,
+        kind,
+        ...(theirs && item.note?.id ? { postId: String(item.note.id) } : {}),
+        ...(item.note?.renote?.id ? { subjectId: String(item.note.renote.id) } : {}),
+        ...(item.note?.reply?.id ? { subjectId: String(item.note.reply.id) } : {}),
+        ...(kind === "like" && item.note?.id ? { subjectId: String(item.note.id) } : {}),
+      };
+    });
   },
 
   async stats(account, id) {

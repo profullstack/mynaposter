@@ -194,14 +194,34 @@ function make(id: string, name: string, blurb: string, charLimit: number): Netwo
         `${base(account)}/api/v1/notifications?limit=${limit}`,
         { headers: auth(account) },
       );
-      return items.map((item): TimelineItem => ({
-        id: item.id,
-        author: item.account.display_name || item.account.username,
-        handle: item.account.acct,
-        text: `${item.type}${item.status ? `: ${plain(item.status.content)}` : ""}`,
-        createdAt: item.created_at,
-        url: item.status?.url,
-      }));
+      return items.map((item): TimelineItem => {
+        const status = item.status as (Status & { in_reply_to_id?: string | null }) | undefined;
+        const kind =
+          item.type === "mention"
+            ? status?.in_reply_to_id
+              ? "reply"
+              : "mention"
+            : item.type === "reblog"
+              ? "repost"
+              : item.type === "favourite"
+                ? "like"
+                : item.type === "follow"
+                  ? "follow"
+                  : "other";
+        return {
+          id: item.id,
+          author: item.account.display_name || item.account.username,
+          handle: item.account.acct,
+          text: `${item.type}${item.status ? `: ${plain(item.status.content)}` : ""}`,
+          createdAt: item.created_at,
+          url: item.status?.url,
+          kind,
+          // A mention's status is theirs; a boost's or favourite's status is ours.
+          ...(kind === "reply" || kind === "mention" ? { postId: status?.id } : {}),
+          ...(kind === "reply" && status?.in_reply_to_id ? { subjectId: status.in_reply_to_id } : {}),
+          ...((kind === "repost" || kind === "like") && status?.id ? { subjectId: status.id } : {}),
+        };
+      });
     },
 
     async stats(account, statusId) {
