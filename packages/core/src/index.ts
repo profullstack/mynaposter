@@ -343,3 +343,23 @@ export {
 export * as reshare from "./store/reshare.ts";
 export { resharePlugin, RESHARE_EVERY_MS } from "./plugins/reshare-plugin.ts";
 export { DEFAULT_PROFILE, DEFAULT_RESHARE, type ProfileSettings, type ReshareSettings } from "./store/settings.ts";
+
+// Follow-ups: replies and follow-backs for the people who engaged.
+export {
+  scanEngagement,
+  sendFollowUps,
+  classify,
+  bodyOf,
+  ourPost,
+  templateReply,
+  sentToday,
+  type Drafter,
+  type ScanOptions,
+  type ScanResult,
+  type SendOptions,
+  type SendResult,
+} from "./core/engage.ts";
+export { readEngage, writeEngage, listFollowUps, updateFollowUp, clearEngage, followUpKey, type FollowUp, type FollowUpKind, type EngageFile } from "./store/engage.ts";
+export { engagePlugin, ENGAGE_SCAN_EVERY_MS, ENGAGE_SEND_EVERY_MS } from "./plugins/engage-plugin.ts";
+export { replyDraft, type ReplyRequest } from "./ai/writer.ts";
+export { DEFAULT_ENGAGE, type EngageSettings } from "./store/settings.ts";

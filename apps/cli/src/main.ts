@@ -109,6 +109,21 @@ Reshare network (people and agents who amplify each other, matched by topic):
        --ref <tx>                   settled through CoinPay, then recorded
   reshare status | leave
 
+Follow-ups (the people who replied, reposted or followed you):
+  engage                            The queue: who engaged, the reply the
+                                    writer drafted from what they said, and
+                                    whether they will be followed back
+  engage on | off                   Let the daemon scan every 15 minutes and
+                                    send what is due every 5, on a pace
+  engage scan                       Read notifications now and draft replies
+  engage send [--limit N] [--dry-run]
+                                    Send what is due now
+  engage skip <id> | edit <id> "…"  Drop one, or change its reply before it goes
+  engage set <key> <value>          maxPerDay, gapMinutes, cooldownDays,
+                                    followBack, replyToMentions, thankReposts,
+                                    followLikers, networks
+  engage log                        What went out
+
 Directories (submitting the product, not a post):
   directory                         The directories myna can submit to, and
                                     which of them this machine is signed in to

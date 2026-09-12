@@ -113,6 +113,18 @@ export interface TimelineItem {
   likes?: number;
   reposts?: number;
   replies?: number;
+  /**
+   * For a notification: what happened. `reply`, `mention`, `quote`, `repost`,
+   * `like`, `follow`, or `other`. Absent on a timeline item.
+   */
+  kind?: string;
+  /**
+   * For a notification: the network-native id of the post that caused it,
+   * theirs, in the form `PostInput.replyTo` accepts, so a reply can go under it.
+   */
+  postId?: string;
+  /** For a notification: the id or uri of this account's post it concerns. */
+  subjectId?: string;
 }
 
 export interface PostStats {
