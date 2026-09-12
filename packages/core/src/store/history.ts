@@ -17,6 +17,8 @@ export interface HistoryEntry {
   type?: string;
   postId?: string;
   url?: string;
+  /** The --canonical-url it went out with, so a mirror of a sent post stays one in the type's daily count. */
+  canonicalUrl?: string;
   error?: string;
 }
 

@@ -162,7 +162,11 @@ What myna enforces:
   queued entry whose type its target no longer carries.
 - **`maxPerDay`** on the type, across every account, on top of the network
   and account caps. Both apply, so the stricter one wins: one essay a day,
-  two promos a day.
+  two promos a day. A canonical mirror does not count: a post sent with
+  `--canonical-url` pointing at a post of the same type already in the
+  history is the same post again, so the essay reaches the blog and dev.to
+  on the same day. History records the `canonicalUrl` so a sent mirror stays
+  one.
 
 The type is written onto the queue entry (`type`) and the history entry, and
 `myna queue`, `myna history` and the dashboard show it.
