@@ -101,3 +101,69 @@ create table if not exists backups (
 alter table users add column if not exists password_hash text;
 alter table users add column if not exists password_salt text;
 alter table users add column if not exists password_params jsonb;
+
+-- The reshare network.
+--
+-- A profile is the person's OpenProfile.md, verbatim, plus the fields the
+-- matcher reads out of it so a query can narrow before the scorer runs. The
+-- Markdown is canonical; the columns are regenerated from it on every PUT.
+create table if not exists reshare_profiles (
+  user_id      uuid primary key references users(id) on delete cascade,
+  markdown     text not null,
+  name         text,
+  handle       text,
+  topics       text[] not null default '{}',
+  refused      text[] not null default '{}',
+  networks     text[] not null default '{}',
+  accounts     text[] not null default '{}',
+  rate_usd     numeric(10, 4) not null default 0,
+  per_day      integer not null default 3,
+  pay          text,
+  active       boolean not null default true,
+  created_at   timestamptz not null default now(),
+  updated_at   timestamptz not null default now()
+);
+
+-- "Please reshare this": the post as it exists on each network, a link any
+-- network can quote, the topics, and what the author offers per reshare.
+create table if not exists reshare_requests (
+  id           uuid primary key default gen_random_uuid(),
+  user_id      uuid not null references users(id) on delete cascade,
+  title        text,
+  text         text,
+  topics       text[] not null default '{}',
+  posts        jsonb not null default '[]'::jsonb,
+  link         text,
+  bounty_usd   numeric(10, 4) not null default 0,
+  max_sharers  integer not null default 10,
+  status       text not null default 'open',
+  created_at   timestamptz not null default now(),
+  expires_at   timestamptz not null default now() + interval '7 days'
+);
+
+create index if not exists reshare_requests_open_idx
+  on reshare_requests (created_at desc)
+  where status = 'open';
+
+create index if not exists reshare_requests_user_idx on reshare_requests(user_id, created_at desc);
+
+-- One sharer, one request, one network. Claimed when the sharer's myna picks
+-- it up, done or failed when it reports back, paid when the author says so.
+create table if not exists reshare_claims (
+  id           uuid primary key default gen_random_uuid(),
+  request_id   uuid not null references reshare_requests(id) on delete cascade,
+  sharer_id    uuid not null references users(id) on delete cascade,
+  network      text not null,
+  status       text not null default 'claimed',
+  result_url   text,
+  error        text,
+  bounty_usd   numeric(10, 4) not null default 0,
+  created_at   timestamptz not null default now(),
+  done_at      timestamptz,
+  paid_at      timestamptz,
+  pay_ref      text,
+  unique (request_id, sharer_id, network)
+);
+
+create index if not exists reshare_claims_request_idx on reshare_claims(request_id);
+create index if not exists reshare_claims_sharer_idx on reshare_claims(sharer_id, created_at desc);

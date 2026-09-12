@@ -88,6 +88,27 @@ Following (Bluesky, Mastodon, Misskey, X, Nostr):
     graph on | off                  Let the daemon do all of this
     graph status | seeds | skip | unseed | clear
 
+Reshare network (people and agents who amplify each other, matched by topic):
+  profile                           Your OpenProfile.md: who you are and where,
+                                    built from settings and accounts, or the
+                                    file at ~/.config/myna/openprofile.md
+    profile write [--force]         Put it in that file to edit by hand
+    profile set <key> <value>       name, kind, handle, web, email, pay, topics...
+  reshare join                      Publish your Reshare terms to the network.
+                                    Uses the myna cloud account (myna cloud login)
+  reshare set <key> <value>         topics, not, networks, rateUsd (what one
+                                    reshare by you costs), perDay, quote, auto
+                                    (offer every post you send), bountyUsd
+                                    (what you pay per reshare), maxSharers
+  reshare ask <post url...>         Ask the network to reshare a post that is out
+       [--topics a,b] [--bounty N]
+  reshare matches | pull            What it would have you reshare; do it now.
+                                    The daemon pulls every ten minutes
+  reshare requests | close <id>     Your own requests, and who reshared them
+  reshare log | owed | paid <claim> What you did for others; what you owe,
+       --ref <tx>                   settled through CoinPay, then recorded
+  reshare status | leave
+
 Directories (submitting the product, not a post):
   directory                         The directories myna can submit to, and
                                     which of them this machine is signed in to

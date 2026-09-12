@@ -96,6 +96,7 @@ import { ask, askSecret, confirm, readStdin } from "./prompt.ts";
 import { out, table } from "./io.ts";
 import { runDirectory } from "./directory.ts";
 import { runSkill } from "./skill.ts";
+import { runProfile, runReshareCommand } from "./reshare.ts";
 import { parseWhen, describeWhen, parseDuration } from "../tui/when.ts";
 import { loginValuesFromArgs } from "../login-args.ts";
 
@@ -497,6 +498,16 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
     case "skills": {
       await ensureUnlocked();
       return await runSkill(positional, flags);
+    }
+
+    case "profile": {
+      await ensureUnlocked();
+      return await runProfile(positional, flags);
+    }
+
+    case "reshare": {
+      await ensureUnlocked();
+      return await runReshareCommand(positional, flags);
     }
 
     case "post": {

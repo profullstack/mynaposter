@@ -304,3 +304,42 @@ export {
 export { fetchPage, type PageSummary } from "./ai/extract.ts";
 export { renderInfographic, renderSvg, type InfographicStyle, type RenderOptions } from "./graphics/infographic.ts";
 export { availableRasterizers } from "./graphics/raster.ts";
+
+// OpenProfile.md and the reshare network.
+export {
+  parseOpenProfile,
+  renderOpenProfile,
+  parseTopics,
+  topicKey,
+  topicsMatch,
+  networkFromUrl,
+  accountUrlFor,
+  parseRate,
+  parseLimit,
+  type OpenProfile,
+  type ProfileAccount,
+  type ProfileInput,
+  type ProfileOperator,
+  type ProfilePair,
+  type ProfileSection,
+  type ReshareTerms,
+} from "./core/openprofile.ts";
+export { profilePath, hasWrittenProfile, buildProfile, readProfile, currentProfile, writeProfile } from "./store/profile.ts";
+export {
+  scoreMatch,
+  rankSharers,
+  sharerFromProfile,
+  hashtagsIn,
+  ownTopics,
+  requestFromPosted,
+  runReshare,
+  quoteText,
+  type MatchRequest,
+  type MatchSharer,
+  type MatchResult,
+  type RunReshareOptions,
+  type ReshareTurn,
+} from "./core/reshare.ts";
+export * as reshare from "./store/reshare.ts";
+export { resharePlugin, RESHARE_EVERY_MS } from "./plugins/reshare-plugin.ts";
+export { DEFAULT_PROFILE, DEFAULT_RESHARE, type ProfileSettings, type ReshareSettings } from "./store/settings.ts";
