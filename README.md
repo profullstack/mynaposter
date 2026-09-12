@@ -328,7 +328,9 @@ stricter value winning.
 The blog template is the reason this exists: **four posts a day, major feature
 announcements and launches only**, no bug-fix stories, no re-sends, never a
 title the blog already carries. myna holds a fifth post to the next day and
-refuses a duplicate title outright (`--allow-duplicate` if you mean it).
+refuses a duplicate title outright (`--allow-duplicate` if you mean it). The
+cap paces automated promotion; a post you ask for by hand goes out with
+`--now`, at once, past the cap.
 
 ```bash
 myna skill list                                   # every network and account, which skill is on

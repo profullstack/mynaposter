@@ -50,7 +50,7 @@ import { deriveTitle } from "../util/text.ts";
 import { readTypeSkill, type TypeSkill } from "./post-types.ts";
 
 /** Bump when a template changes in a way worth re-materialising with --force. */
-export const TEMPLATE_VERSION = "1";
+export const TEMPLATE_VERSION = "2";
 
 /* ---------------------------------------------------------------- kinds */
 
@@ -122,6 +122,12 @@ export function templateLimits(kind: SkillKind, networkId: string, settings?: Pi
 
 /* ------------------------------------------------------------ templates */
 
+const HAND_VS_AUTOMATED = `## Hand requests and automated promotion
+
+- A post the person asked for by hand is sent with --now. It goes out at once, past the daily cap, because the person asking is the budget.
+- Automated promotion (the launch announcement at the end of a ship, evergreen reposts, cross-account copies, anything a script or a plugin sends) is queued under the cap and never passes --now.
+- The cap is there to pace the automated stream, not to hold a person's request.`;
+
 const HOUSE_STYLE = `## House style
 
 - No em dashes, no en dashes, no curly quotes. Use a period, a comma or parentheses.
@@ -139,11 +145,13 @@ This blog carries major feature announcements and launches only. A post here is 
 - No bug-fix stories, no "every little update", no build logs. Those belong on the socials, or nowhere.
 - One post can bundle several related features from the same week. Prefer one good post over three thin ones.
 - Never re-send a title that is already in the history for this blog. myna refuses a duplicate title outright unless you pass --allow-duplicate, and it should almost never be passed.
-- At most ${limits.maxPerDay} posts a day. myna holds a fifth one to the next day rather than sending it.
+- At most ${limits.maxPerDay} automated posts a day. myna holds the next one to the next day rather than sending it. A post asked for by hand goes out with --now regardless.
 
 ## Canonical URL
 
 This blog is the original. Every syndicated copy (dev.to, Hashnode, Ghost, Tumblr) must be posted with --canonical-url pointing at the page here, so search engines rank this page and not the mirror. Never post a mirror first.
+
+${HAND_VS_AUTOMATED}
 
 ${HOUSE_STYLE}
 
@@ -167,6 +175,8 @@ Short posts about launches and real updates, one post per launch. A launch is an
 - Reposts and repeats keep to the pacing settings (myna pace): one post per network per gap, the same text to the same account not inside the repost gap.
 - At most ${limits.maxPerDay} posts a day to this account.
 
+${HAND_VS_AUTOMATED}
+
 ${HOUSE_STYLE}
 
 ## Posting
@@ -184,6 +194,8 @@ A post on a board opens a topic that other people reply to, so it should be some
 - Reply etiquette: answer replies in the thread rather than opening a new topic; do not bump your own topic; one topic per release, not one per forum.
 - At most ${limits.maxPerDay} new topics a day, and at least ${Math.round((limits.minGapMinutes ?? 240) / 60)} hours apart, whatever the global gap is. Announcements go out through the drip like any social post.
 
+${HAND_VS_AUTOMATED}
+
 ${HOUSE_STYLE}
 
 ## Posting
@@ -199,6 +211,8 @@ ${network} is a mirror, never an original. A post here is a copy of a page that 
 - Publish here only after the blog post is live, and use the exact Markdown that was published there (myna history --json has it).
 - Same content rules as the blog: major features and launches only, no duplicate titles, no bug-fix stories.
 - At most ${limits.maxPerDay} articles a day.
+
+${HAND_VS_AUTOMATED}
 
 ${HOUSE_STYLE}
 
@@ -228,6 +242,8 @@ A post to ${network} is a comment on someone's video, found with myna search. It
 - Never comment the same text on several videos. That is spam and gets the channel flagged.
 - At most ${limits.maxPerDay} comments a day.
 
+${HAND_VS_AUTOMATED}
+
 ${HOUSE_STYLE}
 
 ## Posting
@@ -239,6 +255,8 @@ ${HOUSE_STYLE}
 ${network} has no built-in rules yet. Edit this file to say what belongs here and how often.
 
 - At most ${limits.maxPerDay} posts a day.
+
+${HAND_VS_AUTOMATED}
 
 ${HOUSE_STYLE}`,
 };

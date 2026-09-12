@@ -181,7 +181,8 @@ test("a type's cap holds across every account, on top of the account caps, and s
   const launch = planTargets({ accounts: [blog], text: "a launch", now: NOW, history, queue, rules, accountNetwork, order: (a) => a, limitsFor: () => ({ maxPerDay: 4 }) });
   expect(launch.now).toEqual([blog]);
 
-  // Two targets for one essay in one plan: the second waits for the first, even under --now.
+  // Two targets for one essay in one plan under --now: a hand request, so both go now.
+  // The type's daily budget paces automated promotion, and --now is never automated.
   const two = planTargets({
     accounts: [blog, bsky],
     text: "essay",
@@ -194,8 +195,8 @@ test("a type's cap holds across every account, on top of the account caps, and s
     force: true,
     typeLimit: { type: "essay", maxPerDay: 1, bookings: [] },
   });
-  expect(two.now).toEqual([blog]);
-  expect(two.later.map((t) => [t.account.id, t.at])).toEqual([[bsky.id, NOW + DAY_MS]]);
+  expect(two.now).toEqual([blog, bsky]);
+  expect(two.later).toEqual([]);
 });
 
 test("an agent reads the type skill first, then the account's, then the network's", () => {
