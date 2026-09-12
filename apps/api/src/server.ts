@@ -13,6 +13,7 @@ import * as service from "./service.ts";
 import { handleMcpBody } from "./mcp.ts";
 import * as cloud from "./cloud.ts";
 import * as reshare from "./reshare.ts";
+import * as atproto from "./atproto.ts";
 import { VERSION } from "@profullstack/myna-core";
 
 const app = new Hono();
@@ -39,7 +40,7 @@ app.use("/v1/*", async (context, next) => {
   // this instance, while those belong to an end user with an account. Running
   // both would mean nobody could sign up without the operator's token.
   const path = new URL(context.req.url).pathname;
-  if (path.startsWith("/v1/cloud") || path.startsWith("/v1/reshare")) return next();
+  if (path.startsWith("/v1/cloud") || path.startsWith("/v1/reshare") || path.startsWith("/v1/atproto")) return next();
 
   const expected = process.env.MYNA_API_TOKEN;
   const isRead = context.req.method === "GET";
@@ -132,6 +133,10 @@ app.get("/", (context) =>
       "POST /v1/reshare/claims",
       "PATCH /v1/reshare/claims/:id",
       "GET  /v1/reshare/ledger",
+      "GET  /v1/atproto?kind=&online=1&q=",
+      "POST /v1/atproto {url, description?, tags?}",
+      "POST /v1/atproto/:id/refresh",
+      "DELETE /v1/atproto/:id",
     ],
     mcp: { endpoint: "/api/mcp", transport: "streamable-http", tools: 11 },
   }),
@@ -362,6 +367,73 @@ reshareRoutes.patch("/claims/:id/paid", async (context) => {
 reshareRoutes.get("/ledger", (context) => answer(() => reshare.ledger(userOf(context).id))(context));
 
 app.route("/v1/reshare", reshareRoutes);
+
+/**
+ * The atproto directory: PDSes, relays, feed generators and labelers, listed
+ * by anyone with a myna cloud account, probed before they are shown, at
+ * mynaposter.com/listing/atproto. Reading is public.
+ */
+const atprotoRoutes = new Hono<{ Variables: { user: cloud.CloudUser | null } }>();
+
+atprotoRoutes.use("*", async (context, next) => {
+  if (!hasDatabase()) return context.json({ ok: false, error: "This instance has no DATABASE_URL, so the atproto directory is off." }, 503);
+  context.set("user", context.req.method === "GET" ? null : await requireUser(context));
+  return next();
+});
+
+atprotoRoutes.get("/", async (context) => {
+  try {
+    const servers = await atproto.listServers({
+      kind: context.req.query("kind") || undefined,
+      online: context.req.query("online") === "1",
+      q: context.req.query("q") || undefined,
+    });
+    return context.json({ ok: true, servers, total: servers.length });
+  } catch (error) {
+    return context.json({ ok: false, error: (error as Error).message }, 500);
+  }
+});
+
+atprotoRoutes.post("/", async (context) => {
+  const user = context.get("user");
+  if (!user) return context.json({ ok: false, error: "Sign in with myna cloud login to list a server." }, 401);
+  try {
+    const input = (await context.req.json().catch(() => ({}))) as { url?: string; description?: string; tags?: unknown };
+    return context.json({ ok: true, server: await atproto.addServer(user.id, input) }, 201);
+  } catch (error) {
+    return context.json({ ok: false, error: (error as Error).message }, 400);
+  }
+});
+
+atprotoRoutes.post("/:id/refresh", async (context) => {
+  if (!context.get("user")) return context.json({ ok: false, error: "Unauthorized" }, 401);
+  const server = await atproto.refreshServer(context.req.param("id"));
+  return server ? context.json({ ok: true, server }) : context.json({ ok: false, error: "No such server." }, 404);
+});
+
+atprotoRoutes.delete("/:id", async (context) => {
+  const user = context.get("user");
+  const header = context.req.header("authorization") ?? "";
+  const supplied = header.startsWith("Bearer ") ? header.slice(7) : "";
+  const operator = Boolean(process.env.MYNA_API_TOKEN) && supplied !== "" && sameToken(supplied, process.env.MYNA_API_TOKEN as string);
+  if (!user && !operator) return context.json({ ok: false, error: "Unauthorized" }, 401);
+  try {
+    const removed = await atproto.removeServer(context.req.param("id"), user?.id ?? null, operator);
+    return removed ? context.json({ ok: true }) : context.json({ ok: false, error: "No such server." }, 404);
+  } catch (error) {
+    return context.json({ ok: false, error: (error as Error).message }, 403);
+  }
+});
+
+app.route("/v1/atproto", atprotoRoutes);
+
+// Every listed atproto server is probed again every half hour, so "online"
+// means recently. Only where there is a database to hold the list.
+if (hasDatabase()) {
+  setInterval(() => {
+    void atproto.refreshAll().then((r) => console.log(`atproto refresh: ${r.online}/${r.probed} online`)).catch((error: Error) => console.error(`atproto refresh failed: ${error.message}`));
+  }, 30 * 60_000).unref();
+}
 
 app.notFound((context) => context.json({ ok: false, error: "Not found" }, 404));
 
