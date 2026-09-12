@@ -80,6 +80,11 @@ test("every network maps to a kind, and the kinds carry the limits that were ask
 
   expect(templateLimits("blog", "htmlblog")).toMatchObject({ maxPerDay: 4, contentPolicy: "major-features-only" });
   expect(templateLimits("longform", "devto")).toMatchObject({ requiresCanonical: true });
+  // A board is four hours apart and six a day whatever `myna pace --gap` says:
+  // bbs.hqtui.com got topics 29 minutes apart on a 2h gap, and a board reads
+  // that as spam.
+  expect(templateLimits("forum", "tsbb")).toMatchObject({ maxPerDay: 6, minGapMinutes: 240 });
+  expect(templateLimits("forum", "reddit")).toMatchObject({ maxPerDay: 6, minGapMinutes: 240 });
   expect(templateLimits("social", "bluesky").maxChars).toBe(300);
   expect(templateLimits("social", "mastodon").maxChars).toBe(500);
   expect(templateLimits("social", "linkedin").maxChars).toBe(3000);

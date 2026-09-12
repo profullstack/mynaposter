@@ -89,6 +89,11 @@ const CHAR_CAPS: Record<string, number> = { bluesky: 300, mastodon: 500, linkedi
  * four a day is the one that bites, and it is the one that was asked for.
  * `minGapMinutes` is left out where the global gap should rule: a template
  * gap wider than `myna pace --gap` would silently slow every account down.
+ * The forum is the exception. A board reads a burst of topics from one
+ * member as spam whatever the global gap says, and it did: bbs.hqtui.com
+ * got two topics 29 minutes apart and three inside ten minutes on a day the
+ * gap had been set to 2h. So a board is four hours apart and six a day,
+ * whatever `myna pace` says, and a file can only tighten that.
  */
 export function templateLimits(kind: SkillKind, networkId: string, settings?: Pick<Settings, "blog">): SkillLimits {
   const charLimit = CHAR_CAPS[networkId] ?? getNetwork(networkId)?.caps.charLimit ?? 0;
@@ -103,7 +108,7 @@ export function templateLimits(kind: SkillKind, networkId: string, settings?: Pi
     case "longform":
       return { maxPerDay: 4, contentPolicy: "mirror-of-blog", requiresCanonical: true };
     case "forum":
-      return { maxPerDay: 8, contentPolicy: "announcements-and-replies" };
+      return { maxPerDay: 6, minGapMinutes: 240, contentPolicy: "announcements-and-replies" };
     case "youtube":
       return { maxPerDay: 5, minGapMinutes: 30, maxChars: 500, contentPolicy: "short-comments" };
     case "directory":
@@ -177,7 +182,7 @@ A post on a board opens a topic that other people reply to, so it should be some
 - Posts cycle through the forums chosen at login, one forum per post. Use --forum <slug> for a one-off detour without moving the cursor.
 - A title is required. myna derives one from the first sentence when none is given, so make the first sentence the headline.
 - Reply etiquette: answer replies in the thread rather than opening a new topic; do not bump your own topic; one topic per release, not one per forum.
-- At most ${limits.maxPerDay} new topics a day. Announcements go out through the drip like any social post.
+- At most ${limits.maxPerDay} new topics a day, and at least ${Math.round((limits.minGapMinutes ?? 240) / 60)} hours apart, whatever the global gap is. Announcements go out through the drip like any social post.
 
 ${HOUSE_STYLE}
 
