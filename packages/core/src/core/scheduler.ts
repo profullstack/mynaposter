@@ -14,7 +14,7 @@ import { loadSettings } from "../store/settings.ts";
 import { listHistory } from "../store/history.ts";
 import { pacingRules, planTargets } from "./pacing.ts";
 import { duplicateTitle, planLimitsFor } from "./skills.ts";
-import { bookingsForType, refusedTargets, typeCapFor } from "./post-types.ts";
+import { bookingsForType, isMirrorOfSent, refusedTargets, typeCapFor } from "./post-types.ts";
 
 export interface RunResult {
   post: QueuedPost;
@@ -109,7 +109,8 @@ export async function runDuePosts(now = new Date()): Promise<RunResult[]> {
     }
 
     const others = listQueue().filter((entry) => entry.id !== post.id);
-    const typeCap = post.type ? typeCapFor(post.type) : undefined;
+    // A canonical mirror of a post its type already sent is not counted against the type's day.
+    const typeCap = post.type && !isMirrorOfSent(post.type, post.extra?.canonicalUrl, history) ? typeCapFor(post.type) : undefined;
     const plan = planTargets({
       accounts: targeted,
       text: post.text,

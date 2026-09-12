@@ -17,7 +17,7 @@ import { getAccount } from "../store/accounts.ts";
 import { loadSettings } from "../store/settings.ts";
 import { pacingRules, planTargets, reflowQueue, type Plan, type Reflow } from "./pacing.ts";
 import { duplicateTitle, planLimitsFor, takeSkill, titleOf } from "./skills.ts";
-import { bookingsForType, defaultTypeFor, refuseTypeMismatch, typeCapFor } from "./post-types.ts";
+import { bookingsForType, defaultTypeFor, isMirrorOfSent, refuseTypeMismatch, typeCapFor } from "./post-types.ts";
 
 export interface ComposeOptions {
   text: string;
@@ -193,6 +193,7 @@ export async function postToAll(accounts: Account[], options: ComposeOptions): P
       type: options.type,
       postId: result.posts[0]?.id,
       url: result.posts[0]?.url,
+      canonicalUrl: options.extra?.canonicalUrl || undefined,
       error: result.error,
     })),
   );
@@ -251,7 +252,9 @@ export async function postPaced(accounts: Account[], options: ComposeOptions, pa
   refuseTypeMismatch(type, accounts);
   // A blog does not carry the same title twice, whatever the pacing says.
   refuseDuplicateTitles(accounts, options, history);
-  const typeCap = typeCapFor(type);
+  // A canonical mirror of a post this type already sent is not a new one:
+  // the original spent the type's budget, so the copy pointing at it passes.
+  const typeCap = isMirrorOfSent(type, options.extra?.canonicalUrl, history) ? undefined : typeCapFor(type);
   const plan = planTargets({
     accounts,
     text: options.text,
