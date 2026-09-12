@@ -28,7 +28,7 @@
         "myna": "./bin/myna.mjs",
       },
       "dependencies": {
-        "@profullstack/hqtui": "^0.1.9",
+        "@profullstack/hqtui": "^0.5.0",
         "@profullstack/myna-core": "workspace:*",
         "@profullstack/myna-plugin-calendar": "workspace:*",
         "@profullstack/myna-plugin-crawlproof": "workspace:*",
@@ -51,7 +51,7 @@
       "name": "@profullstack/myna-web",
       "version": "0.8.4",
       "dependencies": {
-        "@profullstack/hqtui": "^0.1.9",
+        "@profullstack/hqtui": "^0.5.0",
         "@profullstack/myna-core": "workspace:*",
       },
     },
@@ -207,7 +207,7 @@
 
     "@pkgjs/parseargs": ["@pkgjs/parseargs@0.11.0", "", {}, "sha512-+1VkjdD0QBLPodGrJUeqarH8VAIvQODIbwh9XpP5Syisf7YoQgsJKPNFoqqLQlu+VQ/tVSshMR6loPMn8U+dPg=="],
 
-    "@profullstack/hqtui": ["@profullstack/hqtui@0.1.9", "", { "bin": { "hqtui": "bin/hqtui.mjs" } }, "sha512-grOrw3KqbFTnjXKgMIa+HFiujVkdkEFScNSAnJ7GE/fGU6CVyowfw1wnKpFHt/Mv1A4n8QUTKJ3ws65tNKIvNg=="],
+    "@profullstack/hqtui": ["@profullstack/hqtui@0.5.0", "", { "bin": { "hqtui": "bin/hqtui.mjs" } }, "sha512-jDwILBmdQx8pQA0ao/tzzty8u5nFNS4XhvU9xXhZvdIaMeiF3HBJIVtP6cS6kigS4lXmHR7sztbb9QJpaWwhig=="],
 
     "@profullstack/myna": ["@profullstack/myna@workspace:apps/cli"],
 
