@@ -4,7 +4,7 @@
  * and --now only lifts the gates, never the duplicate rule.
  */
 import { test, expect } from "bun:test";
-import { planTargets, pacingRules, nextSlotFor, lastPerNetwork, bookingsPerNetwork, recentDuplicate, pastBookings, reflowQueue, DEFAULT_PACING } from "../src/core/pacing.ts";
+import { planTargets, pacingRules, nextSlotFor, nextUnderCap, bookingsPerAccount, lastPerNetwork, bookingsPerNetwork, recentDuplicate, pastBookings, reflowQueue, DEFAULT_PACING, DAY_MS } from "../src/core/pacing.ts";
 import type { Account } from "../src/net/types.ts";
 import type { HistoryEntry } from "../src/store/history.ts";
 import type { QueuedPost } from "../src/store/queue.ts";
@@ -246,4 +246,90 @@ test("a front post one minute into the gap does displace the head of the queue",
 test("pastBookings ignores the future, which is the whole trick", () => {
   const past = pastBookings([sent(x1, "earlier", 3 * H)], saturatedX, accountNetwork, NOW);
   expect(past.get("x")).toEqual([NOW - 3 * H]);
+});
+
+/* ------------------------------------------------- the skill's daily cap */
+
+const blog = acct("htmlblog", "dev.profullstack.com/~anthony/blog");
+const blogNetwork = (id: string) => (id === blog.id ? "htmlblog" : networks.get(id));
+const blogRules = { ...rules, minGapMs: H };
+const cap4 = (account: Account) => (account.id === blog.id ? { maxPerDay: 4 } : undefined);
+
+test("nextUnderCap: the day is full, so the answer is when its oldest post drops out of the window", () => {
+  const bookings = [NOW - 20 * H, NOW - 10 * H, NOW - 5 * H, NOW - 1 * H];
+  expect(nextUnderCap(NOW, bookings, 4)).toBe(NOW - 20 * H + DAY_MS);
+  expect(nextUnderCap(NOW, bookings, 5)).toBe(NOW);
+  expect(nextUnderCap(NOW, [], 1)).toBe(NOW);
+  // Full days in a row: the walk steps from one window to the next until one
+  // has room. (-20h,+4h] holds -10h and +3h; (-10h,+14h] holds +3h and +5h;
+  // (+3h,+27h] holds only +5h, so +27h is the answer.
+  const twoDays = [NOW - 30 * H, NOW - 28 * H, NOW - 20 * H, NOW - 10 * H, NOW + 3 * H, NOW + 5 * H];
+  expect(nextUnderCap(NOW, twoDays, 2)).toBe(NOW + 3 * H + DAY_MS);
+});
+
+test("bookingsPerAccount counts what landed and what is promised, never a failure", () => {
+  const history = [sent(blog, "a", 2 * H), sent(blog, "b", 3 * H, false)];
+  const queue = [queued(blog, NOW + 2 * H, "later"), queued(blog, NOW + 3 * H, "gone", "cancelled")];
+  expect(bookingsPerAccount(history, queue).get(blog.id)).toEqual([NOW - 2 * H, NOW + 2 * H]);
+});
+
+test("a fifth blog post in a day is held to the next day, not the next gap slot", () => {
+  // Four sent today, the oldest 20h ago; the network gap alone would let a
+  // fifth go in an hour.
+  const history = [sent(blog, "one", 20 * H), sent(blog, "two", 14 * H), sent(blog, "three", 8 * H), sent(blog, "four", 2 * H)];
+  const plan = planTargets({ accounts: [blog], text: "five", now: NOW, history, queue: [], rules: blogRules, accountNetwork: blogNetwork, order: stable, limitsFor: cap4 });
+  expect(plan.now).toEqual([]);
+  expect(plan.later).toHaveLength(1);
+  expect(plan.later[0].at).toBe(NOW - 20 * H + DAY_MS);
+  expect(plan.later[0].reason).toContain("4 a day");
+  // Without the cap the same post goes now.
+  const free = planTargets({ accounts: [blog], text: "five", now: NOW, history, queue: [], rules: blogRules, accountNetwork: blogNetwork, order: stable });
+  expect(free.now).toEqual([blog]);
+});
+
+test("pending entries earlier in the day count against the cap too", () => {
+  const history = [sent(blog, "one", 6 * H), sent(blog, "two", 4 * H)];
+  // Two more promised and already due (the daemon has not ticked yet).
+  const queue = [queued(blog, NOW - 3 * H, "three"), queued(blog, NOW - 2 * H, "four")];
+  const plan = planTargets({ accounts: [blog], text: "five", now: NOW, history, queue, rules: blogRules, accountNetwork: blogNetwork, order: stable, limitsFor: cap4 });
+  expect(plan.now).toEqual([]);
+  expect(plan.later[0].at).toBe(NOW - 6 * H + DAY_MS);
+});
+
+test("--now and --front open the gates but not the day's budget", () => {
+  const history = [sent(blog, "one", 20 * H), sent(blog, "two", 14 * H), sent(blog, "three", 8 * H), sent(blog, "four", 2 * H)];
+  const forced = planTargets({ accounts: [blog, bsky], text: "five", now: NOW, history, queue: [], rules: blogRules, accountNetwork: blogNetwork, order: stable, limitsFor: cap4, force: true });
+  expect(forced.now).toEqual([bsky]);
+  expect(forced.later.map((t) => [t.account.id, t.at])).toEqual([[blog.id, NOW - 20 * H + DAY_MS]]);
+  expect(forced.later[0].reason).toContain("4 a day");
+
+  const front = planTargets({ accounts: [blog], text: "five", now: NOW, history, queue: [], rules: blogRules, accountNetwork: blogNetwork, order: stable, limitsFor: cap4, front: true });
+  expect(front.now).toEqual([]);
+  expect(front.later[0].at).toBe(NOW - 20 * H + DAY_MS);
+});
+
+test("three blog posts under the cap go through untouched", () => {
+  const history = [sent(blog, "one", 20 * H), sent(blog, "two", 14 * H)];
+  const plan = planTargets({ accounts: [blog], text: "three", now: NOW, history, queue: [], rules: blogRules, accountNetwork: blogNetwork, order: stable, limitsFor: cap4 });
+  expect(plan.now).toEqual([blog]);
+});
+
+test("the pushed slot still clears the network gap, and the network gap does not re-fill the day", () => {
+  // The day frees at NOW+4h, but the blog network has a booking at NOW+4h30
+  // on another account, so the post lands one gap after that.
+  const blog2 = acct("htmlblog", "other");
+  const history = [sent(blog, "one", 20 * H), sent(blog, "two", 14 * H), sent(blog, "three", 8 * H), sent(blog, "four", 2 * H)];
+  const queue = [queued(blog2, NOW + 4.5 * H, "theirs")];
+  const nets = (id: string) => (id === blog.id || id === blog2.id ? "htmlblog" : undefined);
+  const plan = planTargets({ accounts: [blog], text: "five", now: NOW, history, queue, rules: blogRules, accountNetwork: nets, order: stable, limitsFor: cap4 });
+  expect(plan.later[0].at).toBe(NOW + 5.5 * H);
+});
+
+test("a skill's wider gap widens the network gap for that account, and a narrower one is ignored", () => {
+  const history = [sent(bsky, "earlier", 1 * H)];
+  const wide = planTargets({ accounts: [bsky], text: "hi", now: NOW, history, queue: [], rules, accountNetwork, order: stable, limitsFor: () => ({ minGapMs: 10 * H }) });
+  expect(wide.later[0].at).toBe(NOW + 9 * H);
+  expect(wide.later[0].reason).toContain("10h gap");
+  const narrow = planTargets({ accounts: [bsky], text: "hi", now: NOW, history, queue: [], rules, accountNetwork, order: stable, limitsFor: () => ({ minGapMs: 1 * H }) });
+  expect(narrow.later[0].at).toBe(NOW + 3 * H);
 });

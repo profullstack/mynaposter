@@ -298,6 +298,40 @@ you are commenting on rather than pasting one line everywhere: a comment that
 answers what the video is about, with your link, lands. The same one pasted
 under twenty videos disappears.
 
+## Skills: the rules per network and per account
+
+Every network and every account gets a `skill.md`: a Markdown file with
+frontmatter, the shape an agent loads as a skill, kept under
+`~/.config/myna/skills/<network>/skill.md` and
+`~/.config/myna/skills/<network>/<account>/skill.md`. The body says what
+belongs there and in what voice; the frontmatter carries limits myna itself
+enforces: `maxPerDay`, `minGapMinutes`, `maxChars`, `requiresCanonical`,
+`contentPolicy`. An account's skill inherits from its network's, with the
+stricter value winning.
+
+The blog template is the reason this exists: **four posts a day, major feature
+announcements and launches only**, no bug-fix stories, no re-sends, never a
+title the blog already carries. myna holds a fifth post to the next day and
+refuses a duplicate title outright (`--allow-duplicate` if you mean it).
+
+```bash
+myna skill list                                   # every network and account, which skill is on
+myna skill show htmlblog                          # the blog's rules
+myna skill show htmlblog:dev.profullstack.com/~anthony/blog
+myna skill init                                   # write the missing files; --force rewrites all
+myna skill add bluesky:alice launch-week --from launch-week.md
+myna skill default bluesky:alice launch-week      # pin one; or rotate bluesky:alice on
+```
+
+An account can hold several skills: pin one, or turn rotation on and each send
+takes the next in turn. The cursor lives in settings, never in the files, and
+each history entry records the skill it used. myna writes a file only when it
+is absent, so what you edit stays edited.
+
+Agents should read the account's skill before posting: `myna skill show`,
+`GET /:network/:account/skill.md` on the dashboard, or the `myna_skill` MCP
+tool. The full mechanism is in [docs/skills.md](docs/skills.md).
+
 ## The TUI
 
 ```
@@ -343,10 +377,11 @@ myna following <account> [handle] myna graph <subcommand>
 myna plugins [add|remove]         myna outreachgraph <subcommand>
 myna crawlproof <subcommand>      myna calendar <subcommand>
 myna directory <id> <url>         myna directory listings [id]
+myna skill list | show | init     myna skill add | default | rotate
 ```
 
 Flags: `--to`, `--title`, `--media`, `--style`, `--json`, `--dry-run`,
-`--no-thread`, `--limit`, `--force`. Any other `--flag value` is handed to the
+`--no-thread`, `--limit`, `--force`, `--allow-duplicate`. Any other `--flag value` is handed to the
 network as an option: `--video` and `--reply-to` for YouTube, `--subreddit` for
 Reddit, `--privacy` for an upload.
 
@@ -682,11 +717,14 @@ bun run db:migrate
 { "mcpServers": { "myna": { "command": "bunx", "args": ["@profullstack/myna-mcp"] } } }
 ```
 
-Fifteen tools: `myna_accounts`, `myna_networks`, `myna_preview`, `myna_post`,
-`myna_schedule`, `myna_queue`, `myna_cancel`, `myna_history`, `myna_draft`,
-`myna_timeline`, `myna_search`, and for [directories](#directories)
-`myna_directories`, `myna_directory_preview`, `myna_directory_submit` and
-`myna_directory_listings`.
+Seventeen tools: `myna_accounts`, `myna_networks`, `myna_skills`,
+`myna_skill`, `myna_preview`, `myna_post`, `myna_schedule`, `myna_queue`,
+`myna_cancel`, `myna_history`, `myna_draft`, `myna_timeline`, `myna_search`,
+and for [directories](#directories) `myna_directories`,
+`myna_directory_preview`, `myna_directory_submit` and
+`myna_directory_listings`. An agent should call `myna_skill` for an account
+before `myna_post` to it: the [skill](#skills-the-rules-per-network-and-per-account)
+says what belongs there and how often.
 
 There is deliberately no login tool, for a network or a directory. Connecting
 one means typing a password, completing a browser flow or reading a code out of
@@ -711,7 +749,8 @@ mention. Run `railway config plan` and read the destroy count before applying.
   queue.json      scheduled posts
   history.json    what was sent
   graph.json      follow graph: seeds, candidates, and every follow sent
-  settings.json   preferences
+  settings.json   preferences, and which skill each account is on
+  skills/         the rules per network and per account, as skill.md files
   plugins/        plugins installed with `myna plugins add`
 ```
 

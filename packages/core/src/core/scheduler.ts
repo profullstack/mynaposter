@@ -13,6 +13,7 @@ import { loadAllMedia } from "./media.ts";
 import { loadSettings } from "../store/settings.ts";
 import { listHistory } from "../store/history.ts";
 import { pacingRules, planTargets } from "./pacing.ts";
+import { duplicateTitle, planLimitsFor } from "./skills.ts";
 
 export interface RunResult {
   post: QueuedPost;
@@ -75,15 +76,33 @@ export async function runDuePosts(now = new Date()): Promise<RunResult[]> {
     // all`) is split so they do not land together. --now on the entry is
     // honoured, duplicates are dropped.
     const settings = loadSettings();
+    const history = listHistory();
+
+    // A blog post whose title went out since this was queued is the re-send
+    // the skill forbids. It is dropped with the reason, never published.
+    if (post.extra?.allowDuplicate !== "true") {
+      const repeat = targeted.map((account) => ({ account, earlier: duplicateTitle(account, post.text, post.title, history) })).find((row) => row.earlier);
+      if (repeat?.earlier) {
+        updateQueued(post.id, {
+          status: "cancelled",
+          lastError: `${repeat.account.id} already carried this title on ${repeat.earlier.at.slice(0, 10)}${repeat.earlier.url ? ` (${repeat.earlier.url})` : ""}`,
+        });
+        continue;
+      }
+    }
+
     const plan = planTargets({
       accounts: targeted,
       text: post.text,
       now: now.getTime(),
       force: post.extra?.now === "true",
-      history: listHistory(),
+      history,
       queue: listQueue().filter((entry) => entry.id !== post.id),
       rules: pacingRules(settings.pacing),
       accountNetwork: (id) => getAccount(id)?.network,
+      // The skill's daily cap holds at send time too: a queue built before the
+      // cap existed still cannot put a fifth post on the blog today.
+      limitsFor: (account) => planLimitsFor(account, settings),
     });
     for (const target of plan.later) {
       if (plan.now.length || plan.later[0] !== target) {

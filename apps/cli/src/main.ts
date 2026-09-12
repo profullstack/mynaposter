@@ -48,7 +48,18 @@ Posting:
        [--to all] [--every 7d]      --to, with a CrawlProof ad. --off stops it
   queue                             Show scheduled posts
   cancel <id>                       Remove a scheduled post
-  history                           What was posted, and what failed
+  history                           What was posted, and what failed, and
+                                    which skill each post used
+  skill                             The rules per network and per account,
+                                    as skill.md files myna enforces: a daily
+                                    cap, a gap, a content policy
+    skill list                      Every network and account, which skill is on
+    skill show <network[:account]>  Print one (an agent should read it first)
+    skill init [--force]            Write the missing files from the templates
+    skill path <network[:account]>  Where the file is
+    skill add <account> <slug>      Another skill, from --from <file> or stdin
+    skill default <account> <slug>  Pin one; rotate <account> on|off takes turns
+    skill remove <account> <slug>
   recap [--days 1] [--send]         The last day and the next: what was sent,
   recap on --to you@example.com     what failed, what is booked. "on" mails it
        [--at 08:00]                 daily from the daemon; "off" stops it
@@ -141,6 +152,7 @@ Flags:
   --force           graph follow: ignore the hourly and daily limits.
                     graph expand: re-read seeds read recently
   --no-thread       Truncate instead of splitting into a thread
+  --allow-duplicate Publish to a blog even though it already carries that title
   --overwrite       On load, replace accounts that already exist here
   --settings        On load, take the bundle's settings too
   --yes             Skip the confirmation on load
@@ -150,6 +162,7 @@ Examples:
   myna login tsbb https://bbs.hqtui.com/ --forum app-showcase
   myna update                        # or: myna update --check
   myna post all "the release notes are up"
+  myna skill show htmlblog           # the blog's rules: 4 a day, major features only
   echo "shipping today" | myna post bluesky,mastodon
   myna link https://example.com/blog/post --to all
   myna schedule "tomorrow 9am" "good morning" --to mastodon

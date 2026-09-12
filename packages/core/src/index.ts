@@ -105,7 +105,7 @@ export {
   type EngagementRecord,
 } from "./core/analytics.ts";
 export { refreshEngagement, type RefreshResult } from "./core/refresh.ts";
-export { loadSettings, saveSettings, DEFAULT_SETTINGS, type Settings, type CustomDirectorySetting } from "./store/settings.ts";
+export { loadSettings, saveSettings, DEFAULT_SETTINGS, type Settings, type CustomDirectorySetting, type SkillSettings } from "./store/settings.ts";
 export {
   collect,
   seal,
@@ -120,8 +120,65 @@ export {
 export { vaultExists, vaultMode, rekeyVault, VaultLockedError } from "./util/crypto/vault.ts";
 export * as cloud from "./store/cloud.ts";
 
-export { postToAll, postPaced, tailor, charsFor, summarize, type ComposeOptions, type TargetResult, type PostOutcome, type PacedOptions, type PacedOutcome } from "./core/poster.ts";
-export { planTargets, pacingRules, nextSlotFor, lastPerNetwork, bookingsPerNetwork, recentDuplicate, describeMs, DEFAULT_PACING, type PacingSettings, type PacingRules, type Plan, type PlannedTarget } from "./core/pacing.ts";
+export { postToAll, postPaced, refuseDuplicateTitles, tailor, charsFor, summarize, type ComposeOptions, type TargetResult, type PostOutcome, type PacedOptions, type PacedOutcome } from "./core/poster.ts";
+export {
+  planTargets,
+  pacingRules,
+  nextSlotFor,
+  nextUnderCap,
+  lastPerNetwork,
+  bookingsPerNetwork,
+  bookingsPerAccount,
+  recentDuplicate,
+  describeMs,
+  DEFAULT_PACING,
+  DAY_MS,
+  type PacingSettings,
+  type PacingRules,
+  type Plan,
+  type PlannedTarget,
+  type AccountLimits,
+} from "./core/pacing.ts";
+export {
+  TEMPLATE_VERSION,
+  DEFAULT_SKILL_SLUG,
+  skillKindFor,
+  templateLimits,
+  networkTemplate,
+  accountTemplate,
+  profileUrlFor,
+  ensureNetworkSkill,
+  ensureAccountSkill,
+  initSkills,
+  readNetworkSkill,
+  listAccountSkills,
+  readAccountSkill,
+  addAccountSkill,
+  removeAccountSkill,
+  pinDefaultSkill,
+  setRotation,
+  selectSkill,
+  takeSkill,
+  resolveSkill,
+  mergeLimits,
+  planLimitsFor,
+  titleOf,
+  duplicateTitle,
+  skillTargets,
+  findSkillTarget,
+  directoryAsAccount,
+  handleSlug,
+  safeSlug,
+  type SkillFile,
+  type SkillFrontmatter,
+  type SkillKind,
+  type SkillLimits,
+  type Selection,
+  type ResolvedSkill,
+  type ResolvedLimits,
+  type InitResult,
+} from "./core/skills.ts";
+export { parseSkill, serializeSkill, skillsDir, networkSkillPath, accountSkillPath, accountSkillDir, listSkillNetworks, listSkillAccountDirs, SKILLS_DIR } from "./store/skills.ts";
 export { runEvergreen, pickEvergreen, evergreenText, lastEvergreen, DEFAULT_EVERGREEN, EVERGREEN_MARK, type EvergreenSettings, type EvergreenRun, type EvergreenPick } from "./core/evergreen.ts";
 export {
   buildRecap,

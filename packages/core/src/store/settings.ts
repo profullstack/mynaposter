@@ -53,6 +53,14 @@ export interface Settings {
   evergreen: EvergreenSettings;
   /** One email a day: what went out, what failed, what is booked next. */
   recap: RecapSettings;
+  /**
+   * Caps that live outside the skill files. `maxPerDay` here stands in for the
+   * blog template's default when no skill file names a value; a value in a
+   * skill file always wins over it.
+   */
+  blog: { maxPerDay?: number };
+  /** Which skill each account uses, and where its rotation stands. */
+  skills: SkillSettings;
   /** Plugin specs: an absolute path, or a package name installed by `myna plugins add`. */
   plugins: string[];
   /**
@@ -61,6 +69,20 @@ export interface Settings {
    * every other credential.
    */
   directories: CustomDirectorySetting[];
+}
+
+/**
+ * Skill selection per account id. The skills themselves are files under
+ * skills/; this is only the pointer into them, kept here so editing a skill
+ * never moves the cursor and moving the cursor never rewrites a skill.
+ */
+export interface SkillSettings {
+  /** Pinned default slug per account. Absent means the generated `skill`. */
+  defaults: Record<string, string>;
+  /** Accounts that rotate through every skill they have, in order. */
+  rotate: Record<string, boolean>;
+  /** The slug each rotating account used last. */
+  cursor: Record<string, string>;
 }
 
 /** A directory reached generically over MCP, as it is stored. */
@@ -101,6 +123,8 @@ export const DEFAULT_SETTINGS: Settings = {
   pacing: { ...DEFAULT_PACING },
   evergreen: { ...DEFAULT_EVERGREEN },
   recap: { ...DEFAULT_RECAP },
+  blog: {},
+  skills: { defaults: {}, rotate: {}, cursor: {} },
   plugins: [],
   directories: [],
 };
@@ -116,6 +140,12 @@ export function loadSettings(): Settings {
     pacing: { ...DEFAULT_SETTINGS.pacing, ...stored.pacing },
     evergreen: { ...DEFAULT_SETTINGS.evergreen, ...stored.evergreen },
     recap: { ...DEFAULT_SETTINGS.recap, ...stored.recap },
+    blog: { ...DEFAULT_SETTINGS.blog, ...stored.blog },
+    skills: {
+      defaults: { ...(stored.skills?.defaults ?? {}) },
+      rotate: { ...(stored.skills?.rotate ?? {}) },
+      cursor: { ...(stored.skills?.cursor ?? {}) },
+    },
     plugins: Array.isArray(stored.plugins) ? stored.plugins.filter((entry) => typeof entry === "string") : [],
   };
 }

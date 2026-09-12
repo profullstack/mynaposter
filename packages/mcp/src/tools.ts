@@ -30,6 +30,16 @@ import {
   directoryStatus,
   requireDirectory,
   requireDirectoryAccount,
+  findSkillTarget,
+  listDirectoryAccounts,
+  readAccountSkill,
+  readNetworkSkill,
+  resolveSkill,
+  selectSkill,
+  skillKindFor,
+  skillTargets,
+  getNetwork,
+  getDirectory,
   type ListingInput,
 } from "@profullstack/myna-core";
 
@@ -52,6 +62,32 @@ export const TOOLS = [
       "List the social accounts connected to this machine. Returns ids you can pass as a target. " +
       "Never returns credentials. Start here: posting to an account that is not connected will fail.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
+  },
+  {
+    name: "myna_skills",
+    description:
+      "List the skill files on this machine: one per network and one or more per account, each a Markdown " +
+      "file with frontmatter carrying the rules and the limits myna enforces (maxPerDay, minGapMinutes, " +
+      "maxChars, requiresCanonical, contentPolicy). Shows which skill each account is on. Read the account's " +
+      "skill with myna_skill before posting to it.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+  },
+  {
+    name: "myna_skill",
+    description:
+      "Read the rules for posting somewhere, as a skill: the account's selected skill followed by its " +
+      "network's skill, plus the merged limits. Call this before myna_post to an account, and follow it. " +
+      "A blog's skill, for instance, allows four posts a day, major features only, and never a title the " +
+      "blog already carries. Reading never changes which skill is selected.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        account: { type: "string", description: 'An account id ("htmlblog:dev.profullstack.com/~anthony/blog") or network:handle-slug, from myna_skills.' },
+        network: { type: "string", description: 'A network id ("htmlblog") for the network-level skill alone.' },
+        slug: { type: "string", description: "One particular skill of the account, by slug, instead of the selected one." },
+      },
+      additionalProperties: false,
+    },
   },
   {
     name: "myna_networks",
@@ -89,6 +125,10 @@ export const TOOLS = [
         to: { type: "string", description: TARGET_DESCRIPTION },
         title: { type: "string", description: "Title, required by Reddit, Lemmy and the blog targets." },
         thread: { type: "boolean", description: "Split over-limit text into a reply chain instead of truncating." },
+        allow_duplicate: {
+          type: "boolean",
+          description: "Blogs only: publish even though the blog already carries a post with this title. Almost never right.",
+        },
         video: {
           type: "string",
           description: "YouTube only: the video id or URL to comment on. Get ids from myna_search. Without it a YouTube target fails.",
@@ -305,6 +345,62 @@ export async function callTool(name: string, args_: Record<string, unknown> = {}
         return text(accounts);
       }
 
+      case "myna_skills": {
+        const settings = loadSettings();
+        const targets = skillTargets(listAccounts(), listDirectoryAccounts());
+        const networks = [...new Set(targets.map((target) => target.network))].sort();
+        return text({
+          networks: networks.map((network) => {
+            const skill = readNetworkSkill(network);
+            return { network, kind: skillKindFor(network), path: skill.path, name: skill.frontmatter.name };
+          }),
+          accounts: targets.map((target) => {
+            const selection = selectSkill(target, settings);
+            const resolved = resolveSkill(target, { settings, selected: selection.skill });
+            const { sources, ...limits } = resolved.limits;
+            return {
+              account: target.id,
+              network: target.network,
+              kind: resolved.kind,
+              selected: selection.skill.slug,
+              rotating: selection.rotating,
+              skills: selection.all.map((file) => file.slug),
+              limits,
+            };
+          }),
+        });
+      }
+
+      case "myna_skill": {
+        const settings = loadSettings();
+        if (args.account) {
+          const target = findSkillTarget(args.account, skillTargets(listAccounts(), listDirectoryAccounts()));
+          if (!target) throw new Error(`No connected account matches "${args.account}". Call myna_skills for the ids.`);
+          const selection = selectSkill(target, settings);
+          const chosen = args.slug ? readAccountSkill(target, args.slug, { materialise: true }) : (readAccountSkill(target, selection.skill.slug, { materialise: true }) ?? selection.skill);
+          if (!chosen) throw new Error(`${target.id} has no skill called "${args.slug}".`);
+          const resolved = resolveSkill(target, { settings, selected: chosen });
+          const { sources, ...limits } = resolved.limits;
+          return text({
+            account: target.id,
+            network: target.network,
+            kind: resolved.kind,
+            slug: chosen.slug,
+            rotating: selection.rotating,
+            limits,
+            skill: chosen.raw || `${chosen.body}\n`,
+            networkSkill: resolved.networkSkill.raw || `${resolved.networkSkill.body}\n`,
+            instructions: resolved.body,
+          });
+        }
+        if (args.network) {
+          const id = getNetwork(args.network)?.id ?? getDirectory(args.network)?.id ?? args.network;
+          const skill = readNetworkSkill(id, { materialise: true });
+          return text({ network: id, kind: skillKindFor(id), path: skill.path, frontmatter: skill.frontmatter, skill: skill.raw || `${skill.body}\n` });
+        }
+        throw new Error("Give an account (an id from myna_skills) or a network.");
+      }
+
       case "myna_networks":
         return text(
           NETWORKS.map((network) => ({
@@ -351,12 +447,14 @@ export async function callTool(name: string, args_: Record<string, unknown> = {}
           });
         }
 
+        if (args.allow_duplicate) extra.allowDuplicate = "true";
         const paced = await postPaced(targets, {
           text: args.text,
           title: args.title,
           thread: args.thread ?? loadSettings().threadByDefault,
           signature: loadSettings().signature || undefined,
           extra: Object.keys(extra).length ? extra : undefined,
+          allowDuplicate: Boolean(args.allow_duplicate),
         }, { force: Boolean(args.now) });
         const results = paced.results;
 
@@ -367,8 +465,9 @@ export async function callTool(name: string, args_: Record<string, unknown> = {}
             ok: result.ok,
             url: result.posts[0]?.url,
             error: result.error,
+            skill: result.skill,
           })),
-          queued: paced.queued.map((entry) => ({ id: entry.id, account: entry.targets[0], at: entry.scheduledFor })),
+          queued: paced.queued.map((entry) => ({ id: entry.id, account: entry.targets[0], at: entry.scheduledFor, reason: paced.plan.later.find((t) => t.account.id === entry.targets[0])?.reason })),
           skipped: paced.skipped.map((entry) => ({ account: entry.account.id, reason: entry.reason })),
         });
       }

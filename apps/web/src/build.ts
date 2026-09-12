@@ -353,14 +353,25 @@ The rest take a token or app keys you paste in.
 myna login <network>       connect an account
 myna post [target] [text]  post now; target is "all", a network, or an account id
 myna schedule <when> [text]  queue for later
+myna skill show <target>   the rules for a network or an account, as a skill
 myna link <url>            read a link and draft a post about it
 myna infographic <input>   build a graphic to attach
 myna run                   run the scheduler as a daemon
 
+## Skills: read these first
+
+Every network and every account has a skill.md, a Markdown file with frontmatter that says what
+belongs there and carries the limits myna enforces (maxPerDay, minGapMinutes, maxChars,
+requiresCanonical, contentPolicy). They live in ~/.config/myna/skills/<network>/skill.md and
+~/.config/myna/skills/<network>/<account>/skill.md. An agent should read the account's skill,
+then the network's, before posting: \`myna skill show <network:account>\`, GET
+/<network>/<account>/skill.md on the local dashboard, or the myna_skill MCP tool. A blog's skill
+allows four posts a day, major feature announcements only, and never a title it already carries.
+
 ## MCP
 
-The package @profullstack/myna-mcp exposes myna_accounts, myna_networks, myna_preview,
-myna_post, myna_schedule, myna_queue, myna_cancel, myna_history, myna_draft,
+The package @profullstack/myna-mcp exposes myna_accounts, myna_networks, myna_skills, myna_skill,
+myna_preview, myna_post, myna_schedule, myna_queue, myna_cancel, myna_history, myna_draft,
 myna_timeline and myna_search. There is deliberately no login tool: connecting an account needs a
 password or a browser flow and belongs to a person.
 `,

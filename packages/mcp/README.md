@@ -21,6 +21,8 @@ handed a credential.
 |---|---|
 | `myna_accounts` | Connected accounts and their ids. No credentials. |
 | `myna_networks` | Every supported network, how it logs in, its limit. |
+| `myna_skills` | The skill files: one per network, one or more per account, with the limits myna enforces. |
+| `myna_skill` | One account's skill, its network's, and the merged limits. Read it before `myna_post`. |
 | `myna_preview` | What each target would receive. Sends nothing. |
 | `myna_post` | Publish now. |
 | `myna_schedule` | Queue for later. |

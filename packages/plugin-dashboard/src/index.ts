@@ -11,21 +11,77 @@
  * history, so putting it on a public interface would be handing that to anyone
  * who found the port; there is no token and no login because there is no
  * network exposure to guard.
+ *
+ * It also serves the skill files, so an agent on this machine can read an
+ * account's rules over HTTP before posting:
+ *
+ *   GET /skills                                 index, as Markdown (/skills.json for JSON)
+ *   GET /:network/skill.md                      the network's skill
+ *   GET /:network/:account/skill.md             the account's selected skill
+ *   GET /:network/:account/skills/              the account's skills, as Markdown
+ *   GET /:network/:account/skills/:slug.md      one of them
+ *
+ * `:account` is the handle as a path segment (`myna skill list` prints it).
+ * Reading never moves a rotation cursor; only a send does that.
  */
 import {
+  findSkillTarget,
   listAccounts,
+  listDirectoryAccounts,
   listEngagement,
   listHistory,
   listQueue,
   loadSettings,
   openBrowser,
+  readAccountSkill,
+  readNetworkSkill,
+  resolveSkill,
+  selectSkill,
+  skillKindFor,
+  skillTargets,
+  handleSlug,
+  getNetwork,
+  getDirectory,
+  type Account,
   type MynaPlugin,
   type PluginContext,
+  type Settings,
 } from "@profullstack/myna-core";
-import { readSnapshot, type Snapshot } from "./snapshot.ts";
+import { readSnapshot, type Snapshot, type SnapshotInput } from "./snapshot.ts";
 import { page } from "./page.ts";
 
 export const DEFAULT_PORT = 7777;
+
+type Target = Pick<Account, "id" | "network" | "handle" | "addedAt" | "meta" | "displayName">;
+
+/** The route that serves an account's skill, from its parts. */
+export function skillRoute(network: string, handle: string, slug?: string): string {
+  const base = `/${encodeURIComponent(network)}/${encodeURIComponent(handleSlug(handle))}`;
+  return slug ? `${base}/skills/${encodeURIComponent(slug)}.md` : `${base}/skill.md`;
+}
+
+/** Each account's skill and limits, for the snapshot. Pure given the targets and settings. */
+export function skillRows(targets: Target[], settings: Settings): SnapshotInput["skills"] {
+  return targets.map((target) => {
+    const selection = selectSkill(target, settings);
+    const resolved = resolveSkill(target, { settings, selected: selection.skill });
+    return {
+      accountId: target.id,
+      network: target.network,
+      kind: resolved.kind,
+      selected: selection.skill.slug,
+      rotating: selection.rotating,
+      skills: selection.all.map((file) => file.slug),
+      maxPerDay: resolved.limits.maxPerDay,
+      minGapMinutes: resolved.limits.minGapMinutes,
+      maxChars: resolved.limits.maxChars,
+      contentPolicy: resolved.limits.contentPolicy,
+      path: skillRoute(target.network, target.handle),
+    };
+  });
+}
+
+const allTargets = (): Target[] => skillTargets(listAccounts(), listDirectoryAccounts());
 
 /** One snapshot from the live stores. */
 export function snapshot(now?: number): Snapshot {
@@ -35,6 +91,7 @@ export function snapshot(now?: number): Snapshot {
     accounts: listAccounts,
     engagement: listEngagement,
     settings: loadSettings,
+    skills: (_accounts, settings) => skillRows(allTargets(), settings),
     now,
   });
 }
@@ -45,8 +102,120 @@ const json = (body: unknown, status = 200): Response =>
     headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" },
   });
 
+const markdown = (body: string, status = 200): Response =>
+  new Response(body.endsWith("\n") ? body : `${body}\n`, {
+    status,
+    headers: { "content-type": "text/markdown; charset=utf-8", "cache-control": "no-store" },
+  });
+
+/** What the dashboard reads for the skill routes. Swapped in tests. */
+export interface SkillSources {
+  targets: () => Target[];
+  settings: () => Settings;
+}
+
+const liveSources: SkillSources = { targets: allTargets, settings: loadSettings };
+
+/** The Markdown index of every skill on this machine. */
+export function skillsIndex(sources: SkillSources = liveSources): string {
+  const targets = sources.targets();
+  const settings = sources.settings();
+  const networks = [...new Set(targets.map((target) => target.network))].sort();
+  const lines = [
+    "# myna skills",
+    "",
+    "The rules for each place this machine posts to. Read the account's skill, then the network's, before posting there.",
+    "",
+    "## Networks",
+    "",
+    ...networks.map((network) => `- [${network}](/${encodeURIComponent(network)}/skill.md) (${skillKindFor(network)})`),
+    "",
+    "## Accounts",
+    "",
+  ];
+  for (const target of targets) {
+    const selection = selectSkill(target, settings);
+    const resolved = resolveSkill(target, { settings, selected: selection.skill });
+    const limits = [
+      resolved.limits.maxPerDay !== undefined ? `${resolved.limits.maxPerDay}/day` : "",
+      resolved.limits.maxChars !== undefined ? `${resolved.limits.maxChars} chars` : "",
+      resolved.limits.contentPolicy ?? "",
+    ]
+      .filter(Boolean)
+      .join(", ");
+    lines.push(`- [${target.id}](${skillRoute(target.network, target.handle)}) using \`${selection.skill.slug}\`${selection.rotating ? " (rotating)" : ""}${limits ? `: ${limits}` : ""}`);
+    if (selection.all.length > 1) {
+      lines.push(`  - all: ${selection.all.map((file) => `[${file.slug}](${skillRoute(target.network, target.handle, file.slug)})`).join(", ")}`);
+    }
+  }
+  return lines.join("\n");
+}
+
+/** The skill routes. Returns undefined when the path is not one of them. */
+export function handleSkillRoute(pathname: string, sources: SkillSources = liveSources): Response | undefined {
+  if (pathname === "/skills" || pathname === "/skills/" || pathname === "/skills.md") return markdown(skillsIndex(sources));
+  if (pathname === "/skills.json") {
+    const settings = sources.settings();
+    return json({ skills: skillRows(sources.targets(), settings) });
+  }
+  const parts = pathname.split("/").filter(Boolean).map((part) => {
+    try {
+      return decodeURIComponent(part);
+    } catch {
+      return part;
+    }
+  });
+  if (parts.length < 2) return undefined;
+  const network = parts[0];
+
+  // /:network/skill.md
+  if (parts.length === 2 && parts[1] === "skill.md") {
+    const targets = sources.targets();
+    const known = getNetwork(network) || getDirectory(network) || targets.some((target) => target.network === network);
+    if (!known) return markdown(`No network called "${network}".`, 404);
+    const skill = readNetworkSkill(network, { materialise: true });
+    return markdown(skill.raw);
+  }
+
+  const target = findSkillTarget(`${network}:${parts[1]}`, sources.targets());
+  if (!target) {
+    if (parts[parts.length - 1] === "skill.md" || parts.includes("skills")) return markdown(`No connected account matches "${network}:${parts[1]}".`, 404);
+    return undefined;
+  }
+  const settings = sources.settings();
+
+  // /:network/:account/skill.md
+  if (parts.length === 3 && parts[2] === "skill.md") {
+    const selection = selectSkill(target, settings);
+    const chosen = readAccountSkill(target, selection.skill.slug, { materialise: true }) ?? selection.skill;
+    return markdown(chosen.raw || `${chosen.body}\n`);
+  }
+  // /:network/:account/skills/
+  if (parts.length === 3 && parts[2] === "skills") {
+    const selection = selectSkill(target, settings);
+    const lines = [
+      `# ${target.id}`,
+      "",
+      `Using \`${selection.skill.slug}\`${selection.rotating ? ` (rotating${selection.last ? `, last ${selection.last}` : ""})` : selection.pinned ? ` (pinned)` : ""}.`,
+      "",
+      ...selection.all.map((file) => `- [${file.slug}](${skillRoute(target.network, target.handle, file.slug)})${file.slug === selection.skill.slug ? " (selected)" : ""}`),
+      "",
+      `Network skill: [${target.network}](/${encodeURIComponent(target.network)}/skill.md)`,
+    ];
+    return markdown(lines.join("\n"));
+  }
+  // /:network/:account/skills/:slug.md
+  if (parts.length === 4 && parts[2] === "skills" && parts[3].endsWith(".md")) {
+    const slug = parts[3].replace(/\.md$/, "");
+    const file = readAccountSkill(target, slug, { materialise: true });
+    if (!file) return markdown(`${target.id} has no skill called "${slug}".`, 404);
+    return markdown(file.raw || `${file.body}\n`);
+  }
+  return undefined;
+}
+
 /** Route one request. Exported so a test can drive it without a socket. */
-export function handle(request: Request): Response {
+export function handle(request: Request, sources?: SkillSources): Response {
   const { pathname } = new URL(request.url);
   if (pathname === "/api/snapshot") {
     try {
@@ -58,6 +227,12 @@ export function handle(request: Request): Response {
   }
   if (pathname === "/" || pathname === "/index.html") {
     return new Response(page(), { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } });
+  }
+  try {
+    const skill = handleSkillRoute(pathname, sources);
+    if (skill) return skill;
+  } catch (error) {
+    return markdown((error as Error).message, 503);
   }
   return new Response("Not found", { status: 404 });
 }
@@ -97,7 +272,7 @@ const dashboard: MynaPlugin = {
         // real message here rather than a broken page in a browser tab.
         snapshot();
 
-        const server = Bun.serve({ port, hostname: "127.0.0.1", fetch: handle });
+        const server = Bun.serve({ port, hostname: "127.0.0.1", fetch: (request) => handle(request) });
         const url = `http://127.0.0.1:${server.port}`;
         ctx.out(`Dashboard on ${url}`);
         ctx.out("Reading the queue, the history and the pacing rules. Ctrl+C to stop.");
@@ -125,5 +300,5 @@ const dashboard: MynaPlugin = {
 
 export default dashboard;
 export { buildSnapshot, readSnapshot, slotFor, horizonFor, NETWORK_SLOT_ORDER } from "./snapshot.ts";
-export type { Snapshot, NetworkState, QueueRow, HistoryRow } from "./snapshot.ts";
+export type { Snapshot, NetworkState, QueueRow, HistoryRow, SkillSummary } from "./snapshot.ts";
 export { page } from "./page.ts";
