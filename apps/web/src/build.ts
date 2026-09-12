@@ -437,12 +437,18 @@ password or a browser flow and belongs to a person.
 
 mkdirSync(join(out, "brand"), { recursive: true });
 mkdirSync(join(out, "icons"), { recursive: true });
+// The OpenMCP descriptor (https://logicsrc.com/openmcp): where the MCP
+// endpoint is and how to authenticate to it, so a catalog probing this host
+// can list it as verified. Copied byte for byte, because that is what the
+// catalog compares against. The API serves the same file at its own origin.
+mkdirSync(join(out, ".well-known"), { recursive: true });
 for (const asset of [
   "manifest.json", "browserconfig.xml",
   // The icon set for every platform, generated from favicon.png with
   // @profullstack/favicon-generator.
   ...readdirSync(join(root, "assets", "icons")).map((name) => `icons/${name}`),
   "site.css", "site.js", "favicon.svg", "favicon.png", "apple-touch-icon.png", "og.png", "install.sh", "oauth-callback.js",
+  ".well-known/openmcp.json",
   // The logo in every form someone might need to reuse it: the bare mark,
   // and the mark with the wordmark for dark and light backgrounds.
   "brand/myna-mark.svg", "brand/myna-mark-1024.png", "brand/myna-mark-512.png", "brand/myna-mark-256.png",

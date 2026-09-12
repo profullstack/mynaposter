@@ -7,6 +7,7 @@
  */
 import { Hono } from "hono";
 import { timingSafeEqual, createHash } from "node:crypto";
+import { readFileSync } from "node:fs";
 import { hasDatabase, migrate, closeDatabase } from "./db/index.ts";
 import { startScheduler, configDir, availableRasterizers, writerAvailable } from "@profullstack/myna-core";
 import * as service from "./service.ts";
@@ -101,6 +102,31 @@ app.post("/api/mcp", async (context) => {
   const reply = await handleMcpBody(body);
   // A notification gets no body at all, which is what 202 is for.
   return reply === null ? context.body(null, 202) : context.json(reply);
+});
+
+/**
+ * The OpenMCP descriptor (https://logicsrc.com/openmcp): where the MCP endpoint
+ * is, how to authenticate to it, and which catalogs list it.
+ *
+ * One file, kept with the site's assets because mynaposter.com is the origin a
+ * catalog probes and the site serves it as a static file; this route is the
+ * same bytes from the API's own origin. Read on every request so a redeploy is
+ * enough to change it. Public, unlike /api/mcp itself: a catalog verifies the
+ * listing with no token.
+ */
+const OPENMCP_DESCRIPTOR = new URL("../../web/assets/.well-known/openmcp.json", import.meta.url);
+
+app.get("/.well-known/openmcp.json", (context) => {
+  let body: string;
+  try {
+    body = readFileSync(OPENMCP_DESCRIPTOR, "utf8");
+  } catch {
+    return context.json({ ok: false, error: "Not found" }, 404);
+  }
+  return context.body(body, 200, {
+    "content-type": "application/json; charset=utf-8",
+    "cache-control": "public, max-age=300",
+  });
 });
 
 app.get("/", (context) =>

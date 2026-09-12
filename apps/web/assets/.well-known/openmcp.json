@@ -1,0 +1,20 @@
+{
+  "openmcp": "0.1",
+  "mcp": "https://mynaposter.com/api/mcp",
+  "name": "myna",
+  "description": "Post to every social network, blog and ad network from one place.",
+  "url": "https://mynaposter.com",
+  "auth": {
+    "kind": "bearer",
+    "url": "https://mynaposter.com/settings"
+  },
+  "tags": [
+    "social",
+    "publishing",
+    "ads"
+  ],
+  "operator": "https://logicsrc.com/.well-known/openprofile.md",
+  "catalogs": [
+    "https://openmcp.logicsrc.com"
+  ]
+}
