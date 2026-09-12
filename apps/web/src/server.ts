@@ -78,7 +78,10 @@ const server = Bun.serve({
     // Assets are content-addressed by name; HTML is not, so it revalidates.
     // HTML and the installer revalidate; everything else is content-stable.
     const volatile = type.startsWith("text/html") || file.endsWith("install.sh") || file.endsWith(".txt") || file.endsWith(".xml");
-    const cache = volatile ? "public, max-age=0, must-revalidate" : "public, max-age=31536000, immutable";
+    // A well-known file is fetched by its fixed name, so it can never be
+    // immutable; five minutes is what the OpenMCP catalog expects.
+    const wellKnown = file.startsWith(join(root, ".well-known") + "/");
+    const cache = wellKnown ? "public, max-age=300" : volatile ? "public, max-age=0, must-revalidate" : "public, max-age=31536000, immutable";
 
     return new Response(readFileSync(file), {
       headers: {
