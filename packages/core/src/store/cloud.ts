@@ -23,7 +23,7 @@ export interface CloudSession {
   since: string;
 }
 
-export const DEFAULT_SERVER = "https://mynaposter-api-production.up.railway.app";
+export const DEFAULT_SERVER = "https://api.mynaposter.com";
 
 export function session(): CloudSession | null {
   return readJson<CloudSession | null>(FILE, null);
