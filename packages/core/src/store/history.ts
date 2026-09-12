@@ -13,6 +13,8 @@ export interface HistoryEntry {
   title?: string;
   /** Which skill the account was using: `skill` for the default, else the slug. */
   skill?: string;
+  /** The post type it went out as: launch-announcement, release-notes, bug-story... */
+  type?: string;
   postId?: string;
   url?: string;
   error?: string;

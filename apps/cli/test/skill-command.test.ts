@@ -7,7 +7,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "no
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runHeadless } from "../src/cli/headless.ts";
-import { accountSkillPath, networkSkillPath, resetAccountCache, saveAccount, type Account } from "@profullstack/myna-core";
+import { accountSkillPath, networkSkillPath, typeSkillPath, resetAccountCache, saveAccount, type Account } from "@profullstack/myna-core";
 
 let dir = "";
 beforeEach(() => {
@@ -70,7 +70,8 @@ test("init writes the missing files once and keeps them after that", async () =>
   const first = await run("skill", ["init"]);
   expect(first.code).toBe(0);
   expect(first.out).toContain("wrote");
-  expect(first.out).toContain("4 written, 0 left as they were");
+  expect(first.out).toContain("13 written, 0 left as they were"); // 9 types, 2 networks, 2 accounts
+  expect(existsSync(typeSkillPath("bug-story"))).toBe(true);
   expect(existsSync(networkSkillPath("htmlblog"))).toBe(true);
   expect(existsSync(networkSkillPath("bluesky"))).toBe(true);
   expect(existsSync(accountSkillPath("htmlblog", blog.handle))).toBe(true);
@@ -79,7 +80,7 @@ test("init writes the missing files once and keeps them after that", async () =>
   const path = accountSkillPath("htmlblog", blog.handle);
   writeFileSync(path, readFileSync(path, "utf8") + "\nMine.\n");
   const second = await run("skill", ["init"]);
-  expect(second.out).toContain("0 written, 4 left as they were");
+  expect(second.out).toContain("0 written, 13 left as they were");
   expect(readFileSync(path, "utf8")).toContain("Mine.");
 });
 
@@ -136,4 +137,52 @@ test("add, default, rotate and remove manage an account's skills", async () => {
   const noDefault = await run("skill", ["remove", "bluesky:chovyfu.bsky.social", "skill"]);
   expect(noDefault.code).toBe(1);
   expect(noDefault.err).toContain("default");
+});
+
+test("the post types: list, show, path, add and remove", async () => {
+  const list = await run("skill", ["list"]);
+  expect(list.out).toContain("TYPE");
+  expect(list.out).toContain("launch-announcement (default for a blog)");
+  expect(list.out).toContain("social-update (default otherwise)");
+  expect(list.out).toContain("bug-story");
+  expect(list.out).toContain("social, forum");
+  expect(list.out).toContain("1/day");
+
+  const show = await run("skill", ["show", "type:bug-story"]);
+  expect(show.code).toBe(0);
+  expect(show.out).toMatch(/^---\nname: myna-type-bug-story\n/);
+  expect(show.out).toContain("allowedKinds: [social, forum]");
+  expect(show.out).toContain("Never the blog");
+  expect(existsSync(typeSkillPath("bug-story"))).toBe(true);
+  // The other spelling.
+  const flagged = await run("skill", ["show", "essay", "--type"]);
+  expect(flagged.out).toContain("maxPerDay: 1");
+  expect((await run("skill", ["path", "type:essay"])).out.trim()).toBe(typeSkillPath("essay"));
+  expect((await run("skill", ["show", "type:nope"])).err).toContain("No post type");
+
+  const file = join(dir, "changelog.md");
+  writeFileSync(file, "---\nallowedKinds: [social]\nmaxPerDay: 3\nstructure: [version, changes]\n---\n\n# changelog\n\nA short changelog line.\n");
+  const added = await run("skill", ["add", "--type", "changelog", "--from", file]);
+  expect(added.code).toBe(0);
+  expect(added.out).toContain("myna post --type changelog");
+  const shown = await run("skill", ["show", "type:changelog"]);
+  expect(shown.out).toContain("allowedKinds: [social]");
+  expect(shown.out).toContain("maxPerDay: 3");
+  expect((await run("skill", ["list"])).out).toContain("changelog");
+
+  expect((await run("skill", ["remove", "--type", "changelog"])).code).toBe(0);
+  expect(existsSync(typeSkillPath("changelog"))).toBe(false);
+});
+
+test("myna post --type refuses a type the target does not carry, before anything is queued", async () => {
+  const result = await run("post", ["--to", "htmlblog", "--type", "bug-story", "It broke because of a header."]);
+  expect(result.code).toBe(1);
+  expect(result.err).toContain("A bug-story cannot go there");
+  expect(result.err).toContain("htmlblog:dev.profullstack.com/~anthony/blog is a blog target");
+  expect(result.err).toContain("The blog carries launch-announcement and essay only");
+
+  const dry = await run("post", ["--to", "htmlblog", "--dry-run", "# A launch\n\nbody"]);
+  expect(dry.out).toContain("as a launch-announcement");
+  const social = await run("post", ["--to", "bluesky", "--dry-run", "hello"]);
+  expect(social.out).toContain("as a social-update");
 });

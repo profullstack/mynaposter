@@ -20,6 +20,8 @@
  *   GET /:network/:account/skill.md             the account's selected skill
  *   GET /:network/:account/skills/              the account's skills, as Markdown
  *   GET /:network/:account/skills/:slug.md      one of them
+ *   GET /types/skill.md                         the post types, as an index
+ *   GET /types/:type/skill.md                   one post type's skill
  *
  * `:account` is the handle as a path segment (`myna skill list` prints it).
  * Reading never moves a rotation cursor; only a send does that.
@@ -42,6 +44,10 @@ import {
   handleSlug,
   getNetwork,
   getDirectory,
+  listTypeSkills,
+  readTypeSkill,
+  DEFAULT_BLOG_TYPE,
+  DEFAULT_SOCIAL_TYPE,
   type Account,
   type MynaPlugin,
   type PluginContext,
@@ -116,6 +122,23 @@ export interface SkillSources {
 
 const liveSources: SkillSources = { targets: allTargets, settings: loadSettings };
 
+/** The Markdown index of the post types. */
+export function typesIndex(): string {
+  const lines = [
+    "# myna post types",
+    "",
+    "What a kind of post is, wherever it goes. `myna post --type <slug>` names one; without it a post to a blog is a " +
+      `${DEFAULT_BLOG_TYPE} and anything else a ${DEFAULT_SOCIAL_TYPE}. A type is refused on a target whose kind it does not allow.`,
+    "",
+  ];
+  for (const type of listTypeSkills()) {
+    const kinds = (type.frontmatter.allowedKinds ?? []).join(", ") || "any";
+    const cap = type.frontmatter.maxPerDay !== undefined ? `, ${type.frontmatter.maxPerDay}/day` : "";
+    lines.push(`- [${type.type}](/types/${encodeURIComponent(type.type)}/skill.md): ${type.frontmatter.description} (allowed on ${kinds}${cap})`);
+  }
+  return lines.join("\n");
+}
+
 /** The Markdown index of every skill on this machine. */
 export function skillsIndex(sources: SkillSources = liveSources): string {
   const targets = sources.targets();
@@ -124,7 +147,11 @@ export function skillsIndex(sources: SkillSources = liveSources): string {
   const lines = [
     "# myna skills",
     "",
-    "The rules for each place this machine posts to. Read the account's skill, then the network's, before posting there.",
+    "The rules for each place this machine posts to. Read the post type's skill, then the account's, then the network's, before posting there.",
+    "",
+    "## Post types",
+    "",
+    `[All types](/types/skill.md): ${listTypeSkills().map((type) => `[${type.type}](/types/${encodeURIComponent(type.type)}/skill.md)`).join(", ")}`,
     "",
     "## Networks",
     "",
@@ -167,6 +194,17 @@ export function handleSkillRoute(pathname: string, sources: SkillSources = liveS
   });
   if (parts.length < 2) return undefined;
   const network = parts[0];
+
+  // /types/skill.md and /types/:type/skill.md: the post types, not a network.
+  if (network === "types") {
+    if (parts.length === 2 && parts[1] === "skill.md") return markdown(typesIndex());
+    if (parts.length === 3 && parts[2] === "skill.md") {
+      const type = readTypeSkill(parts[1], { materialise: true });
+      if (!type) return markdown(`No post type called "${parts[1]}".`, 404);
+      return markdown(type.raw || `${type.body}\n`);
+    }
+    return undefined;
+  }
 
   // /:network/skill.md
   if (parts.length === 2 && parts[1] === "skill.md") {

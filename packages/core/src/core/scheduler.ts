@@ -14,6 +14,7 @@ import { loadSettings } from "../store/settings.ts";
 import { listHistory } from "../store/history.ts";
 import { pacingRules, planTargets } from "./pacing.ts";
 import { duplicateTitle, planLimitsFor } from "./skills.ts";
+import { bookingsForType, refusedTargets, typeCapFor } from "./post-types.ts";
 
 export interface RunResult {
   post: QueuedPost;
@@ -91,22 +92,41 @@ export async function runDuePosts(now = new Date()): Promise<RunResult[]> {
       }
     }
 
+    // A type the target's kind does not carry: the entry was queued before
+    // the type skill said so, or the skill was tightened since. Dropped
+    // with the reason rather than published against the policy.
+    if (post.type) {
+      let refused: ReturnType<typeof refusedTargets> = [];
+      try {
+        refused = refusedTargets(post.type, targeted);
+      } catch {
+        // A type whose skill has gone is not a reason to hold a post.
+      }
+      if (refused.length) {
+        updateQueued(post.id, { status: "cancelled", lastError: refused.map((row) => row.reason).join("; ") });
+        continue;
+      }
+    }
+
+    const others = listQueue().filter((entry) => entry.id !== post.id);
+    const typeCap = post.type ? typeCapFor(post.type) : undefined;
     const plan = planTargets({
       accounts: targeted,
       text: post.text,
       now: now.getTime(),
       force: post.extra?.now === "true",
       history,
-      queue: listQueue().filter((entry) => entry.id !== post.id),
+      queue: others,
       rules: pacingRules(settings.pacing),
       accountNetwork: (id) => getAccount(id)?.network,
       // The skill's daily cap holds at send time too: a queue built before the
       // cap existed still cannot put a fifth post on the blog today.
       limitsFor: (account) => planLimitsFor(account, settings),
+      typeLimit: post.type && typeCap ? { type: post.type, maxPerDay: typeCap, bookings: bookingsForType(post.type, history, others) } : undefined,
     });
     for (const target of plan.later) {
       if (plan.now.length || plan.later[0] !== target) {
-        enqueue({ scheduledFor: new Date(target.at).toISOString(), targets: [target.account.id], text: post.text, title: post.title, mediaPaths: post.mediaPaths, extra: post.extra, thread: post.thread });
+        enqueue({ scheduledFor: new Date(target.at).toISOString(), targets: [target.account.id], text: post.text, title: post.title, mediaPaths: post.mediaPaths, extra: post.extra, thread: post.thread, type: post.type });
       }
     }
     if (!plan.now.length) {
@@ -128,6 +148,7 @@ export async function runDuePosts(now = new Date()): Promise<RunResult[]> {
         media: post.mediaPaths?.length ? loadAllMedia(post.mediaPaths) : undefined,
         thread: post.thread ?? loadSettings().threadByDefault,
         extra: post.extra,
+        type: post.type,
       });
 
       const byAccount: QueuedPost["results"] = {};

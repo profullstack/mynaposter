@@ -88,6 +88,8 @@ export interface QueueRow {
   reason?: string;
   status: QueuedPost["status"];
   evergreen: boolean;
+  /** The post type, when the entry carries one. */
+  type?: string;
 }
 
 export interface HistoryRow {
@@ -101,6 +103,7 @@ export interface HistoryRow {
   error?: string;
   /** Which of the account's skills the post used. */
   skill?: string;
+  type?: string;
 }
 
 /** One account's skill, as the page lists it. */
@@ -234,6 +237,7 @@ export function buildSnapshot(input: SnapshotInput): Snapshot {
         reason: post.lastError,
         status: post.status,
         evergreen: post.extra?.evergreen === "true",
+        type: post.type,
       } satisfies QueueRow;
     })
     .filter((row) => Number.isFinite(row.at))
@@ -249,6 +253,7 @@ export function buildSnapshot(input: SnapshotInput): Snapshot {
     url: entry.url,
     error: entry.error,
     skill: entry.skill,
+    type: entry.type,
   }));
 
   const since = (from: number, to: number): number =>

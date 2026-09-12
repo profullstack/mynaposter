@@ -87,6 +87,7 @@ import {
   configDir,
   ensureAccountSkill,
   ensureNetworkSkill,
+  defaultTypeFor,
   type Account,
   type InfographicStyle,
 } from "@profullstack/myna-core";
@@ -139,6 +140,12 @@ export function parseFlags(argv: string[]): { positional: string[]; flags: Flags
       flags[name === "noThread" ? "thread" : name] = name !== "noThread";
       continue;
     }
+    // `--type` takes a value on `post` and stands alone on `skill show <slug>
+    // --type`, so it is a switch when nothing follows it.
+    if (name === "type" && inlineValue === undefined && (argv[i + 1] === undefined || argv[i + 1].startsWith("--"))) {
+      flags.type = true;
+      continue;
+    }
     const value = inlineValue ?? argv[++i];
     if (value === undefined) throw new Error(`--${rawName} needs a value`);
     if (name === "media") (flags.media ??= []).push(value);
@@ -153,7 +160,7 @@ const OWN_FLAGS = new Set([
   "to", "title", "media", "json", "yes", "style", "at", "thread", "dryRun", "limit", "output",
   "keepSvg", "server", "overwrite", "settings", "once", "interval", "refresh", "theme", "force", "weight", "source", "network",
   "now", "gap", "drip", "repost", "every", "cooldown", "off", "on", "port", "open", "noOpen",
-  "days", "send", "command", "check", "version", "allowDuplicate", "from",
+  "days", "send", "command", "check", "version", "allowDuplicate", "from", "type",
 ]);
 
 /**
@@ -500,7 +507,7 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
       const extra = flags.at ? { ...extraFrom(flags), at: flags.at } : extraFrom(flags);
 
       if (flags.dryRun) {
-        out(`Would post to ${accounts.length} account${accounts.length === 1 ? "" : "s"}:`);
+        out(`Would post to ${accounts.length} account${accounts.length === 1 ? "" : "s"} as a ${typeof flags.type === "string" ? flags.type : defaultTypeFor(accounts)}:`);
         for (const account of accounts) out(`  ${account.id}`);
         if (extra) out(`with ${Object.entries(extra).map(([key, value]) => `--${key} ${value}`).join(" ")}`);
         out(`\n${text}`);
@@ -517,6 +524,7 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
         signature: settings.signature || undefined,
         extra: markExtra(extra, flags),
         allowDuplicate: Boolean(flags.allowDuplicate),
+        type: typeof flags.type === "string" ? flags.type : undefined,
       }, { force: Boolean(flags.now), front: Boolean(flags.front || flags.skipQueue), mediaPaths: flags.media });
       const results = paced.results;
 
@@ -701,6 +709,7 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
         thread: flags.thread ?? settings.threadByDefault,
         extra: markExtra(extraFrom(flags), flags),
         allowDuplicate: Boolean(flags.allowDuplicate),
+        type: typeof flags.type === "string" ? flags.type : undefined,
       }, { from: Math.max(at.getTime(), Date.now() + 1), force: Boolean(flags.now), mediaPaths: flags.media });
       for (const entry of paced.queued) {
         out(`Queued ${entry.id} for ${describeWhen(new Date(entry.scheduledFor))} to ${entry.targets[0]}`);
@@ -727,6 +736,7 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
           when: new Date(post.scheduledFor).toLocaleString(),
           status: post.status,
           to: post.targets.length === 1 ? post.targets[0] : `${post.targets.length} accounts`,
+          type: post.type ?? "",
           text: post.text.replace(/\s+/g, " ").slice(0, 50),
         })),
         [
@@ -734,6 +744,7 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
           { key: "when", title: "WHEN" },
           { key: "status", title: "STATUS" },
           { key: "to", title: "TO" },
+          { key: "type", title: "TYPE" },
           { key: "text", title: "POST" },
         ],
       );
@@ -761,6 +772,7 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
           when: new Date(entry.at).toLocaleString(),
           account: entry.accountId,
           skill: entry.skill ?? "",
+          type: entry.type ?? "",
           detail: (entry.error ?? entry.url ?? entry.text).replace(/\s+/g, " ").slice(0, 60),
         })),
         [
@@ -768,6 +780,7 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
           { key: "when", title: "WHEN" },
           { key: "account", title: "ACCOUNT" },
           { key: "skill", title: "SKILL" },
+          { key: "type", title: "TYPE" },
           { key: "detail", title: "DETAIL" },
         ],
       );

@@ -367,6 +367,9 @@ requiresCanonical, contentPolicy). They live in ~/.config/myna/skills/<network>/
 then the network's, before posting: \`myna skill show <network:account>\`, GET
 /<network>/<account>/skill.md on the local dashboard, or the myna_skill MCP tool. A blog's skill
 allows four posts a day, major feature announcements only, and never a title it already carries.
+Post types live beside them at skills/types/<type>/skill.md (launch-announcement, release-notes,
+bug-story, essay, repost, promo, reply, event, social-update): what a post is wherever it goes,
+which kinds of target carry it, and the sections to write. \`myna post --type <slug>\` names one.
 
 ## MCP
 
