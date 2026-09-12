@@ -59,12 +59,18 @@ export interface GraphFile {
 /** Enough ledger for months of following, and bounded so the file cannot grow forever. */
 const FOLLOW_LIMIT = 5000;
 
-const EMPTY: GraphFile = { seeds: [], candidates: [], follows: [] };
+/**
+ * Fresh every time. A shared empty object here was handed back by reference
+ * when there was no file yet, so the first `graph.follows.push` before the
+ * first write mutated it and every later read of a missing file carried that
+ * record. Tests found it; a daemon that deleted its graph.json would have.
+ */
+const empty = (): GraphFile => ({ seeds: [], candidates: [], follows: [] });
 
 export const graphKey = (network: string, handle: string): string => `${network}|${handle.trim().toLowerCase().replace(/^@/, "")}`;
 
 export function readGraph(): GraphFile {
-  const file = readJson<Partial<GraphFile>>(GRAPH_FILE, EMPTY);
+  const file = readJson<Partial<GraphFile>>(GRAPH_FILE, empty());
   return { seeds: file.seeds ?? [], candidates: file.candidates ?? [], follows: file.follows ?? [] };
 }
 
@@ -73,7 +79,7 @@ export function writeGraph(graph: GraphFile): void {
 }
 
 export function clearGraph(): void {
-  writeJson(GRAPH_FILE, EMPTY);
+  writeJson(GRAPH_FILE, empty());
 }
 
 export const graphPath = (): string => configPath(GRAPH_FILE);

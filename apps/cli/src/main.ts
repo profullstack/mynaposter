@@ -77,6 +77,9 @@ Posting:
 
 Following (Bluesky, Mastodon, Misskey, X, Nostr):
   follow <account> <handle>         Follow someone from one account
+  follow <account> <url>/follows    Follow everyone they follow: paste their
+       [--limit 25] [--dry-run]     follows page. Paced by the graph's hourly
+                                    and daily ceilings; run again to continue
   following <account> [handle]      Who an account follows. Yours by default
   graph                             The follow graph: seed it with people
                                     worth learning from, read who they follow,

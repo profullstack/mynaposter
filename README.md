@@ -198,6 +198,7 @@ myna login agenticjobs agenticjobs.work --org acme   # device flow; --org is opt
 myna post "shipped resume downloads" --to all        # the board is included
 myna post --to agenticjobs "we closed the backend role https://acme.dev/blog"
 myna follow agenticjobs acme                         # or candidate:ada, or a page URL
+myna follow bluesky https://bsky.app/profile/mary.my.id/follows   # everyone mary follows, a few an hour
 ```
 
 An update goes through the board's own MCP endpoint (`/api/mcp`, its
