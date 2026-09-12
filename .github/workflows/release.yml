@@ -37,7 +37,7 @@ jobs:
         run: bun x tsc --noEmit -p tsconfig.json
 
       - name: Test
-        run: bun test packages/core/test packages/plugin-outreachgraph/test packages/plugin-crawlproof/test packages/plugin-calendar/test packages/plugin-dashboard/test apps/cli/test
+        run: bun test packages/core/test packages/plugin-outreachgraph/test packages/plugin-crawlproof/test packages/plugin-calendar/test packages/plugin-dashboard/test apps/cli/test apps/web/test
 
       # Bun cross-compiles every target from one runner, so there is no build
       # matrix and no per-platform runner to keep in step.

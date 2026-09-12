@@ -8,6 +8,7 @@
 import { join, extname, normalize } from "node:path";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { apiPath, forward } from "./proxy.ts";
 
 const root = join(fileURLToPath(new URL(".", import.meta.url)), "..", "public");
 const port = Number(process.env.PORT ?? 3000);
@@ -58,6 +59,10 @@ const server = Bun.serve({
         headers: { location: target.toString(), "cache-control": "public, max-age=3600" },
       });
     }
+
+    // The API, under the site.
+    const api = apiPath(url.pathname);
+    if (api !== null) return forward(request, api);
 
     const file = resolve(url.pathname);
 

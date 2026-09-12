@@ -461,4 +461,6 @@ for (const signal of ["SIGINT", "SIGTERM"] as const) {
   });
 }
 
-export default { port, fetch: app.fetch };
+// `::` so the project's private network (IPv6) reaches it from the site, and
+// IPv4 still does on a box that only has that.
+export default { port, hostname: "::", fetch: app.fetch };
