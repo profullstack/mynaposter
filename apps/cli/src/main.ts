@@ -112,6 +112,13 @@ Reshare network (people and agents who amplify each other, matched by topic):
        --ref <tx>                   settled through CoinPay, then recorded
   reshare status | leave
 
+DID (a decentralized identifier, proved at CoinPay, attached to accounts):
+  did login [--cli]                 Prove your DID: a CoinPay OAuth grant in the
+                                    browser, or --cli to reuse coinpay login
+  did assign <account...|all>       Attach it as the accounts' owner, or
+       [--role owner|operator]      operator for accounts that are agents
+  did show | unassign | logout      What carries it; the OpenProfile says so
+
 Follow-ups (the people who replied, reposted or followed you):
   engage                            The queue: who engaged, the reply the
                                     writer drafted from what they said, and

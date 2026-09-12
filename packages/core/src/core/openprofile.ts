@@ -45,6 +45,7 @@ export interface ProfileOperator {
   name?: string;
   profile?: string;
   email?: string;
+  did?: string;
 }
 
 export interface ProfileSection {
@@ -59,6 +60,8 @@ export interface OpenProfile {
   handle: string | null;
   web: string | null;
   pay: string | null;
+  /** A decentralized identifier: did:key, did:web, did:plc, as written. */
+  did: string | null;
   /** The identity block, every pair, as written. */
   identity: ProfilePair[];
   headline: string | null;
@@ -241,12 +244,13 @@ function parseOperator(markdown: string): ProfileOperator | null {
     if (key === "name") operator.name = pair.value;
     else if (/^(profile|openprofile|url)$/.test(key)) operator.profile = pair.value;
     else if (/^(email|e-mail|mail)$/.test(key)) operator.email = pair.value;
+    else if (key === "did" && /^did:[a-z0-9]+:/.test(pair.value)) operator.did = pair.value;
     else if (pair.key !== "note" && /^https?:\/\//.test(pair.value) && !operator.profile) {
       operator.name = operator.name ?? pair.key;
       operator.profile = pair.value;
     }
   }
-  return operator.name || operator.profile || operator.email ? operator : null;
+  return operator.name || operator.profile || operator.email || operator.did ? operator : null;
 }
 
 function parseAccounts(markdown: string): ProfileAccount[] {
@@ -299,6 +303,7 @@ export function parseOpenProfile(markdown: string): OpenProfile {
     handle: null,
     web: null,
     pay: null,
+    did: null,
     identity: [],
     headline: null,
     accounts: [],
@@ -359,6 +364,7 @@ export function parseOpenProfile(markdown: string): OpenProfile {
     } else if (key === "handle") profile.handle = pair.value.replace(/^@/, "");
     else if (/^(web|website|site|homepage)$/.test(key)) profile.web = pair.value;
     else if (/^(pay|wallet|payment|pay to)$/.test(key)) profile.pay = pair.value;
+    else if (key === "did" && /^did:[a-z0-9]+:/.test(pair.value)) profile.did = pair.value;
   }
 
   // Sections.
@@ -447,6 +453,7 @@ export interface ProfileInput {
   email?: string;
   avatar?: string;
   pay?: string;
+  did?: string;
   resume?: string;
   headline?: string;
   /** Extra identity pairs, kept as given. */
@@ -496,6 +503,7 @@ export function renderOpenProfile(input: ProfileInput): string {
   if (input.email) identity.push(`- **Email**: ${input.email}`);
   if (input.avatar) identity.push(`- **Avatar**: ${input.avatar}`);
   if (input.pay) identity.push(`- **Pay**: ${input.pay}`);
+  if (input.did) identity.push(`- **DID**: ${input.did}`);
   if (input.resume) identity.push(`- **Resume**: ${input.resume}`);
   for (const pair of input.extra ?? []) if (pair.key && pair.value) identity.push(`- **${pair.key}**: ${pair.value}`);
   if (identity.length) blocks.push(identity.join("\n"));
@@ -528,11 +536,12 @@ export function renderOpenProfile(input: ProfileInput): string {
     blocks.push(["## Reshare", "", ...lines].join("\n"));
   }
 
-  if (input.operator && (input.operator.name || input.operator.profile || input.operator.email)) {
+  if (input.operator && (input.operator.name || input.operator.profile || input.operator.email || input.operator.did)) {
     const lines: string[] = [];
     if (input.operator.name) lines.push(`- **Name**: ${input.operator.name}`);
     if (input.operator.profile) lines.push(`- **Profile**: ${input.operator.profile}`);
     if (input.operator.email) lines.push(`- **Email**: ${input.operator.email}`);
+    if (input.operator.did) lines.push(`- **DID**: ${input.operator.did}`);
     blocks.push(["## Operator", "", ...lines].join("\n"));
   }
 

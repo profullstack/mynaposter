@@ -367,3 +367,8 @@ export { readEngage, writeEngage, listFollowUps, updateFollowUp, clearEngage, fo
 export { engagePlugin, ENGAGE_SCAN_EVERY_MS, ENGAGE_SEND_EVERY_MS } from "./plugins/engage-plugin.ts";
 export { replyDraft, type ReplyRequest } from "./ai/writer.ts";
 export { DEFAULT_ENGAGE, type EngageSettings } from "./store/settings.ts";
+
+// DIDs: proved at CoinPay, attached to accounts as owner or operator.
+export { loginWithCoinPay, loginWithCoinPayCli, assignDid, unassignDid, didStatus, resolveDidTargets, didFromUserInfo, coinpayCliSessionPath, DEFAULT_DID_SERVER, type DidRole, type DidStatus, type DidLoginOptions } from "./core/did.ts";
+export { didSession, saveDidSession, clearDidSession, requireDidSession, isDid, type DidSession } from "./store/did.ts";
+export { DEFAULT_DID, type DidSettings } from "./store/settings.ts";

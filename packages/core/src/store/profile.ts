@@ -12,6 +12,7 @@ import { configPath, ensureConfigDir, PROFILE_FILE } from "../util/paths.ts";
 import { listAccounts } from "./accounts.ts";
 import { loadSettings, type Settings } from "./settings.ts";
 import { parseOpenProfile, parseTopics, renderOpenProfile, type OpenProfile } from "../core/openprofile.ts";
+import { didSession } from "./did.ts";
 import type { Account } from "../net/types.ts";
 
 export function profilePath(): string {
@@ -29,6 +30,11 @@ const NOT_PUBLIC = new Set(["slack", "discord", "matrix", "mattermost", "telegra
 export function buildProfile(settings: Settings = loadSettings(), accounts: Account[] = listAccounts()): string {
   const { profile, reshare } = settings;
   const shown = accounts.filter((account) => !NOT_PUBLIC.has(account.network));
+  // The proved DID, when one has been attached to any account here. A person's
+  // profile carries it as identity; an agent's names it as the operator.
+  const did = didSession()?.did;
+  const attached = did ? shown.some((account) => account.meta.did === did) : false;
+  const operated = did ? shown.some((account) => account.meta.did === did && account.meta.didRole === "operator") : false;
   const name = profile.name || shown.find((account) => account.displayName)?.displayName || shown[0]?.handle || "Unnamed";
   const willing =
     reshare.networks.trim() && reshare.networks.trim() !== "all"
@@ -43,6 +49,7 @@ export function buildProfile(settings: Settings = loadSettings(), accounts: Acco
     email: profile.email,
     avatar: profile.avatar,
     pay: profile.pay,
+    ...(attached && did && profile.kind !== "agent" ? { did } : {}),
     resume: profile.resume,
     headline: profile.headline,
     accounts: shown,
@@ -56,11 +63,12 @@ export function buildProfile(settings: Settings = loadSettings(), accounts: Acco
       limitPerDay: reshare.perDay,
     },
     operator:
-      profile.operatorName || profile.operatorProfile || profile.operatorEmail
+      profile.operatorName || profile.operatorProfile || profile.operatorEmail || (operated && profile.kind === "agent")
         ? {
             ...(profile.operatorName ? { name: profile.operatorName } : {}),
             ...(profile.operatorProfile ? { profile: profile.operatorProfile } : {}),
             ...(profile.operatorEmail ? { email: profile.operatorEmail } : {}),
+            ...(operated && did && profile.kind === "agent" ? { did } : {}),
           }
         : null,
   });

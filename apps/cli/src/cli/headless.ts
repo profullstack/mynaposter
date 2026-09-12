@@ -100,6 +100,7 @@ import { runDirectory } from "./directory.ts";
 import { runSkill } from "./skill.ts";
 import { runProfile, runReshareCommand } from "./reshare.ts";
 import { runEngage } from "./engage.ts";
+import { runDid } from "./did.ts";
 import { parseWhen, describeWhen, parseDuration } from "../tui/when.ts";
 import { loginValuesFromArgs } from "../login-args.ts";
 
@@ -518,6 +519,11 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
     case "followups": {
       await ensureUnlocked();
       return await runEngage(positional, flags);
+    }
+
+    case "did": {
+      await ensureUnlocked();
+      return await runDid(positional, flags, { openUrl: openBrowser });
     }
 
     case "post": {
