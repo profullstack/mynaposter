@@ -40,6 +40,11 @@ import {
   skillTargets,
   getNetwork,
   getDirectory,
+  listTypeSkills,
+  readTypeSkill,
+  defaultTypeFor,
+  DEFAULT_BLOG_TYPE,
+  DEFAULT_SOCIAL_TYPE,
   type ListingInput,
 } from "@profullstack/myna-core";
 
@@ -66,25 +71,32 @@ export const TOOLS = [
   {
     name: "myna_skills",
     description:
-      "List the skill files on this machine: one per network and one or more per account, each a Markdown " +
-      "file with frontmatter carrying the rules and the limits myna enforces (maxPerDay, minGapMinutes, " +
-      "maxChars, requiresCanonical, contentPolicy). Shows which skill each account is on. Read the account's " +
-      "skill with myna_skill before posting to it.",
+      "List the skill files on this machine: the post types (launch-announcement, release-notes, bug-story, " +
+      "essay, repost, promo, reply, event, social-update, plus any added), one per network and one or more per " +
+      "account, each a Markdown file with frontmatter carrying the rules and the limits myna enforces. A type " +
+      "names which kinds of target may carry it; a bug-story never reaches a blog. Read with myna_skill before posting.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
   },
   {
     name: "myna_skill",
     description:
-      "Read the rules for posting somewhere, as a skill: the account's selected skill followed by its " +
-      "network's skill, plus the merged limits. Call this before myna_post to an account, and follow it. " +
-      "A blog's skill, for instance, allows four posts a day, major features only, and never a title the " +
-      "blog already carries. Reading never changes which skill is selected.",
+      "Read the rules for posting somewhere, as a skill: the post type's skill (what the post is and its " +
+      "structure), then the account's selected skill, then its network's skill, plus the merged limits. Call " +
+      "this before myna_post and follow it. A blog's skill allows four posts a day, major features only, and " +
+      "never a title the blog already carries; a bug-story type is not allowed on a blog at all. Reading never " +
+      "changes which skill is selected.",
     inputSchema: {
       type: "object",
       properties: {
         account: { type: "string", description: 'An account id ("htmlblog:dev.profullstack.com/~anthony/blog") or network:handle-slug, from myna_skills.' },
         network: { type: "string", description: 'A network id ("htmlblog") for the network-level skill alone.' },
         slug: { type: "string", description: "One particular skill of the account, by slug, instead of the selected one." },
+        type: {
+          type: "string",
+          description:
+            'A post type ("launch-announcement", "bug-story", ...). With an account, its skill is read first and the ' +
+            "answer says whether the account's kind carries it; alone, the type skill itself.",
+        },
       },
       additionalProperties: false,
     },
@@ -128,6 +140,13 @@ export const TOOLS = [
         allow_duplicate: {
           type: "boolean",
           description: "Blogs only: publish even though the blog already carries a post with this title. Almost never right.",
+        },
+        type: {
+          type: "string",
+          description:
+            `What kind of post this is, from myna_skills: launch-announcement, release-notes, bug-story, essay, repost, promo, ` +
+            `reply, event, social-update. Default: ${DEFAULT_BLOG_TYPE} when a blog or longform target is included, else ` +
+            `${DEFAULT_SOCIAL_TYPE}. A target whose kind the type does not allow is refused.`,
         },
         video: {
           type: "string",
@@ -350,6 +369,15 @@ export async function callTool(name: string, args_: Record<string, unknown> = {}
         const targets = skillTargets(listAccounts(), listDirectoryAccounts());
         const networks = [...new Set(targets.map((target) => target.network))].sort();
         return text({
+          types: listTypeSkills().map((type) => ({
+            type: type.type,
+            description: type.frontmatter.description,
+            allowedKinds: type.frontmatter.allowedKinds ?? [],
+            maxPerDay: type.frontmatter.maxPerDay,
+            requiresUrl: type.frontmatter.requiresUrl,
+            structure: type.frontmatter.structure ?? [],
+            default: type.type === DEFAULT_BLOG_TYPE ? "for a blog or longform target" : type.type === DEFAULT_SOCIAL_TYPE ? "otherwise" : undefined,
+          })),
           networks: networks.map((network) => {
             const skill = readNetworkSkill(network);
             return { network, kind: skillKindFor(network), path: skill.path, name: skill.frontmatter.name };
@@ -373,21 +401,36 @@ export async function callTool(name: string, args_: Record<string, unknown> = {}
 
       case "myna_skill": {
         const settings = loadSettings();
+        const typeSkill = args.type ? readTypeSkill(args.type, { materialise: true }) : undefined;
+        if (args.type && !typeSkill) throw new Error(`No post type "${args.type}". Call myna_skills for the list.`);
+        if (typeSkill && !args.account && !args.network) {
+          return text({
+            type: typeSkill.type,
+            path: typeSkill.path,
+            frontmatter: typeSkill.frontmatter,
+            skill: typeSkill.raw || `${typeSkill.body}\n`,
+          });
+        }
         if (args.account) {
           const target = findSkillTarget(args.account, skillTargets(listAccounts(), listDirectoryAccounts()));
           if (!target) throw new Error(`No connected account matches "${args.account}". Call myna_skills for the ids.`);
           const selection = selectSkill(target, settings);
           const chosen = args.slug ? readAccountSkill(target, args.slug, { materialise: true }) : (readAccountSkill(target, selection.skill.slug, { materialise: true }) ?? selection.skill);
           if (!chosen) throw new Error(`${target.id} has no skill called "${args.slug}".`);
-          const resolved = resolveSkill(target, { settings, selected: chosen });
+          const type = args.type ?? defaultTypeFor([target]);
+          const resolved = resolveSkill(target, { settings, selected: chosen, type });
           const { sources, ...limits } = resolved.limits;
+          const allowed = resolved.typeSkill ? !resolved.typeSkill.frontmatter.allowedKinds?.length || resolved.typeSkill.frontmatter.allowedKinds.includes(resolved.kind) : undefined;
           return text({
             account: target.id,
             network: target.network,
             kind: resolved.kind,
             slug: chosen.slug,
             rotating: selection.rotating,
+            type,
+            typeAllowedHere: allowed,
             limits,
+            typeSkill: resolved.typeSkill ? resolved.typeSkill.raw || `${resolved.typeSkill.body}\n` : undefined,
             skill: chosen.raw || `${chosen.body}\n`,
             networkSkill: resolved.networkSkill.raw || `${resolved.networkSkill.body}\n`,
             instructions: resolved.body,
@@ -449,6 +492,7 @@ export async function callTool(name: string, args_: Record<string, unknown> = {}
 
         if (args.allow_duplicate) extra.allowDuplicate = "true";
         const paced = await postPaced(targets, {
+          type: args.type,
           text: args.text,
           title: args.title,
           thread: args.thread ?? loadSettings().threadByDefault,
@@ -467,6 +511,7 @@ export async function callTool(name: string, args_: Record<string, unknown> = {}
             error: result.error,
             skill: result.skill,
           })),
+          type: paced.queued[0]?.type ?? args.type ?? defaultTypeFor(targets),
           queued: paced.queued.map((entry) => ({ id: entry.id, account: entry.targets[0], at: entry.scheduledFor, reason: paced.plan.later.find((t) => t.account.id === entry.targets[0])?.reason })),
           skipped: paced.skipped.map((entry) => ({ account: entry.account.id, reason: entry.reason })),
         });

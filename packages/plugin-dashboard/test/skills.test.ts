@@ -11,6 +11,7 @@ import { handle, skillRoute, skillRows } from "../src/index.ts";
 import { buildSnapshot } from "../src/snapshot.ts";
 import {
   DEFAULT_SETTINGS,
+  typeSkillPath,
   addAccountSkill,
   ensureAccountSkill,
   setRotation,
@@ -136,4 +137,29 @@ test("the snapshot carries each account's skill and how much of the day is used"
   expect(row).toMatchObject({ kind: "blog", selected: "skill", rotating: false, maxPerDay: 4, sentToday: 3, contentPolicy: "major-features-only" });
   expect(row.path).toBe("/htmlblog/dev.profullstack.com-~anthony-blog/skill.md");
   expect(snap.history[0].skill).toBe("skill");
+});
+
+test("GET /types/skill.md is the index of post types and /types/:type/skill.md serves one", async () => {
+  const index = get("/types/skill.md");
+  expect(index.status).toBe(200);
+  expect(index.headers.get("content-type")).toContain("text/markdown");
+  const body = await index.text();
+  expect(body).toContain("- [launch-announcement](/types/launch-announcement/skill.md)");
+  expect(body).toContain("- [bug-story](/types/bug-story/skill.md)");
+  expect(body).toContain("allowed on social, forum");
+  expect(body).toContain("essay](/types/essay/skill.md)");
+  expect(body).toContain("1/day");
+
+  expect(existsSync(typeSkillPath("bug-story"))).toBe(false);
+  const one = get("/types/bug-story/skill.md");
+  expect(one.status).toBe(200);
+  const text = await one.text();
+  expect(text).toMatch(/^---\nname: myna-type-bug-story\n/);
+  expect(text).toContain("allowedKinds: [social, forum]");
+  expect(existsSync(typeSkillPath("bug-story"))).toBe(true);
+
+  expect(get("/types/nope/skill.md").status).toBe(404);
+  expect(get("/types/bug-story").status).toBe(404);
+  // The skills index links to them.
+  expect(await get("/skills").text()).toContain("[All types](/types/skill.md)");
 });

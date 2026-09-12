@@ -300,6 +300,13 @@ export interface PlanInput {
    * budget for the day.
    */
   limitsFor?: (account: Account) => AccountLimits | undefined;
+  /**
+   * The post type's own daily cap, across every account: an essay a day,
+   * two promos a day. `bookings` are when posts of that type went out or are
+   * booked (bookingsForType in post-types.ts). Applied on top of the account
+   * caps; the stricter one wins because both are applied.
+   */
+  typeLimit?: { type: string; maxPerDay: number; bookings: number[] };
   /** Spread the later ones from this moment rather than from `now`. */
   from?: number;
   /** Deterministic order for tests. Defaults to a shuffle, which is the point. */
@@ -363,16 +370,48 @@ export function planTargets(input: PlanInput): Plan {
       list.sort((a, b) => a - b);
     } else perAccount.set(id, [at]);
   };
-  const capReason = (account: Account, maxPerDay: number) => `${account.id} is at its ${maxPerDay} a day, holding to the next day`;
+  const typeBooked = input.typeLimit ? input.typeLimit.bookings.slice().sort((a, b) => a - b) : [];
+  const bookType = (at: number) => {
+    if (!input.typeLimit) return;
+    typeBooked.push(at);
+    typeBooked.sort((a, b) => a - b);
+  };
+  /**
+   * The earliest moment at or after `at` inside every daily budget that
+   * applies: the account's, and the type's across all accounts. Returns the
+   * time and which budget held it, for the reason.
+   */
+  const underCaps = (account: Account, at: number, limits: AccountLimits): { at: number; by?: string } => {
+    let result = at;
+    let by: string | undefined;
+    if (limits.maxPerDay) {
+      const next = nextUnderCap(result, perAccount.get(account.id) ?? [], limits.maxPerDay);
+      if (next > result) {
+        result = next;
+        by = `${account.id} is at its ${limits.maxPerDay} a day`;
+      }
+    }
+    if (input.typeLimit) {
+      const next = nextUnderCap(result, typeBooked, input.typeLimit.maxPerDay);
+      if (next > result) {
+        result = next;
+        by = `${input.typeLimit.type} is at its ${input.typeLimit.maxPerDay} a day across every account`;
+      }
+    }
+    return { at: result, by };
+  };
+  const capReason = (by: string) => `${by}, holding to the next day`;
 
   if (input.force) {
     for (const account of candidates) {
       const limits = input.limitsFor?.(account) ?? {};
       const asked = Math.max(from, now);
-      const at = limits.maxPerDay ? nextUnderCap(asked, perAccount.get(account.id) ?? [], limits.maxPerDay) : asked;
+      const capped = underCaps(account, asked, limits);
+      const at = capped.at;
       bookAccount(account.id, at);
+      bookType(at);
       plan.taken.push({ network: account.network, at });
-      if (at > asked) plan.later.push({ account, at, reason: capReason(account, limits.maxPerDay as number) });
+      if (capped.by) plan.later.push({ account, at, reason: capReason(capped.by) });
       else if (from <= now) plan.now.push(account);
       else plan.later.push({ account, at: from, reason: "scheduled" });
     }
@@ -398,12 +437,12 @@ export function planTargets(input: PlanInput): Plan {
     let at = nextSlotFor(account.network, booked, Math.max(ideal, gate), gapMs);
     // Then the day's budget. Pushing past the cap can land inside a gap and
     // clearing the gap can land in a full day, so settle both together.
-    let capped = false;
-    if (limits.maxPerDay) {
+    let cappedBy: string | undefined;
+    if (limits.maxPerDay || input.typeLimit) {
       for (let guard = 0; guard < 100; guard++) {
-        const underCap = nextUnderCap(at, perAccount.get(account.id) ?? [], limits.maxPerDay);
-        if (underCap > at) capped = true;
-        const clear = nextSlotFor(account.network, booked, underCap, gapMs);
+        const under = underCaps(account, at, limits);
+        if (under.by) cappedBy = under.by;
+        const clear = nextSlotFor(account.network, booked, under.at, gapMs);
         if (clear === at) break;
         at = clear;
       }
@@ -415,14 +454,15 @@ export function planTargets(input: PlanInput): Plan {
       list.sort((a, b) => a - b);
     } else booked.set(account.network, [at]);
     bookAccount(account.id, at);
+    bookType(at);
     plan.taken.push({ network: account.network, at });
 
     if (at <= now) {
       plan.now.push(account);
       return;
     }
-    const reason = capped
-      ? capReason(account, limits.maxPerDay as number)
+    const reason = cappedBy
+      ? capReason(cappedBy)
       : gate > ideal
         ? `${account.network} keeps a ${describeMs(gapMs)} gap`
         : index === 0

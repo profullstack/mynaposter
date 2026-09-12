@@ -323,6 +323,16 @@ myna skill add bluesky:alice launch-week --from launch-week.md
 myna skill default bluesky:alice launch-week      # pin one; or rotate bluesky:alice on
 ```
 
+A fourth dimension is the **post type**, `skills/types/<type>/skill.md`: what
+a post is wherever it goes. Nine ship built in (`launch-announcement`,
+`release-notes`, `bug-story`, `essay`, `repost`, `promo`, `reply`, `event`,
+`social-update`), each naming which kinds of target may carry it and an
+ordered structure an agent writes. `myna post --type bug-story` to the blog is
+refused, because the blog carries launches and essays only; without `--type`
+a post to a blog is a `launch-announcement` and anything else a
+`social-update`. `myna skill show type:<slug>` prints one; `myna skill add
+--type <slug>` adds your own.
+
 An account can hold several skills: pin one, or turn rotation on and each send
 takes the next in turn. The cursor lives in settings, never in the files, and
 each history entry records the skill it used. myna writes a file only when it
@@ -378,10 +388,11 @@ myna plugins [add|remove]         myna outreachgraph <subcommand>
 myna crawlproof <subcommand>      myna calendar <subcommand>
 myna directory <id> <url>         myna directory listings [id]
 myna skill list | show | init     myna skill add | default | rotate
+myna skill show type:<slug>       myna post --type <slug>
 ```
 
 Flags: `--to`, `--title`, `--media`, `--style`, `--json`, `--dry-run`,
-`--no-thread`, `--limit`, `--force`, `--allow-duplicate`. Any other `--flag value` is handed to the
+`--no-thread`, `--limit`, `--force`, `--allow-duplicate`, `--type`. Any other `--flag value` is handed to the
 network as an option: `--video` and `--reply-to` for YouTube, `--subreddit` for
 Reddit, `--privacy` for an upload.
 

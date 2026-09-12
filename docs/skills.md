@@ -14,6 +14,10 @@ to the next day rather than sending it.
 
 ```
 ~/.config/myna/skills/
+  types/
+    launch-announcement/skill.md              what a kind of post is, wherever it goes
+    bug-story/skill.md
+    ...
   htmlblog/
     skill.md                                  the network's rules
     dev.profullstack.com-~anthony-blog/
@@ -29,7 +33,7 @@ The account directory is the handle as one path segment: `/`, `\`, `:` and
 spaces become `-`, and a leading `@` is dropped. `myna skill path <account>`
 prints the exact path, and `myna skill list` prints the segment.
 
-## Three layers
+## Three layers, and a fourth dimension
 
 1. **The built-in template**, one per kind of network, in
    `packages/core/src/core/skills.ts`. Never on disk; it is what the files are
@@ -42,9 +46,13 @@ prints the exact path, and `myna skill list` prints the segment.
    `myna skill add`.
 
 A post to an account resolves the account's selected skill, which inherits
-from the network skill, which inherits from the template. The body an agent
-reads is the account skill followed by the network skill. Limits merge with
+from the network skill, which inherits from the template. Limits merge with
 the stricter value winning.
+
+Orthogonal to all of that is the **post type**, `skills/types/<type>/skill.md`:
+what the post itself is (a launch announcement, release notes, a bug story),
+whichever network it goes to. See below. The body an agent reads is the type
+skill, then the account skill, then the network skill.
 
 myna writes a file only when it is absent. A file you have edited is never
 overwritten; `myna skill init --force` is the one way to regenerate from the
@@ -121,6 +129,52 @@ updated rather than resubmitted. `maxPerDay: 1`.
 **youtube**: a post is a comment on a video found with `myna search`; short,
 on topic, never the same comment on several videos. `maxChars: 500`.
 
+## Post types
+
+A type says what a post is, wherever it goes. Nine ship built in, materialised
+by `myna skill init` and yours to edit; add your own with `myna skill add
+--type <slug> --from file.md`. `myna post --type <slug>` names one; without
+it, a post that reaches a blog or a longform mirror is a `launch-announcement`
+and anything else is a `social-update`.
+
+| Type | Allowed on | Cap | Structure |
+|---|---|---|---|
+| `launch-announcement` | blog, longform, social, forum | | what-it-is, who-it-is-for, what-changed, how-to-use-it, link |
+| `release-notes` | social, forum, longform | | version, what-changed, upgrade-note, link |
+| `bug-story` | social, forum | | what-broke, why, the-fix, the-lesson |
+| `essay` | blog, longform, social, forum | 1/day | the-claim, the-evidence, the-counter, so-what |
+| `repost` | longform | | canonical-url, same-body |
+| `promo` | social, forum | 2/day | the-offer, for-whom, the-deadline, link |
+| `reply` | forum, social, youtube | | the-answer, the-detail, optional-link |
+| `event` | social, forum, other | | what, when, where, link |
+| `social-update` | social, forum, youtube, other | | what-happened, link |
+
+Frontmatter: `name`, `description`, `type`, `allowedKinds` (a flow list of
+network kinds), `maxPerDay` (per type across every account, optional),
+`requiresUrl`, `structure` (the sections, in order, an agent writes),
+`generatedFrom`.
+
+What myna enforces:
+
+- **`allowedKinds`.** A type is refused on a target whose kind it does not
+  list, with a clear error and no queue entry. A `bug-story` to `htmlblog` is
+  refused; that is the blog policy written down once. The daemon also drops a
+  queued entry whose type its target no longer carries.
+- **`maxPerDay`** on the type, across every account, on top of the network
+  and account caps. Both apply, so the stricter one wins: one essay a day,
+  two promos a day.
+
+The type is written onto the queue entry (`type`) and the history entry, and
+`myna queue`, `myna history` and the dashboard show it.
+
+```bash
+myna skill show type:bug-story                 # or: myna skill show bug-story --type
+myna skill path type:essay
+myna skill add --type changelog --from changelog.md
+myna skill remove --type changelog             # a built-in comes back on init
+myna post --to all --type release-notes "myna 0.19.0: ..."
+```
+
 ## More than one skill per account, and rotation
 
 ```bash
@@ -175,6 +229,8 @@ account. `myna skill init` does the same for every account already connected.
 
 ```
 GET /skills                                index, Markdown (/skills.json for data)
+GET /types/skill.md                        the post types, as an index
+GET /types/:type/skill.md                  one post type
 GET /:network/skill.md                     the network skill
 GET /:network/:account/skill.md            the account's selected skill
 GET /:network/:account/skills/             its skills, as a list
@@ -185,15 +241,17 @@ GET /:network/:account/skills/:slug.md     one of them
 `text/markdown`. The page itself has a Skills section with each account's
 skill, how many of today's posts are used, and its limits.
 
-**MCP**: `myna_skills` lists them; `myna_skill` returns one account's skill,
-its network's skill, and the merged limits, so an agent can read the rules
-before `myna_post`. The `allow_duplicate` argument on `myna_post` mirrors the
-flag.
+**MCP**: `myna_skills` lists the types, networks and accounts; `myna_skill`
+returns one account's skill, its network's skill, the merged limits and, with
+`type`, the type skill first plus whether that kind carries it. `myna_post`
+takes `type` and `allow_duplicate`.
 
 ## For agents
 
-Before posting to an account, read its skill: `myna skill show <account>`,
-`GET /<network>/<account>/skill.md` on the dashboard, or the `myna_skill` tool.
+Before posting, pick the type and read its skill, then the account's:
+`myna skill show type:<slug>` and `myna skill show <account>`,
+`GET /types/<type>/skill.md` and `GET /<network>/<account>/skill.md` on the
+dashboard, or the `myna_skill` tool with `type` and `account`.
 Follow the body and stay inside the frontmatter limits. myna enforces the
 limits either way, but a post that was written to the rules does not end up
 queued for tomorrow or refused as a repeat.

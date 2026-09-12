@@ -47,6 +47,7 @@ import {
 } from "../store/skills.ts";
 import { textKey } from "./pacing.ts";
 import { deriveTitle } from "../util/text.ts";
+import { readTypeSkill, type TypeSkill } from "./post-types.ts";
 
 /** Bump when a template changes in a way worth re-materialising with --force. */
 export const TEMPLATE_VERSION = "1";
@@ -618,8 +619,10 @@ export interface ResolvedSkill {
   kind: SkillKind;
   selected: SkillFile;
   networkSkill: SkillFile;
+  /** The post type's skill, when one was asked for. */
+  typeSkill?: TypeSkill;
   limits: ResolvedLimits;
-  /** What an agent reads: the account skill, then the network skill. */
+  /** What an agent reads: the type skill, then the account skill, then the network skill. */
   body: string;
 }
 
@@ -692,7 +695,7 @@ export function mergeLimits(template: SkillLimits, layers: Layer[], settingsBlog
  */
 export function resolveSkill(
   account: Pick<Account, "id" | "network" | "handle" | "addedAt" | "meta" | "displayName">,
-  options: { settings?: Settings; selected?: SkillFile } = {},
+  options: { settings?: Settings; selected?: SkillFile; type?: string } = {},
 ): ResolvedSkill {
   const settings = options.settings ?? loadSettings();
   const kind = skillKindFor(account.network);
@@ -709,8 +712,9 @@ export function resolveSkill(
   ];
   if (selected.slug !== DEFAULT_SKILL_SLUG) layers.push({ name: "selected", limits: limitsOf(selected) });
   const limits = mergeLimits(template, layers, settings.blog?.maxPerDay, kind);
-  const body = [selected.body, networkSkill.body].filter(Boolean).join("\n\n---\n\n");
-  return { account: account.id, network: account.network, kind, selected, networkSkill, limits, body };
+  const typeSkill = options.type ? readTypeSkill(options.type) : undefined;
+  const body = [typeSkill?.body, selected.body, networkSkill.body].filter(Boolean).join("\n\n---\n\n");
+  return { account: account.id, network: account.network, kind, selected, networkSkill, typeSkill, limits, body };
 }
 
 /** The limits the planner needs, in the units it uses. */

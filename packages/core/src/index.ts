@@ -178,7 +178,29 @@ export {
   type ResolvedLimits,
   type InitResult,
 } from "./core/skills.ts";
-export { parseSkill, serializeSkill, skillsDir, networkSkillPath, accountSkillPath, accountSkillDir, listSkillNetworks, listSkillAccountDirs, SKILLS_DIR } from "./store/skills.ts";
+export {
+  TYPE_TEMPLATES,
+  TYPE_TEMPLATE_VERSION,
+  BUILTIN_TYPES,
+  DEFAULT_BLOG_TYPE,
+  DEFAULT_SOCIAL_TYPE,
+  typeTemplate,
+  ensureTypeSkill,
+  initTypeSkills,
+  readTypeSkill,
+  requireTypeSkill,
+  listTypeSkills,
+  addTypeSkill,
+  removeTypeSkill,
+  defaultTypeFor,
+  typeAllows,
+  refusedTargets,
+  refuseTypeMismatch,
+  bookingsForType,
+  typeCapFor,
+  type TypeSkill,
+} from "./core/post-types.ts";
+export { parseSkill, serializeSkill, typeSkillPath, listTypeSlugs, TYPES_DIR, type TypeFrontmatter, skillsDir, networkSkillPath, accountSkillPath, accountSkillDir, listSkillNetworks, listSkillAccountDirs, SKILLS_DIR } from "./store/skills.ts";
 export { runEvergreen, pickEvergreen, evergreenText, lastEvergreen, DEFAULT_EVERGREEN, EVERGREEN_MARK, type EvergreenSettings, type EvergreenRun, type EvergreenPick } from "./core/evergreen.ts";
 export {
   buildRecap,

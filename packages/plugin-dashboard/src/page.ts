@@ -236,7 +236,7 @@ a { color: inherit; }
 
   <section class="card full">
     <h2>Skills</h2>
-    <p class="note">The rules each account posts under, as files an agent can read first. <a href="/skills">/skills</a> lists them; <code>myna skill show &lt;account&gt;</code> prints one.</p>
+    <p class="note">The rules each account posts under, as files an agent can read first. <a href="/skills">/skills</a> lists them, <a href="/types/skill.md">/types/skill.md</a> the post types; <code>myna skill show &lt;account&gt;</code> prints one.</p>
     <div id="skills"></div>
   </section>
 
@@ -463,7 +463,7 @@ function drawHistory(snap) {
           (row) => \`<tr>
             <td class="when">\${dur(snap.now - row.at)} ago</td>
             <td>\${whoCell(row.slot, row.accountId)}</td>
-            <td class="when">\${esc(row.skill ?? "")}</td>
+            <td class="when">\${esc([row.skill, row.type].filter(Boolean).join(" · "))}</td>
             <td>\${row.ok ? statusCell("ok", "sent") : statusCell("fail", trim(row.error ?? "failed", 40))}</td>
             <td class="text">\${row.url ? \`<a href="\${esc(row.url)}" target="_blank" rel="noreferrer">\${esc(trim(row.text, 70))}</a>\` : esc(trim(row.text, 70))}</td>
           </tr>\`,

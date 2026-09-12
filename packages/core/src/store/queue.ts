@@ -30,6 +30,8 @@ export interface QueuedPost {
   extra?: Record<string, string>;
   /** Split over the character limit into a reply chain where supported. */
   thread?: boolean;
+  /** The post type (skills/types/<type>/skill.md), which the send checks against the target's kind. */
+  type?: string;
   status: "pending" | "sending" | "sent" | "failed" | "cancelled";
   results?: Record<string, QueuedTargetResult>;
   attempts?: number;

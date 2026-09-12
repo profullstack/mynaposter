@@ -53,8 +53,11 @@ Posting:
   skill                             The rules per network and per account,
                                     as skill.md files myna enforces: a daily
                                     cap, a gap, a content policy
-    skill list                      Every network and account, which skill is on
+    skill list                      Every type, network and account, which skill is on
     skill show <network[:account]>  Print one (an agent should read it first)
+    skill show type:<slug>          A post type: launch-announcement, release-notes,
+                                    bug-story, essay, repost, promo, reply, event,
+                                    social-update. Add your own: skill add --type
     skill init [--force]            Write the missing files from the templates
     skill path <network[:account]>  Where the file is
     skill add <account> <slug>      Another skill, from --from <file> or stdin
@@ -153,6 +156,10 @@ Flags:
                     graph expand: re-read seeds read recently
   --no-thread       Truncate instead of splitting into a thread
   --allow-duplicate Publish to a blog even though it already carries that title
+  --type <slug>     What kind of post this is (myna skill list). Default: a
+                    launch-announcement when a blog is targeted, else a
+                    social-update. A type is refused on a target that does
+                    not carry it: a bug-story never reaches the blog
   --overwrite       On load, replace accounts that already exist here
   --settings        On load, take the bundle's settings too
   --yes             Skip the confirmation on load

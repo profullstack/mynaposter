@@ -8,6 +8,7 @@
  *   ~/.config/myna/skills/<network>/skill.md               the network's rules
  *   ~/.config/myna/skills/<network>/<account>/skill.md     one account's default
  *   ~/.config/myna/skills/<network>/<account>/<slug>.md    more skills to rotate through
+ *   ~/.config/myna/skills/types/<type>/skill.md             what a kind of post is, wherever it goes
  *
  * The frontmatter also carries the limits myna itself enforces (`maxPerDay`,
  * `minGapMinutes`, `maxChars`, `requiresCanonical`, `contentPolicy`), so the
@@ -19,6 +20,8 @@ import { join } from "node:path";
 import { configPath } from "../util/paths.ts";
 
 export const SKILLS_DIR = "skills";
+/** The directory under skills/ that holds the post-type skills. Not a network. */
+export const TYPES_DIR = "types";
 /** The file name of the generated default, at both levels. */
 export const DEFAULT_SKILL_SLUG = "skill";
 
@@ -47,7 +50,20 @@ export interface SkillFrontmatter extends SkillLimits {
   /** The template version this file was written from; absent once a person edits it. */
   generatedFrom?: string;
   /** Anything else a person put in the frontmatter, kept as written. */
-  [key: string]: string | number | boolean | undefined;
+  [key: string]: string | number | boolean | string[] | undefined;
+}
+
+/** One post-type skill's frontmatter: what a launch announcement or a bug story is, wherever it goes. */
+export interface TypeFrontmatter extends SkillFrontmatter {
+  type?: string;
+  /** Network kinds that may carry this type. Absent means any. */
+  allowedKinds?: string[];
+  /** Posts of this type across every account in any rolling 24 hours. */
+  maxPerDay?: number;
+  /** The post must carry a URL. */
+  requiresUrl?: boolean;
+  /** The sections, in order, an agent writes. */
+  structure?: string[];
 }
 
 export interface SkillFile {
@@ -85,6 +101,23 @@ export function networkSkillPath(network: string): string {
   return join(networkSkillDir(network), `${DEFAULT_SKILL_SLUG}.md`);
 }
 
+export function typeSkillDir(type: string): string {
+  return join(skillsDir(), TYPES_DIR, safeSlug(type));
+}
+
+export function typeSkillPath(type: string): string {
+  return join(typeSkillDir(type), `${DEFAULT_SKILL_SLUG}.md`);
+}
+
+/** Every post type that has a directory under skills/types, alphabetical. */
+export function listTypeSlugs(): string[] {
+  const dir = join(skillsDir(), TYPES_DIR);
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir)
+    .filter((name) => statSync(join(dir, name)).isDirectory() && existsSync(join(dir, name, `${DEFAULT_SKILL_SLUG}.md`)))
+    .sort();
+}
+
 export function accountSkillDir(network: string, handle: string): string {
   return join(networkSkillDir(network), handleSlug(handle));
 }
@@ -110,8 +143,13 @@ export function safeSlug(slug: string): string {
 
 const FRONTMATTER = /^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/;
 
-function readScalar(raw: string): string | number | boolean {
+function readScalar(raw: string): string | number | boolean | string[] {
   const value = raw.trim();
+  // A flow list: [blog, social]. Items are scalars; nested lists are not a skill's business.
+  if (value.startsWith("[") && value.endsWith("]")) {
+    const inner = value.slice(1, -1).trim();
+    return inner ? inner.split(",").map((item) => String(readScalar(item))).filter(Boolean) : [];
+  }
   if (/^"(.*)"$/.test(value)) return value.slice(1, -1).replace(/\\"/g, '"');
   if (/^'(.*)'$/.test(value)) return value.slice(1, -1);
   if (value === "true") return true;
@@ -142,7 +180,8 @@ export function parseSkill(raw: string): { frontmatter: SkillFrontmatter; body: 
   return { frontmatter, body: match[2].trim() };
 }
 
-function writeScalar(value: string | number | boolean): string {
+function writeScalar(value: string | number | boolean | string[]): string {
+  if (Array.isArray(value)) return `[${value.map((item) => writeScalar(item)).join(", ")}]`;
   if (typeof value === "number" || typeof value === "boolean") return String(value);
   // Quote anything YAML would otherwise misread: a colon, a leading symbol, a bare number or boolean.
   if (value === "" || /[:#'"\n]|^[\s\-?&*!|>%@`[\]{},]|^(true|false|null|~)$|^-?\d+(\.\d+)?$/.test(value) || /^\s|\s$/.test(value)) {
@@ -152,7 +191,7 @@ function writeScalar(value: string | number | boolean): string {
 }
 
 /** The order the well-known keys are written in; anything else follows alphabetically. */
-const KEY_ORDER = ["name", "description", "kind", "network", "account", "profileUrl", "connectedAt", "maxPerDay", "minGapMinutes", "maxChars", "requiresCanonical", "contentPolicy", "generatedFrom"];
+const KEY_ORDER = ["name", "description", "kind", "type", "network", "account", "profileUrl", "connectedAt", "allowedKinds", "maxPerDay", "minGapMinutes", "maxChars", "requiresCanonical", "requiresUrl", "contentPolicy", "structure", "generatedFrom"];
 
 export function serializeSkill(frontmatter: SkillFrontmatter, body: string): string {
   const keys = Object.keys(frontmatter).filter((key) => frontmatter[key] !== undefined);
@@ -164,7 +203,7 @@ export function serializeSkill(frontmatter: SkillFrontmatter, body: string): str
     if (ib === -1) return -1;
     return ia - ib;
   });
-  const lines = keys.map((key) => `${key}: ${writeScalar(frontmatter[key] as string | number | boolean)}`);
+  const lines = keys.map((key) => `${key}: ${writeScalar(frontmatter[key] as string | number | boolean | string[])}`);
   return `---\n${lines.join("\n")}\n---\n\n${body.trim()}\n`;
 }
 
@@ -215,7 +254,7 @@ export function listSkillNetworks(): string[] {
   const dir = skillsDir();
   if (!existsSync(dir)) return [];
   return readdirSync(dir)
-    .filter((name) => statSync(join(dir, name)).isDirectory())
+    .filter((name) => name !== TYPES_DIR && statSync(join(dir, name)).isDirectory())
     .sort();
 }
 

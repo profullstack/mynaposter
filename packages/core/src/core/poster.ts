@@ -17,6 +17,7 @@ import { getAccount } from "../store/accounts.ts";
 import { loadSettings } from "../store/settings.ts";
 import { pacingRules, planTargets, reflowQueue, type Plan, type Reflow } from "./pacing.ts";
 import { duplicateTitle, planLimitsFor, takeSkill, titleOf } from "./skills.ts";
+import { bookingsForType, defaultTypeFor, refuseTypeMismatch, typeCapFor } from "./post-types.ts";
 
 export interface ComposeOptions {
   text: string;
@@ -34,6 +35,13 @@ export interface ComposeOptions {
    * to stop.
    */
   allowDuplicate?: boolean;
+  /**
+   * The post type (skills/types/<type>/skill.md). Decides which kinds of
+   * target may carry it and adds the type's own daily cap. Filled in from
+   * the targets when absent: a launch-announcement for a blog, a
+   * social-update otherwise.
+   */
+  type?: string;
 }
 
 export interface TargetResult {
@@ -182,6 +190,7 @@ export async function postToAll(accounts: Account[], options: ComposeOptions): P
       ok: result.ok,
       title: result.title,
       skill: result.skill,
+      type: options.type,
       postId: result.posts[0]?.id,
       url: result.posts[0]?.url,
       error: result.error,
@@ -234,8 +243,15 @@ export async function postPaced(accounts: Account[], options: ComposeOptions, pa
   const accountNetwork = (id: string) => getAccount(id)?.network;
   const queueBefore = listQueue();
   const history = listHistory();
+  // The post type: named, or read off the targets. A type that a target's
+  // kind does not carry (a bug-story to the blog) is an error, not a queue
+  // entry, and it is checked before anything else so nothing half-happens.
+  const type = options.type ?? defaultTypeFor(accounts);
+  options = { ...options, type };
+  refuseTypeMismatch(type, accounts);
   // A blog does not carry the same title twice, whatever the pacing says.
   refuseDuplicateTitles(accounts, options, history);
+  const typeCap = typeCapFor(type);
   const plan = planTargets({
     accounts,
     text: options.text,
@@ -249,6 +265,8 @@ export async function postPaced(accounts: Account[], options: ComposeOptions, pa
     accountNetwork,
     // The account's skill sets its day's budget and can widen its gap.
     limitsFor: (account) => planLimitsFor(account, settings),
+    // And the type has a budget of its own across every account.
+    typeLimit: typeCap ? { type, maxPerDay: typeCap, bookings: bookingsForType(type, history, queueBefore) } : undefined,
   });
 
   // Make room before anything is sent or enqueued, so the entries we jumped
@@ -271,6 +289,7 @@ export async function postPaced(accounts: Account[], options: ComposeOptions, pa
       mediaPaths: paced.mediaPaths,
       extra: options.extra,
       thread: options.thread,
+      type,
     });
     queued.push(entry);
     scheduleHooks.push(...(await runAfterSchedule(entry)));
