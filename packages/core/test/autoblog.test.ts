@@ -104,7 +104,7 @@ test("login validates the URL and secret and defaults the handle to the host", a
 
 test("a failed delivery surfaces as an error, not a silent success", async () => {
   const realFetch = globalThis.fetch;
-  globalThis.fetch = (async () => new Response("nope", { status: 401 })) as typeof fetch;
+  globalThis.fetch = (async () => new Response("nope", { status: 401 })) as unknown as typeof fetch;
   try {
     await expect(autoblog.post(acct(), { title: "X", text: "Body." })).rejects.toThrow(/rejected the post/);
   } finally {
