@@ -118,6 +118,21 @@ DID (a decentralized identifier, proved at CoinPay, attached to accounts):
   did assign <account...|all>       Attach it as the accounts' owner, or
        [--role owner|operator]      operator for accounts that are agents
   did show | unassign | logout      What carries it; the OpenProfile says so
+
+Direct (mail and texts to people, not posts to networks):
+  smtp add <id> --host h --user u   An SMTP server; the password goes in the vault
+       --from "Name <a@b>"          [--port 587] [--secure starttls|tls|none]
+  smtp list | rm <id> | test <id> <to>
+  sms setup --from +1408...         Telnyx; the API key goes in the vault
+  sms send <to...> "text"           A text, or --list <L> "text"; --dry-run first
+  contacts                          Who you may write to, with tags and lists
+  contacts add <email|phone> [--name] [--tags] [--list]
+  contacts import agenticjobs       The contact info candidates published, read
+       [--tags] [--list] [--limit]  as the account you are logged in to the board with
+  contacts lists | list-add <L> <id...> | optout <id> | rm <id> | export
+  email --to a@b | --list <L>       Markdown on stdin, sent as text and HTML
+       --subject "..." [--smtp id] [--reply-to r] [--dry-run]
+  email log
 AT Protocol (the network behind Bluesky; a directory of its servers):
   atproto [q] [--kind pds|relay|feed|labeler] [--online]
                                     The directory at mynaposter.com/listing/atproto

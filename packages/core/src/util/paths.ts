@@ -31,6 +31,10 @@ export const RESHARE_FILE = "reshare.json";
 export const ENGAGE_FILE = "engage.json";
 /** The proved DID and the session that proved it. */
 export const DID_FILE = "did.json";
+/** People you may write to, and the lists they are on. */
+export const CONTACTS_FILE = "contacts.json";
+/** SMTP servers (secrets in the vault), the SMS setup, and what went out. */
+export const OUTREACH_FILE = "outreach.json";
 /** A hand-written OpenProfile.md wins over the one `myna profile` would build. */
 export const PROFILE_FILE = "openprofile.md";
 /** When the daily recap was last sent. State, not preference, so not in settings. */

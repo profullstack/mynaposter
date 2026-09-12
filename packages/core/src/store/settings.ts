@@ -69,6 +69,8 @@ export interface Settings {
   engage: EngageSettings;
   /** Where a DID is proved: the CoinPay origin and the OAuth client myna is registered as there. */
   did: DidSettings;
+  /** Direct mail and texts: the most that go out in a rolling day. */
+  outreach: OutreachSettings;
   /** Plugin specs: an absolute path, or a package name installed by `myna plugins add`. */
   plugins: string[];
   /**
@@ -200,6 +202,13 @@ export interface DidSettings {
   clientId: string;
 }
 
+export interface OutreachSettings {
+  maxEmailsPerDay: number;
+  maxSmsPerDay: number;
+}
+
+export const DEFAULT_OUTREACH: OutreachSettings = { maxEmailsPerDay: 200, maxSmsPerDay: 100 };
+
 export const DEFAULT_DID: DidSettings = {
   server: "https://coinpayportal.com",
   // myna's public OAuth client at CoinPay: PKCE, loopback redirect, scopes openid profile did.
@@ -254,6 +263,7 @@ export const DEFAULT_SETTINGS: Settings = {
   reshare: { ...DEFAULT_RESHARE },
   engage: { ...DEFAULT_ENGAGE },
   did: { ...DEFAULT_DID },
+  outreach: { ...DEFAULT_OUTREACH },
   plugins: [],
   directories: [],
 };
@@ -274,6 +284,7 @@ export function loadSettings(): Settings {
     reshare: { ...DEFAULT_RESHARE, ...stored.reshare },
     engage: { ...DEFAULT_ENGAGE, ...stored.engage },
     did: { ...DEFAULT_DID, ...stored.did },
+    outreach: { ...DEFAULT_OUTREACH, ...stored.outreach },
     skills: {
       defaults: { ...(stored.skills?.defaults ?? {}) },
       rotate: { ...(stored.skills?.rotate ?? {}) },

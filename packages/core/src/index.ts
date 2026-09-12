@@ -375,3 +375,11 @@ export { DEFAULT_DID, type DidSettings } from "./store/settings.ts";
 // AT Protocol servers: the probe, and the directory at mynaposter.com/listing/atproto.
 export { probeAtproto, atprotoOrigin, type AtprotoProbe, type AtprotoKind } from "./core/atproto.ts";
 export * as atproto from "./store/atproto.ts";
+
+// Outreach: SMTP servers, texts through Telnyx, contacts and lists.
+export { sendSmtp, buildMime, dotStuff, addressOf, SmtpError, type SmtpServer, type SmtpMessage, type SmtpResult, type SmtpOptions, type SmtpSecurity } from "./core/smtp.ts";
+export { sendSms, e164, TELNYX_MESSAGES_URL, type SmsConfig, type SmsResult } from "./core/sms.ts";
+export { readContacts, writeContacts, upsertContact, removeContact, optOut, addToList, recipients, contactId, type Contact, type ContactsFile } from "./store/contacts.ts";
+export { readOutreach, writeOutreach, saveSmtpServer, removeSmtpServer, smtpServer, saveSms, smsConfig, recordSent, outreachSentToday, type SmsSetup, type SentRecord, type OutreachFile } from "./store/outreach.ts";
+export { importFromAgenticjobs, type ImportOptions, type ImportResult } from "./core/contacts-import.ts";
+export { DEFAULT_OUTREACH, type OutreachSettings } from "./store/settings.ts";

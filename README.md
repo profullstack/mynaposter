@@ -734,6 +734,29 @@ myna atproto probe https://bsky.social
 myna atproto add https://pds.example --tags community,open-signup   # after myna cloud login
 ```
 
+## Mail and texts to people
+
+Posts reach networks; these reach people. An SMTP server you already have, a
+Telnyx number for texts, and a contacts file with lists.
+
+```bash
+myna smtp add work --host smtp.fastmail.com --user you@example.com --from "You <you@example.com>"
+myna smtp test work you@example.com
+myna sms setup --from +14084269127            # a Telnyx number on a messaging profile
+myna contacts import agenticjobs --list candidates   # the contact info candidates published
+myna contacts add ada@example.com --name Ada --tags rust --list launch
+myna email --list launch --subject "We shipped" < announcement.md   # Markdown, as text and HTML
+myna sms send --list launch "We shipped. Details: https://example.com" --dry-run
+```
+
+The SMTP password and the Telnyx key live in the vault; the servers, the
+setup and every send are in `outreach.json`. An opted-out contact
+(`myna contacts optout <id>`) is never on a list's recipients again. At most
+200 emails and 100 texts a day unless `outreach.maxEmailsPerDay` and
+`outreach.maxSmsPerDay` say otherwise. The agenticjobs import reads a
+candidate's contact block exactly as the board shows it to the account you are
+logged in with, and writes the source on every contact.
+
 ## Cloud backup, if you want it
 
 Optional. myna never contacts a server unless you run a `cloud` command.

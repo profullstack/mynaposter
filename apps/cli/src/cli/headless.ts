@@ -102,6 +102,7 @@ import { runProfile, runReshareCommand } from "./reshare.ts";
 import { runAtproto } from "./atproto.ts";
 import { runEngage } from "./engage.ts";
 import { runDid } from "./did.ts";
+import { runContacts, runEmail, runSms, runSmtp } from "./outreach.ts";
 import { parseWhen, describeWhen, parseDuration } from "../tui/when.ts";
 import { loginValuesFromArgs } from "../login-args.ts";
 
@@ -530,6 +531,28 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
     case "did": {
       await ensureUnlocked();
       return await runDid(positional, flags, { openUrl: openBrowser });
+    }
+
+    case "smtp": {
+      await ensureUnlocked();
+      return await runSmtp(positional, flags);
+    }
+
+    case "sms": {
+      await ensureUnlocked();
+      return await runSms(positional, flags);
+    }
+
+    case "contacts":
+    case "contact": {
+      await ensureUnlocked();
+      return await runContacts(positional, flags);
+    }
+
+    case "email":
+    case "mail": {
+      await ensureUnlocked();
+      return await runEmail(positional, flags);
     }
 
     case "post": {
