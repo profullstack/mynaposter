@@ -12,6 +12,7 @@ import { startScheduler, configDir, availableRasterizers, writerAvailable } from
 import * as service from "./service.ts";
 import { handleMcpBody } from "./mcp.ts";
 import * as cloud from "./cloud.ts";
+import * as reshare from "./reshare.ts";
 import { VERSION } from "@profullstack/myna-core";
 
 const app = new Hono();
@@ -37,7 +38,8 @@ app.use("/v1/*", async (context, next) => {
   // Cloud routes carry their own auth: MYNA_API_TOKEN is the operator driving
   // this instance, while those belong to an end user with an account. Running
   // both would mean nobody could sign up without the operator's token.
-  if (new URL(context.req.url).pathname.startsWith("/v1/cloud")) return next();
+  const path = new URL(context.req.url).pathname;
+  if (path.startsWith("/v1/cloud") || path.startsWith("/v1/reshare")) return next();
 
   const expected = process.env.MYNA_API_TOKEN;
   const isRead = context.req.method === "GET";
@@ -122,6 +124,14 @@ app.get("/", (context) =>
       "GET  /v1/cloud/me",
       "PUT  /v1/cloud/backup",
       "GET  /v1/cloud/backup",
+      "PUT  /v1/reshare/profile",
+      "GET  /v1/reshare/profile",
+      "POST /v1/reshare/requests",
+      "GET  /v1/reshare/requests",
+      "GET  /v1/reshare/matches",
+      "POST /v1/reshare/claims",
+      "PATCH /v1/reshare/claims/:id",
+      "GET  /v1/reshare/ledger",
     ],
     mcp: { endpoint: "/api/mcp", transport: "streamable-http", tools: 11 },
   }),
@@ -265,6 +275,93 @@ cloudRoutes.delete("/backup", async (context) => {
 });
 
 app.route("/v1/cloud", cloudRoutes);
+
+/**
+ * The reshare network. Same sign-in as cloud backup, same database, and the
+ * same rule: the server never holds a social token. It matches profiles to
+ * requests and keeps score; every reshare is done by a sharer's own myna.
+ */
+const reshareRoutes = new Hono<{ Variables: { user: cloud.CloudUser } }>();
+
+reshareRoutes.use("*", async (context, next) => {
+  if (!hasDatabase()) {
+    return context.json({ ok: false, error: "This instance has no DATABASE_URL, so the reshare network is off." }, 503);
+  }
+  const user = await requireUser(context);
+  if (!user) return context.json({ ok: false, error: "Unauthorized" }, 401);
+  context.set("user", user);
+  return next();
+});
+
+const userOf = (context: { get(key: "user"): cloud.CloudUser }): cloud.CloudUser => context.get("user");
+
+/** Run one call and shape the answer, with a thrown Error as a clean 400. */
+const answer =
+  <T>(fn: () => Promise<T>) =>
+  async (context: { json: (body: unknown, status?: never) => Response }) => {
+    try {
+      return context.json({ ok: true, ...(await fn()) } as never);
+    } catch (error) {
+      return context.json({ ok: false, error: (error as Error).message } as never, 400 as never);
+    }
+  };
+
+reshareRoutes.put("/profile", async (context) => {
+  const input = (await context.req.json().catch(() => ({}))) as { markdown?: string };
+  return answer(async () => ({ profile: await reshare.putProfile(userOf(context).id, input.markdown ?? "") }))(context);
+});
+
+reshareRoutes.get("/profile", (context) => answer(async () => ({ profile: await reshare.getProfile(userOf(context).id) }))(context));
+
+reshareRoutes.get("/profile.md", async (context) => {
+  const markdown = await reshare.getProfileMarkdown(userOf(context).id);
+  if (markdown === null) return context.json({ ok: false, error: "No profile published." }, 404);
+  return context.body(markdown, 200, { "content-type": "text/markdown; charset=utf-8" });
+});
+
+reshareRoutes.delete("/profile", (context) => answer(async () => ({ left: await reshare.leave(userOf(context).id) }))(context));
+
+reshareRoutes.post("/requests", async (context) => {
+  const input = (await context.req.json().catch(() => ({}))) as reshare.RequestInput;
+  return answer(() => reshare.createRequest(userOf(context).id, input))(context);
+});
+
+reshareRoutes.get("/requests", (context) => answer(async () => ({ requests: await reshare.listRequests(userOf(context).id) }))(context));
+
+reshareRoutes.delete("/requests/:id", (context) =>
+  answer(async () => ({ closed: await reshare.closeRequest(userOf(context).id, context.req.param("id")) }))(context),
+);
+
+reshareRoutes.get("/matches", (context) =>
+  answer(async () => ({ matches: await reshare.matchesFor(userOf(context).id, Number(context.req.query("limit") ?? 10)) }))(context),
+);
+
+reshareRoutes.post("/claims", async (context) => {
+  const input = (await context.req.json().catch(() => ({}))) as { requestId?: string; network?: string };
+  return answer(async () => ({ claim: await reshare.claim(userOf(context).id, input.requestId ?? "", input.network ?? "") }))(context);
+});
+
+reshareRoutes.patch("/claims/:id", async (context) => {
+  const input = (await context.req.json().catch(() => ({}))) as { ok?: boolean; url?: string; error?: string };
+  return answer(async () => {
+    if (!(await reshare.report(userOf(context).id, context.req.param("id"), input))) throw new Error("No claim of yours awaiting a report with that id.");
+    return { reported: true };
+  })(context);
+});
+
+reshareRoutes.patch("/claims/:id/paid", async (context) => {
+  const input = (await context.req.json().catch(() => ({}))) as { ref?: string };
+  return answer(async () => {
+    if (!(await reshare.markPaid(userOf(context).id, context.req.param("id"), input.ref ?? ""))) {
+      throw new Error("No unpaid, done claim on a request of yours with that id.");
+    }
+    return { paid: true };
+  })(context);
+});
+
+reshareRoutes.get("/ledger", (context) => answer(() => reshare.ledger(userOf(context).id))(context));
+
+app.route("/v1/reshare", reshareRoutes);
 
 app.notFound((context) => context.json({ ok: false, error: "Not found" }, 404));
 

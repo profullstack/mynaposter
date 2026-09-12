@@ -290,7 +290,7 @@ export function typeTemplate(type: string): { frontmatter: TypeFrontmatter; body
 
 ${template.description}
 
-Allowed on: ${template.allowedKinds.join(", ")}. myna refuses this type on any other kind of target.${template.maxPerDay !== undefined ? ` At most ${template.maxPerDay} a day across every account; a mirror sent with --canonical-url pointing at one already out does not count.` : ""}
+Allowed on: ${template.allowedKinds.join(", ")}. myna refuses this type on any other kind of target.${template.maxPerDay !== undefined ? ` At most ${template.maxPerDay} a day across every account.` : ""}
 
 ${template.body}`;
   return { frontmatter, body };
@@ -423,35 +423,17 @@ export function refuseTypeMismatch(type: string, accounts: Array<Pick<Account, "
   );
 }
 
-function sameUrl(a: string | undefined, b: string | undefined): boolean {
-  const norm = (url: string | undefined) => (url ?? "").trim().replace(/\/+$/, "");
-  const left = norm(a);
-  return left !== "" && left === norm(b);
-}
-
-/**
- * Whether a post is the canonical mirror of one this type already sent: it
- * carries --canonical-url and that URL is where a sent post of the same type
- * lives. The original spent the type's daily budget; the copy pointing back
- * at it does not, so an essay reaches the blog and dev.to on the same day
- * under a cap of one.
- */
-export function isMirrorOfSent(type: string, canonicalUrl: string | undefined, history: HistoryEntry[]): boolean {
-  if (!canonicalUrl?.trim()) return false;
-  return history.some((entry) => entry.ok && entry.type === type && sameUrl(entry.url, canonicalUrl));
-}
-
-/** Times posts of this type went out or are booked, across every account. Mirrors of a sent post do not count. */
+/** Times posts of this type went out or are booked, across every account. */
 export function bookingsForType(type: string, history: HistoryEntry[], queue: QueuedPost[]): number[] {
   const times: number[] = [];
   for (const entry of history) {
-    if (entry.ok && entry.type === type && !isMirrorOfSent(type, entry.canonicalUrl, history)) {
+    if (entry.ok && entry.type === type) {
       const at = new Date(entry.at).getTime();
       if (!Number.isNaN(at)) times.push(at);
     }
   }
   for (const post of queue) {
-    if ((post.status === "pending" || post.status === "sending") && post.type === type && !isMirrorOfSent(type, post.extra?.canonicalUrl, history)) {
+    if ((post.status === "pending" || post.status === "sending") && post.type === type) {
       const at = new Date(post.scheduledFor).getTime();
       if (!Number.isNaN(at)) times.push(at);
     }

@@ -16,7 +16,6 @@ import {
   BUILTIN_TYPES,
   addTypeSkill,
   bookingsForType,
-  isMirrorOfSent,
   defaultTypeFor,
   ensureTypeSkill,
   initTypeSkills,
@@ -287,50 +286,5 @@ test("postToAll records the type it was given", async () => {
     const results = await postToAll([gitblog], { text: "# Direct\n\nbody", type: "essay" });
     expect(results[0].ok).toBe(true);
     expect(listHistory()[0]).toMatchObject({ type: "essay", skill: "skill", title: "Direct" });
-  });
-});
-
-test("a canonical mirror of a sent essay does not count against the essay's one a day", async () => {
-  const url = "https://dev.profullstack.com/~anthony/blog/118-post.html";
-  const history: HistoryEntry[] = [
-    { at: new Date(NOW - 1 * H).toISOString(), accountId: blog.id, network: "htmlblog", handle: blog.handle, text: "the essay", ok: true, type: "essay", url },
-  ];
-  expect(isMirrorOfSent("essay", url, history)).toBe(true);
-  expect(isMirrorOfSent("essay", `${url}/`, history)).toBe(true);
-  expect(isMirrorOfSent("launch-announcement", url, history)).toBe(false);
-  expect(isMirrorOfSent("essay", "https://elsewhere.test/other", history)).toBe(false);
-  expect(isMirrorOfSent("essay", undefined, history)).toBe(false);
-
-  // A sent mirror and a queued mirror are not bookings; the original is.
-  const withMirror: HistoryEntry[] = [
-    ...history,
-    { at: new Date(NOW - 30 * 60_000).toISOString(), accountId: devto.id, network: "devto", handle: devto.handle, text: "the essay", ok: true, type: "essay", url: "https://dev.to/chovy/x", canonicalUrl: url },
-  ];
-  const queued: QueuedPost[] = [
-    { id: "m1", createdAt: new Date(NOW).toISOString(), scheduledFor: new Date(NOW + H).toISOString(), status: "pending", targets: [devto.id], text: "the essay", type: "essay", extra: { canonicalUrl: url } },
-  ];
-  expect(bookingsForType("essay", withMirror, queued)).toEqual([NOW - 1 * H]);
-
-  await withFakeBlog(async () => {
-    const mirror = acct("gitblog", "test/mirror");
-    saveAccount(mirror);
-    // History is stamped with the wall clock, so the plan runs on it too.
-    const T = Date.now();
-    // The essay goes out.
-    const first = await postPaced([gitblog], { text: "# The bus\n\nbody", type: "essay" }, { now: T, force: true });
-    expect(first.results[0]?.ok).toBe(true);
-    const original = listHistory()[0]?.url;
-    expect(original).toBeTruthy();
-
-    // Its canonical mirror, the same day, is sent rather than held 24h.
-    const copy = await postPaced([mirror], { text: "# The bus\n\nbody", type: "essay", extra: { canonicalUrl: original! } }, { now: T + 5 * 60_000, force: true });
-    expect(copy.results[0]?.ok).toBe(true);
-    expect(copy.queued).toEqual([]);
-    expect(listHistory()[0]).toMatchObject({ accountId: mirror.id, type: "essay", canonicalUrl: original });
-
-    // A second, real essay the same day still waits.
-    const another = await postPaced([gitblog], { text: "# Another\n\nbody", type: "essay" }, { now: T + 10 * 60_000, force: true });
-    expect(another.results.length).toBe(0);
-    expect(another.plan.later[0]?.reason).toContain("essay is at its 1 a day across every account");
   });
 });

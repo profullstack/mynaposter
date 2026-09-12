@@ -15,7 +15,6 @@ import { devto, hashnode, ghost, wordpress, microblog, tumblr } from "./adapters
 import { tsbb } from "./adapters/tsbb.ts";
 import { agenticjobs } from "./adapters/agenticjobs.ts";
 import { gitblog, htmlblog } from "./adapters/ownblogs.ts";
-import { autoblog } from "./adapters/autoblog.ts";
 
 export const NETWORKS: Network[] = [
   // The ones people ask for first.
@@ -54,8 +53,6 @@ export const NETWORKS: Network[] = [
   // Blogs you host yourself: a repository, or a directory of pages.
   gitblog,
   htmlblog,
-  // Blogs that receive signed autoblog webhooks (logicsrc, crawlproof, ...).
-  autoblog,
 ];
 
 const BY_ID = new Map(NETWORKS.map((network) => [network.id, network]));

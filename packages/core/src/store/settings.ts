@@ -61,6 +61,10 @@ export interface Settings {
   blog: { maxPerDay?: number };
   /** Which skill each account uses, and where its rotation stands. */
   skills: SkillSettings;
+  /** Who you are, for `myna profile`: the OpenProfile.md myna writes when there is no hand-written one. */
+  profile: ProfileSettings;
+  /** The reshare network: what you offer to reshare for others, and what you ask for your own posts. */
+  reshare: ReshareSettings;
   /** Plugin specs: an absolute path, or a package name installed by `myna plugins add`. */
   plugins: string[];
   /**
@@ -94,6 +98,75 @@ export interface CustomDirectorySetting {
   blurb?: string;
 }
 
+export interface ProfileSettings {
+  name: string;
+  kind: "" | "person" | "agent" | "organization";
+  handle: string;
+  web: string;
+  email: string;
+  avatar: string;
+  /** Where money for you goes: a CAIP-10 account, an address, a payment page. */
+  pay: string;
+  /** An OpenResume.md URL. */
+  resume: string;
+  headline: string;
+  /** Comma list. What you write about; the reshare network matches on it. */
+  topics: string;
+  /** For an agent: who is answerable for it. */
+  operatorName: string;
+  operatorProfile: string;
+  operatorEmail: string;
+}
+
+export interface ReshareSettings {
+  /** Ask the network to reshare every post as it goes out. Off until turned on. */
+  auto: boolean;
+  /** The most reshares this install does for other people in a rolling day. */
+  perDay: number;
+  /** On a network with no repost API, post the link instead. */
+  quote: boolean;
+  /** Networks you will reshare on: "all" or a comma list of network ids. */
+  networks: string;
+  /** Comma list of topics you will reshare. Empty means your profile topics. */
+  topics: string;
+  /** Comma list of topics you refuse. */
+  not: string;
+  /** What one reshare by you costs the author, in USD. 0 is free. */
+  rateUsd: number;
+  /** What you offer per reshare of your own posts, in USD. 0 asks for free reshares only. */
+  bountyUsd: number;
+  /** How many people may reshare one of your posts. */
+  maxSharers: number;
+}
+
+export const DEFAULT_PROFILE: ProfileSettings = {
+  name: "",
+  kind: "",
+  handle: "",
+  web: "",
+  email: "",
+  avatar: "",
+  pay: "",
+  resume: "",
+  headline: "",
+  topics: "",
+  operatorName: "",
+  operatorProfile: "",
+  operatorEmail: "",
+};
+
+export const DEFAULT_RESHARE: ReshareSettings = {
+  auto: false,
+  perDay: 5,
+  quote: true,
+  networks: "all",
+  topics: "",
+  not: "",
+  rateUsd: 0,
+  bountyUsd: 0,
+  maxSharers: 10,
+};
+
 export const DEFAULT_SETTINGS: Settings = {
   defaultTargets: "all",
   signature: "",
@@ -125,6 +198,8 @@ export const DEFAULT_SETTINGS: Settings = {
   recap: { ...DEFAULT_RECAP },
   blog: {},
   skills: { defaults: {}, rotate: {}, cursor: {} },
+  profile: { ...DEFAULT_PROFILE },
+  reshare: { ...DEFAULT_RESHARE },
   plugins: [],
   directories: [],
 };
@@ -141,6 +216,8 @@ export function loadSettings(): Settings {
     evergreen: { ...DEFAULT_SETTINGS.evergreen, ...stored.evergreen },
     recap: { ...DEFAULT_SETTINGS.recap, ...stored.recap },
     blog: { ...DEFAULT_SETTINGS.blog, ...stored.blog },
+    profile: { ...DEFAULT_PROFILE, ...stored.profile },
+    reshare: { ...DEFAULT_RESHARE, ...stored.reshare },
     skills: {
       defaults: { ...(stored.skills?.defaults ?? {}) },
       rotate: { ...(stored.skills?.rotate ?? {}) },

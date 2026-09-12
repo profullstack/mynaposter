@@ -1,6 +1,6 @@
 {
   "name": "@profullstack/myna-core",
-  "version": "0.19.2",
+  "version": "0.20.0",
   "description": "Network adapters, credential vault, scheduling and the AI writer behind myna.",
   "license": "MIT",
   "type": "module",
@@ -9,7 +9,6 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.123.0",
-    "@profullstack/autoblog": "^0.4.0"
+    "@anthropic-ai/sdk": "^0.123.0"
   }
 }

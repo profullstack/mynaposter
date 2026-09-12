@@ -25,6 +25,10 @@ export const QUEUE_FILE = "queue.json";
 export const HISTORY_FILE = "history.json";
 export const SETTINGS_FILE = "settings.json";
 export const GRAPH_FILE = "graph.json";
+/** What this install has reshared for others, and when it joined the network. */
+export const RESHARE_FILE = "reshare.json";
+/** A hand-written OpenProfile.md wins over the one `myna profile` would build. */
+export const PROFILE_FILE = "openprofile.md";
 /** When the daily recap was last sent. State, not preference, so not in settings. */
 export const RECAP_FILE = "recap.json";
 /** Where `myna plugins add <package>` installs to. */
