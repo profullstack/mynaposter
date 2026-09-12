@@ -85,6 +85,8 @@ import {
   pluginsDir,
   resolvePluginEntry,
   configDir,
+  ensureAccountSkill,
+  ensureNetworkSkill,
   type Account,
   type InfographicStyle,
 } from "@profullstack/myna-core";
@@ -92,6 +94,7 @@ import { spawnSync } from "node:child_process";
 import { ask, askSecret, confirm, readStdin } from "./prompt.ts";
 import { out, table } from "./io.ts";
 import { runDirectory } from "./directory.ts";
+import { runSkill } from "./skill.ts";
 import { parseWhen, describeWhen, parseDuration } from "../tui/when.ts";
 import { loginValuesFromArgs } from "../login-args.ts";
 
@@ -131,7 +134,7 @@ export function parseFlags(argv: string[]): { positional: string[]; flags: Flags
     // Boolean flags take no value. `--now`, `--off` and `--no-open` are as
     // much switches as `--json`; without them here the parser eats the next
     // argument, so `myna post all "hi" --now` died asking for a value.
-    const BOOLS = new Set(["json", "yes", "thread", "dryRun", "noThread", "force", "now", "off", "on", "noOpen", "front", "skipQueue", "send", "check", "noAi"]);
+    const BOOLS = new Set(["json", "yes", "thread", "dryRun", "noThread", "force", "now", "off", "on", "noOpen", "front", "skipQueue", "send", "check", "noAi", "allowDuplicate"]);
     if (BOOLS.has(name)) {
       flags[name === "noThread" ? "thread" : name] = name !== "noThread";
       continue;
@@ -150,7 +153,7 @@ const OWN_FLAGS = new Set([
   "to", "title", "media", "json", "yes", "style", "at", "thread", "dryRun", "limit", "output",
   "keepSvg", "server", "overwrite", "settings", "once", "interval", "refresh", "theme", "force", "weight", "source", "network",
   "now", "gap", "drip", "repost", "every", "cooldown", "off", "on", "port", "open", "noOpen",
-  "days", "send", "command", "check", "version",
+  "days", "send", "command", "check", "version", "allowDuplicate", "from",
 ]);
 
 /**
@@ -164,6 +167,18 @@ export function extraFrom(flags: Flags): Record<string, string> | undefined {
     if (!OWN_FLAGS.has(key) && typeof value === "string") extra[key] = value;
   }
   return Object.keys(extra).length ? extra : undefined;
+}
+
+/**
+ * `--now` and `--allow-duplicate` ride on the queue entry as extras, so the
+ * daemon honours them when the entry's turn comes.
+ */
+function markExtra(extra: Record<string, string> | undefined, flags: Flags): Record<string, string> | undefined {
+  const marks: Record<string, string> = {};
+  if (flags.now) marks.now = "true";
+  if (flags.allowDuplicate) marks.allowDuplicate = "true";
+  if (!Object.keys(marks).length) return extra;
+  return { ...extra, ...marks };
 }
 
 // `out` and `table` live in ./io.ts so that a command in its own file can
@@ -333,6 +348,15 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
       };
       saveAccount(account);
       out(`\nConnected ${account.id}`);
+      // The rules for this account, written once so they can be read and
+      // edited. An existing file is never touched.
+      try {
+        ensureNetworkSkill(network.id);
+        const skill = ensureAccountSkill(account);
+        out(`${skill.written ? "Wrote" : "Skill at"} ${skill.path}`);
+      } catch (error) {
+        out(`Could not write the skill file: ${(error as Error).message}`);
+      }
       return 0;
     }
 
@@ -462,6 +486,12 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
       return await runDirectory(positional, flags);
     }
 
+    case "skill":
+    case "skills": {
+      await ensureUnlocked();
+      return await runSkill(positional, flags);
+    }
+
     case "post": {
       await ensureUnlocked();
       const { accounts, text } = await resolvePostArgs(positional, flags);
@@ -485,7 +515,8 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
         media: flags.media?.length ? loadAllMedia(flags.media) : undefined,
         thread: flags.thread ?? settings.threadByDefault,
         signature: settings.signature || undefined,
-        extra: flags.now ? { ...extra, now: "true" } : extra,
+        extra: markExtra(extra, flags),
+        allowDuplicate: Boolean(flags.allowDuplicate),
       }, { force: Boolean(flags.now), front: Boolean(flags.front || flags.skipQueue), mediaPaths: flags.media });
       const results = paced.results;
 
@@ -668,7 +699,8 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
         text,
         title: flags.title,
         thread: flags.thread ?? settings.threadByDefault,
-        extra: flags.now ? { ...extraFrom(flags), now: "true" } : extraFrom(flags),
+        extra: markExtra(extraFrom(flags), flags),
+        allowDuplicate: Boolean(flags.allowDuplicate),
       }, { from: Math.max(at.getTime(), Date.now() + 1), force: Boolean(flags.now), mediaPaths: flags.media });
       for (const entry of paced.queued) {
         out(`Queued ${entry.id} for ${describeWhen(new Date(entry.scheduledFor))} to ${entry.targets[0]}`);
@@ -728,12 +760,14 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
           ok: entry.ok ? "ok" : "FAIL",
           when: new Date(entry.at).toLocaleString(),
           account: entry.accountId,
+          skill: entry.skill ?? "",
           detail: (entry.error ?? entry.url ?? entry.text).replace(/\s+/g, " ").slice(0, 60),
         })),
         [
           { key: "ok", title: "" },
           { key: "when", title: "WHEN" },
           { key: "account", title: "ACCOUNT" },
+          { key: "skill", title: "SKILL" },
           { key: "detail", title: "DETAIL" },
         ],
       );
@@ -1212,13 +1246,16 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
         target = target[part] as Record<string, unknown>;
       }
       const leaf = path[path.length - 1];
-      if (!(leaf in target)) throw new Error(`No setting "${key}"`);
+      // Settings that are absent until set, so `in` cannot vouch for them.
+      const OPTIONAL_NUMBERS = new Set(["blog.maxPerDay"]);
+      if (!(leaf in target) && !OPTIONAL_NUMBERS.has(key)) throw new Error(`No setting "${key}"`);
       if (!value) {
         out(String(target[leaf]));
         return 0;
       }
       const current = target[leaf];
-      target[leaf] = typeof current === "number" ? Number(value) : typeof current === "boolean" ? value === "true" : value;
+      target[leaf] =
+        typeof current === "number" || OPTIONAL_NUMBERS.has(key) ? Number(value) : typeof current === "boolean" ? value === "true" : value;
       saveSettings(store as never);
       out(`${key} = ${target[leaf]}`);
       return 0;

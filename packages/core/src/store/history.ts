@@ -9,6 +9,10 @@ export interface HistoryEntry {
   handle: string;
   text: string;
   ok: boolean;
+  /** The title a titled network received, so a blog's duplicate-title check has it. */
+  title?: string;
+  /** Which skill the account was using: `skill` for the default, else the slug. */
+  skill?: string;
   postId?: string;
   url?: string;
   error?: string;

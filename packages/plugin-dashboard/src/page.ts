@@ -235,6 +235,12 @@ a { color: inherit; }
   </section>
 
   <section class="card full">
+    <h2>Skills</h2>
+    <p class="note">The rules each account posts under, as files an agent can read first. <a href="/skills">/skills</a> lists them; <code>myna skill show &lt;account&gt;</code> prints one.</p>
+    <div id="skills"></div>
+  </section>
+
+  <section class="card full">
     <h2>Pacing</h2>
     <div id="pacing"></div>
   </section>
@@ -451,16 +457,41 @@ function drawQueue(snap) {
 function drawHistory(snap) {
   $("history").innerHTML = !snap.history.length
     ? '<p class="empty">Nothing sent yet.</p>'
-    : \`<table><thead><tr><th>When</th><th>Account</th><th>Result</th><th>Post</th></tr></thead><tbody>\${snap.history
+    : \`<table><thead><tr><th>When</th><th>Account</th><th>Skill</th><th>Result</th><th>Post</th></tr></thead><tbody>\${snap.history
         .slice(0, 20)
         .map(
           (row) => \`<tr>
             <td class="when">\${dur(snap.now - row.at)} ago</td>
             <td>\${whoCell(row.slot, row.accountId)}</td>
+            <td class="when">\${esc(row.skill ?? "")}</td>
             <td>\${row.ok ? statusCell("ok", "sent") : statusCell("fail", trim(row.error ?? "failed", 40))}</td>
             <td class="text">\${row.url ? \`<a href="\${esc(row.url)}" target="_blank" rel="noreferrer">\${esc(trim(row.text, 70))}</a>\` : esc(trim(row.text, 70))}</td>
           </tr>\`,
         )
+        .join("")}</tbody></table>\`;
+}
+
+function drawSkills(snap) {
+  const rows = snap.skills ?? [];
+  $("skills").innerHTML = !rows.length
+    ? '<p class="empty">No accounts connected.</p>'
+    : \`<table><thead><tr><th>Account</th><th>Kind</th><th>Skill</th><th>Today</th><th>Limits</th></tr></thead><tbody>\${rows
+        .map((row) => {
+          const cap = row.maxPerDay !== undefined ? \`\${row.sentToday} of \${row.maxPerDay}\` : String(row.sentToday);
+          const full = row.maxPerDay !== undefined && row.sentToday >= row.maxPerDay;
+          const limits = [
+            row.minGapMinutes !== undefined ? \`gap \${row.minGapMinutes}m\` : "",
+            row.maxChars !== undefined ? \`\${row.maxChars} chars\` : "",
+            row.contentPolicy ?? "",
+          ].filter(Boolean).join(", ");
+          return \`<tr>
+            <td>\${whoCell(row.slot, row.accountId)}</td>
+            <td class="when">\${esc(row.kind)}</td>
+            <td class="text"><a href="\${esc(row.path)}">\${esc(row.selected)}</a>\${row.rotating ? " (rotating: " + esc(row.skills.join(" > ")) + ")" : row.skills.length > 1 ? " of " + esc(row.skills.join(", ")) : ""}</td>
+            <td>\${full ? statusCell("hold", cap) : statusCell("ok", cap)}</td>
+            <td class="text">\${esc(limits)}</td>
+          </tr>\`;
+        })
         .join("")}</tbody></table>\`;
 }
 
@@ -505,6 +536,7 @@ function render(snap) {
   drawNetworks(snap);
   drawQueue(snap);
   drawHistory(snap);
+  drawSkills(snap);
   drawPacing(snap);
   $("updated").textContent = \`updated \${clock(Date.now())}\`;
 }

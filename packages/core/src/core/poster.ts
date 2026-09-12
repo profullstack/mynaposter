@@ -16,6 +16,7 @@ import { enqueue, listQueue, updateQueued, type QueuedPost } from "../store/queu
 import { getAccount } from "../store/accounts.ts";
 import { loadSettings } from "../store/settings.ts";
 import { pacingRules, planTargets, reflowQueue, type Plan, type Reflow } from "./pacing.ts";
+import { duplicateTitle, planLimitsFor, takeSkill, titleOf } from "./skills.ts";
 
 export interface ComposeOptions {
   text: string;
@@ -27,6 +28,12 @@ export interface ComposeOptions {
   hashtags?: string[];
   extra?: Record<string, string>;
   signature?: string;
+  /**
+   * Publish to a blog even though a post with this title is already in its
+   * history. Off by default: a re-sent announcement is the spam this exists
+   * to stop.
+   */
+  allowDuplicate?: boolean;
 }
 
 export interface TargetResult {
@@ -36,6 +43,10 @@ export interface TargetResult {
   error?: string;
   /** What was actually sent, after per-network tailoring. */
   sent?: string[];
+  /** The title the network received, where one was given or derived. */
+  title?: string;
+  /** Which of the account's skills this post used. */
+  skill?: string;
 }
 
 /** X bills every URL at 23 characters no matter how long it is. */
@@ -110,9 +121,36 @@ async function postOne(account: Account, options: ComposeOptions): Promise<Targe
       posts.push(result);
       replyTo = result.id;
     }
-    return { account, ok: true, posts, sent: parts };
+    return { account, ok: true, posts, sent: parts, title: options.title };
   } catch (error) {
-    return { account, ok: false, posts: [], error: (error as Error).message, sent: parts };
+    return { account, ok: false, posts: [], error: (error as Error).message, sent: parts, title: options.title };
+  }
+}
+
+/** The skill slug an account is on, or the default when the skill tree cannot be read. A skill must never stop a send. */
+function safeTakeSkill(account: Account, settings: ReturnType<typeof loadSettings>): string {
+  try {
+    return takeSkill(account, settings).slug;
+  } catch {
+    return "skill";
+  }
+}
+
+/**
+ * Refuse a blog post whose title the blog has already carried. This is an
+ * error, not a queue entry: the person asked for something that must not
+ * happen, and the answer is to say so before anything is written.
+ */
+export function refuseDuplicateTitles(accounts: Account[], options: Pick<ComposeOptions, "text" | "title" | "allowDuplicate">, history = listHistory()): void {
+  if (options.allowDuplicate) return;
+  for (const account of accounts) {
+    const earlier = duplicateTitle(account, options.text, options.title, history);
+    if (!earlier) continue;
+    const when = earlier.at.slice(0, 10);
+    throw new Error(
+      `${account.id} already has a post titled "${titleOf(options.text, options.title)}" (${when}${earlier.url ? `, ${earlier.url}` : ""}). ` +
+        "A blog carries each announcement once. Pass --allow-duplicate if this really is a new post.",
+    );
   }
 }
 
@@ -126,7 +164,13 @@ export type PostOutcome = TargetResult[] & { hooks: HookOutcome[] };
 export async function postToAll(accounts: Account[], options: ComposeOptions): Promise<PostOutcome> {
   if (!accounts.length) throw new Error("No targets. Run /login <network> first, or check your --to value.");
 
+  // Which skill each account is on. Taking it moves a rotating account's
+  // cursor, so it happens once per send and is written into the history.
+  const settings = loadSettings();
+  const skills = new Map(accounts.map((account) => [account.id, safeTakeSkill(account, settings)]));
+
   const results = await Promise.all(accounts.map((account) => postOne(account, options)));
+  for (const result of results) result.skill = skills.get(result.account.id);
 
   recordHistory(
     results.map((result) => ({
@@ -136,6 +180,8 @@ export async function postToAll(accounts: Account[], options: ComposeOptions): P
       handle: result.account.handle,
       text: result.sent?.[0] ?? options.text,
       ok: result.ok,
+      title: result.title,
+      skill: result.skill,
       postId: result.posts[0]?.id,
       url: result.posts[0]?.url,
       error: result.error,
@@ -187,6 +233,9 @@ export async function postPaced(accounts: Account[], options: ComposeOptions, pa
   const rules = pacingRules(settings.pacing);
   const accountNetwork = (id: string) => getAccount(id)?.network;
   const queueBefore = listQueue();
+  const history = listHistory();
+  // A blog does not carry the same title twice, whatever the pacing says.
+  refuseDuplicateTitles(accounts, options, history);
   const plan = planTargets({
     accounts,
     text: options.text,
@@ -194,10 +243,12 @@ export async function postPaced(accounts: Account[], options: ComposeOptions, pa
     from: paced.from,
     force: paced.force,
     front: paced.front,
-    history: listHistory(),
+    history,
     queue: queueBefore,
     rules,
     accountNetwork,
+    // The account's skill sets its day's budget and can widen its gap.
+    limitsFor: (account) => planLimitsFor(account, settings),
   });
 
   // Make room before anything is sent or enqueued, so the entries we jumped

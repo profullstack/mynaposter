@@ -6,7 +6,10 @@
  * which is exactly how the bad title reached a live board. The assertion here
  * is on what the adapter is *handed*, not on what any one adapter does with it.
  */
-import { test, expect, afterEach } from "bun:test";
+import { test, expect, beforeEach, afterEach } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { postToAll } from "../src/core/poster.ts";
 import { registerNetwork, unregisterNetwork } from "../src/net/registry.ts";
 import { NO_CAPS, type Account, type Network, type PostInput } from "../src/net/types.ts";
@@ -39,9 +42,17 @@ const account: Account = {
   meta: {},
 };
 
+// The poster writes history, so keep it out of the real config dir.
+let dir = "";
+beforeEach(() => {
+  dir = mkdtempSync(join(tmpdir(), "myna-poster-title-"));
+  process.env.MYNA_HOME = dir;
+});
 afterEach(() => {
   seen.length = 0;
   unregisterNetwork("titled-test");
+  rmSync(dir, { recursive: true, force: true });
+  delete process.env.MYNA_HOME;
 });
 
 test("a fan-out hands a titled network whole sentences, not a sliced line", async () => {

@@ -14,6 +14,10 @@
  *   repostGap  the same text to the same account again waits this long.
  *              7d by default, for the evergreen re-posts of old pages.
  *
+ * A fourth gate comes from the account's skill file (see skills.ts): a daily
+ * cap, `maxPerDay`, and a per-account gap that widens the network's when it
+ * is larger. The cap is what stops a blog getting five posts in a day.
+ *
  * The plan is pure: it takes the clock, the history and the queue and says
  * which targets may go now and when each of the rest is due. The poster and
  * the scheduler do the sending; this file never touches a network.
@@ -47,6 +51,56 @@ export function pacingRules(settings: PacingSettings): PacingRules {
     dripMs: read(settings.drip, DEFAULT_PACING.drip),
     repostGapMs: read(settings.repostGap, DEFAULT_PACING.repostGap),
   };
+}
+
+export const DAY_MS = 86_400_000;
+
+/** The per-account caps a skill file supplies, in the planner's units. */
+export interface AccountLimits {
+  /** Posts to this account in any rolling 24 hours. */
+  maxPerDay?: number;
+  /** Least time between two posts to this account; used when wider than the network gap. */
+  minGapMs?: number;
+}
+
+/**
+ * When each account posted or is booked to post: successful history plus the
+ * pending queue. Failures are left out here, unlike the network bookings: a
+ * post that never landed is not one the reader saw.
+ */
+export function bookingsPerAccount(history: HistoryEntry[], queue: QueuedPost[]): Map<string, number[]> {
+  const times = new Map<string, number[]>();
+  const note = (id: string, iso: string) => {
+    const at = new Date(iso).getTime();
+    if (Number.isNaN(at)) return;
+    const list = times.get(id);
+    if (list) list.push(at);
+    else times.set(id, [at]);
+  };
+  for (const entry of history) if (entry.ok) note(entry.accountId, entry.at);
+  for (const post of queue) {
+    if (post.status !== "pending" && post.status !== "sending") continue;
+    for (const id of post.targets) note(id, post.scheduledFor);
+  }
+  for (const list of times.values()) list.sort((a, b) => a - b);
+  return times;
+}
+
+/**
+ * The earliest moment at or after `at` when fewer than `maxPerDay` of the
+ * account's bookings fall in the 24 hours ending there. When the day is full
+ * the answer is the moment its oldest post drops out of the window: the next
+ * free slot after the day rolls over, not the next gap slot.
+ */
+export function nextUnderCap(at: number, bookings: number[], maxPerDay: number): number {
+  if (!(maxPerDay > 0) || !bookings.length) return at;
+  let candidate = at;
+  for (let guard = 0; guard < 10_000; guard++) {
+    const inWindow = bookings.filter((time) => time > candidate - DAY_MS && time <= candidate);
+    if (inWindow.length < maxPerDay) return candidate;
+    candidate = inWindow[0] + DAY_MS;
+  }
+  return candidate;
 }
 
 /** Whitespace-insensitive identity for "the same text". */
@@ -240,6 +294,12 @@ export interface PlanInput {
   rules: PacingRules;
   /** Resolve a queued target id to its network, for the queue's bookings. */
   accountNetwork: (id: string) => string | undefined;
+  /**
+   * Per-account caps from the account's skill file. A daily cap holds even
+   * for --now and --front: those open the network gates, not the account's
+   * budget for the day.
+   */
+  limitsFor?: (account: Account) => AccountLimits | undefined;
   /** Spread the later ones from this moment rather than from `now`. */
   from?: number;
   /** Deterministic order for tests. Defaults to a shuffle, which is the point. */
@@ -294,12 +354,29 @@ export function planTargets(input: PlanInput): Plan {
   }
   if (!candidates.length) return plan;
 
+  // The account's own budget: what it has sent and what it is promised.
+  const perAccount = bookingsPerAccount(input.history, input.queue);
+  const bookAccount = (id: string, at: number) => {
+    const list = perAccount.get(id);
+    if (list) {
+      list.push(at);
+      list.sort((a, b) => a - b);
+    } else perAccount.set(id, [at]);
+  };
+  const capReason = (account: Account, maxPerDay: number) => `${account.id} is at its ${maxPerDay} a day, holding to the next day`;
+
   if (input.force) {
     for (const account of candidates) {
-      if (from <= now) plan.now.push(account);
+      const limits = input.limitsFor?.(account) ?? {};
+      const asked = Math.max(from, now);
+      const at = limits.maxPerDay ? nextUnderCap(asked, perAccount.get(account.id) ?? [], limits.maxPerDay) : asked;
+      bookAccount(account.id, at);
+      plan.taken.push({ network: account.network, at });
+      if (at > asked) plan.later.push({ account, at, reason: capReason(account, limits.maxPerDay as number) });
+      else if (from <= now) plan.now.push(account);
       else plan.later.push({ account, at: from, reason: "scheduled" });
-      plan.taken.push({ network: account.network, at: Math.max(from, now) });
     }
+    plan.later.sort((a, b) => a.at - b.at);
     return plan;
   }
 
@@ -311,26 +388,43 @@ export function planTargets(input: PlanInput): Plan {
   const step = n > 1 ? Math.floor(window / (n - 1)) : 0;
 
   candidates.forEach((account, index) => {
+    const limits = input.limitsFor?.(account) ?? {};
+    // A skill may ask for a wider gap than the network's; never a narrower one.
+    const gapMs = Math.max(input.rules.minGapMs, limits.minGapMs ?? 0);
     const ideal = from + index * step;
-    const gate = nextSlotFor(account.network, booked, now, input.rules.minGapMs);
+    const gate = nextSlotFor(account.network, booked, now, gapMs);
     // The ideal slot may itself sit inside another booking's gap, so resolve
     // from whichever is later rather than taking the gate alone.
-    const at = nextSlotFor(account.network, booked, Math.max(ideal, gate), input.rules.minGapMs);
+    let at = nextSlotFor(account.network, booked, Math.max(ideal, gate), gapMs);
+    // Then the day's budget. Pushing past the cap can land inside a gap and
+    // clearing the gap can land in a full day, so settle both together.
+    let capped = false;
+    if (limits.maxPerDay) {
+      for (let guard = 0; guard < 100; guard++) {
+        const underCap = nextUnderCap(at, perAccount.get(account.id) ?? [], limits.maxPerDay);
+        if (underCap > at) capped = true;
+        const clear = nextSlotFor(account.network, booked, underCap, gapMs);
+        if (clear === at) break;
+        at = clear;
+      }
+    }
     // Book it so the next account on the same network is pushed past it.
     const list = booked.get(account.network);
     if (list) {
       list.push(at);
       list.sort((a, b) => a - b);
     } else booked.set(account.network, [at]);
+    bookAccount(account.id, at);
     plan.taken.push({ network: account.network, at });
 
     if (at <= now) {
       plan.now.push(account);
       return;
     }
-    const reason =
-      gate > ideal
-        ? `${account.network} keeps a ${describeMs(input.rules.minGapMs)} gap`
+    const reason = capped
+      ? capReason(account, limits.maxPerDay as number)
+      : gate > ideal
+        ? `${account.network} keeps a ${describeMs(gapMs)} gap`
         : index === 0
           ? "scheduled"
           : `dripped, ${index + 1} of ${n}`;

@@ -99,6 +99,29 @@ export interface HistoryRow {
   text: string;
   url?: string;
   error?: string;
+  /** Which of the account's skills the post used. */
+  skill?: string;
+}
+
+/** One account's skill, as the page lists it. */
+export interface SkillSummary {
+  accountId: string;
+  network: string;
+  slot: number;
+  kind: string;
+  /** The slug a post would use now. */
+  selected: string;
+  rotating: boolean;
+  /** Every slug the account has, in rotation order. */
+  skills: string[];
+  maxPerDay?: number;
+  minGapMinutes?: number;
+  maxChars?: number;
+  contentPolicy?: string;
+  /** Sent to this account in the last 24h, against maxPerDay. */
+  sentToday: number;
+  /** The route that serves the selected skill. */
+  path: string;
 }
 
 export interface EvergreenState {
@@ -130,6 +153,8 @@ export interface Snapshot {
   top: RankedPost[];
   evergreen: EvergreenState;
   accounts: Array<{ id: string; network: string; handle: string; slot: number }>;
+  /** Each account's skill and its daily cap. Empty when the reader was not supplied. */
+  skills: SkillSummary[];
   /** How far ahead the drip chart looks, in ms. */
   horizonMs: number;
 }
@@ -143,6 +168,12 @@ export interface SnapshotInput {
   settings: Settings;
   /** Epoch ms of the last evergreen rotation, if the queue knows one. */
   evergreenLast?: number;
+  /**
+   * Each account's skill: the slug a post would use now and the merged
+   * limits. Read from the skill files by the caller, since the snapshot
+   * itself stays pure; `sentToday` and `slot` are filled in here.
+   */
+  skills?: Array<Omit<SkillSummary, "sentToday" | "slot">>;
 }
 
 const DAY = 86_400_000;
@@ -217,6 +248,7 @@ export function buildSnapshot(input: SnapshotInput): Snapshot {
     text: entry.text,
     url: entry.url,
     error: entry.error,
+    skill: entry.skill,
   }));
 
   const since = (from: number, to: number): number =>
@@ -252,6 +284,11 @@ export function buildSnapshot(input: SnapshotInput): Snapshot {
       nextAt: input.evergreenLast,
     },
     accounts: accounts.map((account) => ({ id: account.id, network: account.network, handle: account.handle, slot: slotFor(account.network) })),
+    skills: (input.skills ?? []).map((row) => ({
+      ...row,
+      slot: slotFor(row.network),
+      sentToday: history.filter((entry) => entry.ok && entry.accountId === row.accountId && now - new Date(entry.at).getTime() < DAY).length,
+    })),
     horizonMs: horizonFor(rules.dripMs),
   };
 }
@@ -263,16 +300,20 @@ export function readSnapshot(deps: {
   accounts: () => Account[];
   engagement: () => EngagementRecord[];
   settings: () => Settings;
+  skills?: (accounts: Account[], settings: Settings) => SnapshotInput["skills"];
   now?: number;
 }): Snapshot {
   const queue = deps.queue();
+  const accounts = deps.accounts();
+  const settings = deps.settings();
   return buildSnapshot({
     now: deps.now,
     history: deps.history(),
     queue,
-    accounts: deps.accounts(),
+    accounts,
     engagement: deps.engagement(),
-    settings: deps.settings(),
+    settings,
     evergreenLast: lastEvergreen(queue),
+    skills: deps.skills?.(accounts, settings),
   });
 }
