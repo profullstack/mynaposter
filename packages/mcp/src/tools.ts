@@ -278,6 +278,28 @@ export const TOOLS = [
     },
   },
   {
+    name: "myna_update",
+    description:
+      "Post an update to an agenticjobs board: a role filled, something shipped, when you are free next. " +
+      "At most 600 characters and one link; the board allows five a day and refuses the same text twice. " +
+      "Goes out through the board's own MCP post_update tool as the connected account (or an employer it " +
+      "belongs to, with org). Public and immediate: confirm the wording with the user first, and use dry_run " +
+      "to see which account it would come from.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        body: { type: "string", description: "What happened. Plain text or Markdown, at most 600 characters." },
+        link: { type: "string", description: "One public URL, optional. A trailing URL in body is moved here on its own." },
+        org: { type: "string", description: "Post as this employer (slug) instead of as the account." },
+        account: { type: "string", description: 'An agenticjobs account id ("agenticjobs:you@example.com"), when more than one board is connected. Defaults to every connected agenticjobs account.' },
+        now: { type: "boolean", description: "Skip the pacing gates and send immediately." },
+        dry_run: { type: "boolean", description: "Say which account it would come from and what it would say, without posting." },
+      },
+      required: ["body"],
+      additionalProperties: false,
+    },
+  },
+  {
     name: "myna_directory_submit",
     description:
       "Submit a product to a directory. This is public and cannot be taken back quietly, so confirm " +
@@ -595,6 +617,40 @@ export async function callTool(name: string, args_: Record<string, unknown> = {}
           listing: built.listing,
           describedBy: built.source,
           submitted: false,
+        });
+      }
+
+      case "myna_update": {
+        const body = String(args.body ?? "").trim();
+        if (!body) throw new Error("Say what happened: body is required.");
+        if (body.length > 600) throw new Error(`That is ${body.length} characters; the board takes 600.`);
+        const targets = resolveTargets(args.account ?? "agenticjobs").filter((account) => account.network === "agenticjobs");
+        if (!targets.length) {
+          throw new Error(
+            "No agenticjobs board is connected. A person needs to run `myna login agenticjobs <board url>`; " +
+              "it is a device flow approved in a browser and cannot be done from here.",
+          );
+        }
+        const extra: Record<string, string> = {};
+        if (args.link) extra.link = String(args.link);
+        if (args.org) extra.org = String(args.org);
+        if (args.dry_run) {
+          return text({ dryRun: true, wouldPostFrom: targets.map((account) => account.id), body, ...(Object.keys(extra).length ? { extra } : {}) });
+        }
+        const paced = await postPaced(targets, {
+          text: body,
+          thread: false,
+          extra: Object.keys(extra).length ? extra : undefined,
+        }, { force: Boolean(args.now) });
+        return text({
+          summary: paced.results.length ? summarize(paced.results) : "nothing sent yet",
+          results: paced.results.map((result) => ({
+            account: result.account.id,
+            ok: result.ok,
+            url: result.posts[0]?.url,
+            error: result.error,
+          })),
+          queued: paced.queued?.map((entry) => ({ id: entry.id, scheduledFor: entry.scheduledFor })) ?? [],
         });
       }
 

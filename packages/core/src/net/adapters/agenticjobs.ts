@@ -19,7 +19,9 @@
  * published resume on the board, so the update has a page behind it.
  */
 import type { Account, FollowResult, Network, Profile, TimelineItem } from "../types.ts";
-import { getJson, normalizeInstance, postJson, request } from "../../util/http.ts";
+import { getJson, HttpError, normalizeInstance, postJson, request } from "../../util/http.ts";
+import { McpClient, McpToolError } from "../../directories/mcp.ts";
+import { VERSION } from "../../version.ts";
 
 /** The board's own description of itself, at a well-known path. */
 interface Descriptor {
@@ -131,12 +133,46 @@ function safeUrl(raw: string): URL | null {
   }
 }
 
+/** Which door an account's updates go through. `mcp` unless the account or the environment says otherwise. */
+export function transportOf(account: Account): "mcp" | "rest" {
+  const chosen = (process.env.MYNA_AGENTICJOBS_TRANSPORT ?? account.meta.transport ?? "mcp").trim().toLowerCase();
+  return chosen === "rest" ? "rest" : "mcp";
+}
+
+interface PostedUpdate {
+  update: UpdateRow;
+  author: string;
+}
+
+/** True when the board has no MCP endpoint at all, as opposed to having refused the update. */
+function noMcpHere(error: unknown): boolean {
+  if (error instanceof McpToolError) return false;
+  if (error instanceof HttpError) return error.status === 404 || error.status === 405 || error.status === 501;
+  return /no JSON-RPC response|Method not found|Not found/i.test(String((error as Error)?.message ?? ""));
+}
+
+async function postUpdate(account: Account, instance: string, payload: Record<string, string>): Promise<PostedUpdate> {
+  if (transportOf(account) === "mcp") {
+    const client = new McpClient({ url: `${instance}/api/mcp`, token: account.creds.token, clientName: "myna", clientVersion: VERSION });
+    try {
+      const result = await client.call<PostedUpdate | string>("post_update", payload);
+      if (result && typeof result === "object" && result.update?.id) return result;
+      // A board that answered in prose alone still posted; read the update back is
+      // more than this needs, so the id is the prose and the url is the author's page.
+      throw new Error(`post_update answered without an update: ${typeof result === "string" ? result : JSON.stringify(result)}`);
+    } catch (error) {
+      if (!noMcpHere(error)) throw error;
+    }
+  }
+  return postJson<PostedUpdate>(`${instance}/api/v1/updates`, payload, { headers: auth(account) });
+}
+
 export const agenticjobs: Network = {
   id: "agenticjobs",
   name: "Agentic Jobs",
   category: "minor",
   blurb:
-    "A self-hosted job board, and the updates on it. Device-flow login, 600 characters and one link, five a day.",
+    "A self-hosted job board, and the updates on it. Device-flow login, 600 characters and one link, five a day, posted over the board's MCP.",
   auth: {
     kind: "device",
     note:
@@ -259,12 +295,15 @@ export const agenticjobs: Network = {
     const instance = base(account);
     const org = (input.extra?.org ?? account.meta.org ?? "").trim();
     const { body, link } = splitLink(input.text, input.extra?.link);
+    const payload = { body, ...(link ? { link } : {}), ...(org ? { org } : {}) };
 
-    const created = await postJson<{ update: UpdateRow; author: string }>(
-      `${instance}/api/v1/updates`,
-      { body, ...(link ? { link } : {}), ...(org ? { org } : {}) },
-      { headers: auth(account) },
-    );
+    // The board speaks MCP at /api/mcp with the same bearer token, and its
+    // post_update tool is the update form: body, one link, an employer. That
+    // is the door an agent uses, so it is the door myna uses too, and a board
+    // too old to have it (or one with MCP switched off) is answered over REST
+    // instead. A refusal from the tool itself (five a day, the same text
+    // twice, no published resume) is the board's answer and is not retried.
+    const created = await postUpdate(account, instance, payload);
     return {
       id: created.update.id,
       // An update has no page of its own; it lives on its author's, and the
