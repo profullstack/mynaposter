@@ -67,6 +67,8 @@ export interface Settings {
   reshare: ReshareSettings;
   /** Follow-ups: who replied, reposted or followed, and what to send them back. */
   engage: EngageSettings;
+  /** Where a DID is proved: the CoinPay origin and the OAuth client myna is registered as there. */
+  did: DidSettings;
   /** Plugin specs: an absolute path, or a package name installed by `myna plugins add`. */
   plugins: string[];
   /**
@@ -192,6 +194,18 @@ export interface EngageSettings {
   scanLimit: number;
 }
 
+export interface DidSettings {
+  server: string;
+  /** A public OAuth client (PKCE, loopback redirect) registered at the server with the `did` scope. */
+  clientId: string;
+}
+
+export const DEFAULT_DID: DidSettings = {
+  server: "https://coinpayportal.com",
+  // myna's public OAuth client at CoinPay: PKCE, loopback redirect, scopes openid profile did.
+  clientId: "cp_3aedc5cd194ff147d86341a2",
+};
+
 export const DEFAULT_ENGAGE: EngageSettings = {
   enabled: false,
   maxPerDay: 20,
@@ -239,6 +253,7 @@ export const DEFAULT_SETTINGS: Settings = {
   profile: { ...DEFAULT_PROFILE },
   reshare: { ...DEFAULT_RESHARE },
   engage: { ...DEFAULT_ENGAGE },
+  did: { ...DEFAULT_DID },
   plugins: [],
   directories: [],
 };
@@ -258,6 +273,7 @@ export function loadSettings(): Settings {
     profile: { ...DEFAULT_PROFILE, ...stored.profile },
     reshare: { ...DEFAULT_RESHARE, ...stored.reshare },
     engage: { ...DEFAULT_ENGAGE, ...stored.engage },
+    did: { ...DEFAULT_DID, ...stored.did },
     skills: {
       defaults: { ...(stored.skills?.defaults ?? {}) },
       rotate: { ...(stored.skills?.rotate ?? {}) },

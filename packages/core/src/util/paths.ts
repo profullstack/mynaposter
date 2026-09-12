@@ -29,6 +29,8 @@ export const GRAPH_FILE = "graph.json";
 export const RESHARE_FILE = "reshare.json";
 /** The follow-up queue: who engaged, what to send them, what was sent. */
 export const ENGAGE_FILE = "engage.json";
+/** The proved DID and the session that proved it. */
+export const DID_FILE = "did.json";
 /** A hand-written OpenProfile.md wins over the one `myna profile` would build. */
 export const PROFILE_FILE = "openprofile.md";
 /** When the daily recap was last sent. State, not preference, so not in settings. */

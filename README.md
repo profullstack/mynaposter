@@ -684,6 +684,24 @@ where the network has one, a post carrying the link where it does not, at most
 offer; `myna reshare owed` shows what to settle through CoinPay. The whole thing
 is in [docs/reshare.md](docs/reshare.md).
 
+## Your DID
+
+A decentralized identifier is a name that resolves to keys, not to a company:
+`did:key`, `did:web`, Bluesky's `did:plc`. CoinPay issues one per account and
+lets a person's DID stand behind an agent's. myna proves yours and attaches it.
+
+```bash
+myna did login              # a CoinPay OAuth grant with the did scope, in the browser
+myna did login --cli        # or reuse the session from `coinpay login`
+myna did assign all         # owner of every account
+myna did assign bluesky:bot --role operator   # answerable for an account that is an agent
+myna did show
+```
+
+The DID goes into the OpenProfile: the identity block for a person, the
+Operator section for an agent. Nothing is typed in; CoinPay's answer is what is
+kept.
+
 ## Follow-ups
 
 The people who reply, repost, quote or follow are the point of posting and the
