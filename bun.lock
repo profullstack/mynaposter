@@ -60,6 +60,7 @@
       "version": "0.19.0",
       "dependencies": {
         "@anthropic-ai/sdk": "^0.123.0",
+        "@profullstack/autoblog": "^0.4.0",
       },
     },
     "packages/mcp": {
@@ -206,6 +207,8 @@
     "@npmcli/move-file": ["@npmcli/move-file@2.0.1", "", { "dependencies": { "mkdirp": "^1.0.4", "rimraf": "^3.0.2" } }, "sha512-mJd2Z5TjYWq/ttPLLGqArdtnC74J6bOzg4rMDnN+p1xTacZ2yPRCk2y0oSWQtygLR9YVQXgOcONrwtnk3JupxQ=="],
 
     "@pkgjs/parseargs": ["@pkgjs/parseargs@0.11.0", "", {}, "sha512-+1VkjdD0QBLPodGrJUeqarH8VAIvQODIbwh9XpP5Syisf7YoQgsJKPNFoqqLQlu+VQ/tVSshMR6loPMn8U+dPg=="],
+
+    "@profullstack/autoblog": ["@profullstack/autoblog@0.4.0", "", {}, "sha512-Lrc6pqfAO0A11bmkaVCHi/YPUdJSLXy3E6fy7NEMjUM2LE/mC+zEW1PRmzKfaYF7HWh6Lmaq7VaHpZiCW05Rvw=="],
 
     "@profullstack/hqtui": ["@profullstack/hqtui@0.1.9", "", { "bin": { "hqtui": "bin/hqtui.mjs" } }, "sha512-grOrw3KqbFTnjXKgMIa+HFiujVkdkEFScNSAnJ7GE/fGU6CVyowfw1wnKpFHt/Mv1A4n8QUTKJ3ws65tNKIvNg=="],
 

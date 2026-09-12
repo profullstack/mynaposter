@@ -217,10 +217,21 @@ post as Markdown:
   repository if you name one. When
   [cli-tools](https://github.com/profullstack/cli-tools)' `blog-post` is on
   the PATH the page is written by it, byline and analytics tags included.
+- **Autoblog** (`autoblog`) — any blog that receives signed autoblog webhooks
+  (`@profullstack/autoblog`), such as logicsrc.com and crawlproof.com. myna
+  renders the post to HTML, signs a CloudEvents `post.published` event with
+  the receiver's shared secret, and delivers it. Register one per blog with a
+  name (`autoblog:logicsrc`); publishing to it with `--canonical-url` set to
+  another blog's URL is a **guest post**, syndicated with the original marked
+  as canonical so it never competes with its source.
 
 ```bash
 myna login gitblog                 # repo, posts directory, branch, where posts appear
 myna login htmlblog                # directory, public URL, optional mirror checkout
+myna login autoblog                # webhook URL, secret, a name, optional site URL and author
+# A guest post: publish to logicsrc, canonical pointing back at your own blog
+myna post --to autoblog:logicsrc --title "..." \
+  --canonical-url https://dev.profullstack.com/~anthony/blog/117-post.html < post.md
 myna post --to gitblog "Release 1.2
 
 The first paragraph is the description.
@@ -231,7 +242,7 @@ myna post --to htmlblog --description "One line for the feed" < post.md
 ```
 
 Both are **never part of `all`**, and neither is any long-form network (dev.to,
-Hashnode, Ghost, WordPress, Micro.blog, Tumblr). A social post fanned out by
+Hashnode, Ghost, WordPress, Micro.blog, Tumblr, autoblog). A social post fanned out by
 accident is an embarrassment; an article fanned out by accident is a
 publication (and on your own blog, a commit), so those only post when named in
 `--to`. One post can name several: `--to htmlblog,devto` writes the page and
@@ -260,6 +271,7 @@ different every time:
 | Tumblr | `source_url`, the attribution link it has instead |
 | gitblog | `canonical:` in the post's frontmatter, for the site template to render |
 | htmlblog | `<link rel="canonical">` in the page head |
+| autoblog | `canonical_url` on the post in the signed webhook, which the receiver stores and renders |
 
 WordPress and Micro.blog are left out on purpose. WordPress core has no
 canonical field (it belongs to an SEO plugin's post meta) and Micropub defines
