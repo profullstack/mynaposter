@@ -88,7 +88,7 @@ test("show prints the file, for a network or an account, and path says where it 
   const network = await run("skill", ["show", "htmlblog"]);
   expect(network.code).toBe(0);
   expect(network.out).toMatch(/^---\nname: myna-htmlblog\n/);
-  expect(network.out).toContain("At most 4 posts a day");
+  expect(network.out).toContain("At most 4 automated posts a day");
 
   const account = await run("skill", ["show", "htmlblog:dev.profullstack.com/~anthony/blog"]);
   expect(account.code).toBe(0);

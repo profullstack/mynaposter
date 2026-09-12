@@ -119,7 +119,7 @@ test("the blog template says what Anthony asked for, in plain prose", () => {
   expect(frontmatter.contentPolicy).toBe("major-features-only");
   expect(body).toContain("major feature announcements and launches only");
   expect(body).toContain("No bug-fix stories");
-  expect(body).toContain("At most 4 posts a day");
+  expect(body).toContain("At most 4 automated posts a day");
   expect(body).toContain("--canonical-url");
   expect(body).toContain("No em dashes");
   // No em dashes, no en dashes, anywhere in what we generate.

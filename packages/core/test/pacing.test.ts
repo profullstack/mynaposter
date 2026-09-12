@@ -296,12 +296,13 @@ test("pending entries earlier in the day count against the cap too", () => {
   expect(plan.later[0].at).toBe(NOW - 6 * H + DAY_MS);
 });
 
-test("--now and --front open the gates but not the day's budget", () => {
+test("--now is a hand request and goes past the day's budget; --front opens the gates but not the budget", () => {
   const history = [sent(blog, "one", 20 * H), sent(blog, "two", 14 * H), sent(blog, "three", 8 * H), sent(blog, "four", 2 * H)];
   const forced = planTargets({ accounts: [blog, bsky], text: "five", now: NOW, history, queue: [], rules: blogRules, accountNetwork: blogNetwork, order: stable, limitsFor: cap4, force: true });
-  expect(forced.now).toEqual([bsky]);
-  expect(forced.later.map((t) => [t.account.id, t.at])).toEqual([[blog.id, NOW - 20 * H + DAY_MS]]);
-  expect(forced.later[0].reason).toContain("4 a day");
+  expect(forced.now).toEqual([blog, bsky]);
+  expect(forced.later).toEqual([]);
+  // The send is still booked, so the next automated post sees a full day.
+  expect(forced.taken.map((t) => t.network)).toEqual([blog.network, bsky.network]);
 
   const front = planTargets({ accounts: [blog], text: "five", now: NOW, history, queue: [], rules: blogRules, accountNetwork: blogNetwork, order: stable, limitsFor: cap4, front: true });
   expect(front.now).toEqual([]);

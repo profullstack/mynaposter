@@ -40,6 +40,9 @@ Posting:
                                     Paced: one account goes now, the rest are
                                     queued along the drip. --front jumps the
                                     queue and keeps the gap; --now sends all
+                                    at once, past the daily cap: it is for a
+                                    post you asked for by hand. Automated
+                                    promotion never passes it
   schedule <when> [text]            Queue a post: "in 2h", "tomorrow 9am"
   pace [--gap 4h] [--drip 48h]      The pacing rules: one post per network
        [--repost 7d]                per gap, several accounts spread over

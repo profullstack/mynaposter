@@ -8,7 +8,10 @@ enforces, and the body is what a person or an agent reads before posting.
 This exists because a blog went spammy. The same release was announced three
 times, every bug fix became a post, and 29 pages went up in one day. The blog
 skill says four a day and major features only, and myna holds the fifth post
-to the next day rather than sending it.
+to the next day rather than sending it. The cap paces automated promotion (the
+launch announcement at the end of a ship, evergreen reposts, cross-account
+copies). A post a person asks for by hand is sent with `--now` and goes out at
+once, past the cap.
 
 ## Where the files are
 
@@ -202,7 +205,9 @@ and the dashboard show it.
   account's successful sends in the last 24 hours plus its pending queue
   entries earlier in that window. A post over the cap goes to the next free
   slot after the day rolls over, then clears the network gap from there.
-  `--now` and `--front` open the network gates, not the day's budget.
+  `--front` opens the network gates, not the day's budget. `--now` opens
+  both: it means a person asked for this one by hand, and the budget exists
+  to pace automated promotion, which never passes `--now`.
 - **`minGapMinutes`** widens the network gap for that account when larger.
 - **Duplicate titles.** A post to a blog or a longform mirror whose title (the
   `--title`, else the first line) is already in that account's history is

@@ -295,9 +295,10 @@ export interface PlanInput {
   /** Resolve a queued target id to its network, for the queue's bookings. */
   accountNetwork: (id: string) => string | undefined;
   /**
-   * Per-account caps from the account's skill file. A daily cap holds even
-   * for --now and --front: those open the network gates, not the account's
-   * budget for the day.
+   * Per-account caps from the account's skill file. A daily cap holds for
+   * --front, which only reorders the queue. It does not hold for --now: a
+   * post the person asked for by hand goes out at once, and the cap is
+   * there to pace automated promotion, which never passes --now.
    */
   limitsFor?: (account: Account) => AccountLimits | undefined;
   /**
@@ -311,7 +312,7 @@ export interface PlanInput {
   from?: number;
   /** Deterministic order for tests. Defaults to a shuffle, which is the point. */
   order?: (accounts: Account[]) => Account[];
-  /** Ignore the gates: the person said --now. Duplicates are still refused. */
+  /** Ignore the gates and the day's budget: the person said --now. Duplicates are still refused. */
   force?: boolean;
   /**
    * Front of line: the person said --front.
@@ -403,16 +404,14 @@ export function planTargets(input: PlanInput): Plan {
   const capReason = (by: string) => `${by}, holding to the next day`;
 
   if (input.force) {
+    // A hand request. The daily budget paces automated promotion; the person
+    // asking for this one now is the budget.
     for (const account of candidates) {
-      const limits = input.limitsFor?.(account) ?? {};
-      const asked = Math.max(from, now);
-      const capped = underCaps(account, asked, limits);
-      const at = capped.at;
+      const at = Math.max(from, now);
       bookAccount(account.id, at);
       bookType(at);
       plan.taken.push({ network: account.network, at });
-      if (capped.by) plan.later.push({ account, at, reason: capReason(capped.by) });
-      else if (from <= now) plan.now.push(account);
+      if (from <= now) plan.now.push(account);
       else plan.later.push({ account, at: from, reason: "scheduled" });
     }
     plan.later.sort((a, b) => a.at - b.at);
