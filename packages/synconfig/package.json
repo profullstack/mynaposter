@@ -1,6 +1,6 @@
 {
   "name": "@profullstack/synconfig",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Sync a tool's config files with its cloud: an allowlisted snapshot, a digest, optimistic revisions, and the server half to store them. Extracted from moshcode's settings sync; myna is the second user.",
   "license": "MIT",
   "type": "module",

@@ -45,34 +45,47 @@ export async function save(ctx: SyncContext, options: { force?: boolean } = {}):
   return { status: result.unchanged ? "unchanged" : "saved", revision: result.revision, digest: result.digest, files, skipped };
 }
 
+export interface Backup {
+  /** The synced file that was replaced, relative to rootDir. */
+  path: string;
+  /** Where its previous content went, relative to rootDir: `<name>.bak-NNN.<ext>`. */
+  backup: string;
+}
+
 export interface LoadResult {
   status: "loaded" | "same" | "empty" | "local_changes" | "planned" | "newer";
   revision?: number;
   plan: PlanEntry[];
   written: string[];
+  /** One entry per file that existed with other content before the load replaced it. */
+  backups: Backup[];
   drifted: string[];
   rejected: Skipped[];
 }
 
-export async function load(ctx: SyncContext, options: { force?: boolean; dryRun?: boolean } = {}): Promise<LoadResult> {
+export async function load(ctx: SyncContext, options: { force?: boolean; dryRun?: boolean; backup?: boolean } = {}): Promise<LoadResult> {
   const latest = await ctx.client.get();
-  if (!latest) return { status: "empty", plan: [], written: [], drifted: [], rejected: [] };
+  if (!latest) return { status: "empty", plan: [], written: [], backups: [], drifted: [], rejected: [] };
   const { files, rejected, newer } = validateSnapshot(latest.snapshot, ctx.policy);
-  if (newer) return { status: "newer", revision: latest.revision, plan: [], written: [], drifted: [], rejected };
+  if (newer) return { status: "newer", revision: latest.revision, plan: [], written: [], backups: [], drifted: [], rejected };
   const plan = planApply(ctx.rootDir, files);
 
   const marker = loadMarker(ctx.rootDir, ctx.markerName);
   const here = collectSnapshot(ctx.rootDir, ctx.policy, { host: ctx.host, app: ctx.app }).snapshot;
   const drifted = localDrift(ctx.rootDir, marker, here.files).filter((path) => plan.some((entry) => entry.path === path && entry.status !== "same"));
   if (drifted.length && !options.force && !options.dryRun) {
-    return { status: "local_changes", revision: latest.revision, plan, written: [], drifted, rejected };
+    return { status: "local_changes", revision: latest.revision, plan, written: [], backups: [], drifted, rejected };
   }
-  if (options.dryRun) return { status: "planned", revision: latest.revision, plan, written: [], drifted, rejected };
+  if (options.dryRun) return { status: "planned", revision: latest.revision, plan, written: [], backups: [], drifted, rejected };
 
-  const written = applyFiles(ctx.rootDir, files, plan);
+  const backups: Backup[] = [];
+  const written = applyFiles(ctx.rootDir, files, plan, {
+    backup: options.backup ?? true,
+    onBackup: (path, backup) => backups.push({ path, backup }),
+  });
   const applied = { ...latest.snapshot, files };
   saveMarker(ctx.rootDir, { ...markerFor(applied, latest.revision, ctx.api), digest: digestFiles(files) }, ctx.markerName);
-  return { status: written.length ? "loaded" : "same", revision: latest.revision, plan, written, drifted, rejected };
+  return { status: written.length ? "loaded" : "same", revision: latest.revision, plan, written, backups, drifted, rejected };
 }
 
 export interface StatusResult {
