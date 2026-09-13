@@ -4,6 +4,10 @@
     "lib": ["ES2023"],
     "module": "ESNext",
     "moduleResolution": "bundler",
+    // The workspace packages that ship a built dist (synconfig, syncfg) point
+    // `types` at it, and dist is not committed. Resolve their `bun` condition,
+    // the source, so a fresh checkout typechecks without building anything.
+    "customConditions": ["bun"],
     "allowImportingTsExtensions": true,
     "noEmit": true,
     "strict": true,
