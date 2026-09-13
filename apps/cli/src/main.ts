@@ -219,6 +219,11 @@ Moving between machines:
                                     what it will change before it changes it
 
 Cloud backup (optional; myna works fully without it):
+  synconfig | syncfg                Your settings on every machine, through the
+                                    cloud account: status here vs there
+  synconfig save [--force]          Push settings.json, OpenProfile and skills
+  synconfig load [--force|--dry-run] Pull them; a local edit stops it unless forced
+  synconfig revisions | on | off    The last ten; let the daemon do it (default on)
   cloud signup [email]              Create an account
   cloud login [email]               Sign in on this machine
   cloud push                        Encrypt a bundle here, then upload it

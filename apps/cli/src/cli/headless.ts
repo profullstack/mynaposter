@@ -101,6 +101,7 @@ import { runSkill } from "./skill.ts";
 import { runProfile, runReshareCommand } from "./reshare.ts";
 import { runAtproto } from "./atproto.ts";
 import { runHandoff } from "./handoff.ts";
+import { runSynconfig } from "./synconfig.ts";
 import { runEngage } from "./engage.ts";
 import { runDid } from "./did.ts";
 import { runContacts, runEmail, runSms, runSmtp } from "./outreach.ts";
@@ -540,6 +541,12 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
     case "handoff":
     case "handoffs": {
       return await runHandoff(positional, flags);
+    }
+
+    case "synconfig":
+    case "syncfg":
+    case "sync": {
+      return await runSynconfig(positional, flags);
     }
 
     case "engage":

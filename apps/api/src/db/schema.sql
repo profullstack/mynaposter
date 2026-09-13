@@ -211,3 +211,23 @@ create table if not exists handoffs (
 );
 
 create index if not exists handoffs_user_idx on handoffs(user_id, created_at desc);
+
+-- Settings sync (@profullstack/synconfig): revisions of a user's settings
+-- snapshot, plain JSON, because nothing in it is a secret (accounts travel
+-- sealed through cloud backup). Revision is a monotonic integer per user;
+-- the insert allocates max + 1 under a precondition on max, and the unique
+-- index is the backstop. The last ten are kept.
+create table if not exists settings_snapshots (
+  id          uuid primary key default gen_random_uuid(),
+  user_id     uuid not null references users(id) on delete cascade,
+  revision    integer not null,
+  digest      text not null,
+  host        text,
+  version     text,
+  size        integer not null,
+  body        jsonb not null,
+  created_at  timestamptz not null default now(),
+  unique (user_id, revision)
+);
+
+create index if not exists settings_snapshots_user_idx on settings_snapshots(user_id, revision desc);

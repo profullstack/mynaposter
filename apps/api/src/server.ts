@@ -16,6 +16,8 @@ import * as cloud from "./cloud.ts";
 import * as reshare from "./reshare.ts";
 import * as atproto from "./atproto.ts";
 import * as handoff from "./handoff.ts";
+import { store as synconfigStore } from "./synconfig.ts";
+import { handleGet as synconfigGet, handlePut as synconfigPut, handleRevisions as synconfigRevisions } from "@profullstack/synconfig/server";
 import { VERSION } from "@profullstack/myna-core";
 
 const app = new Hono();
@@ -42,7 +44,7 @@ app.use("/v1/*", async (context, next) => {
   // this instance, while those belong to an end user with an account. Running
   // both would mean nobody could sign up without the operator's token.
   const path = new URL(context.req.url).pathname;
-  if (path.startsWith("/v1/cloud") || path.startsWith("/v1/reshare") || path.startsWith("/v1/atproto") || path.startsWith("/v1/handoff")) return next();
+  if (path.startsWith("/v1/cloud") || path.startsWith("/v1/reshare") || path.startsWith("/v1/atproto") || path.startsWith("/v1/handoff") || path.startsWith("/v1/synconfig") || path.startsWith("/v1/syncfg")) return next();
 
   const expected = process.env.MYNA_API_TOKEN;
   const isRead = context.req.method === "GET";
@@ -169,6 +171,9 @@ app.get("/", (context) =>
       "POST /v1/handoff/:id/done {done?}",
       "GET  /v1/handoff?all=1",
       "DELETE /v1/handoff/:id",
+      "GET  /v1/synconfig            (alias /v1/syncfg)",
+      "PUT  /v1/synconfig {snapshot, ifRevision}",
+      "GET  /v1/synconfig/revisions",
     ],
     mcp: { endpoint: "/api/mcp", transport: "streamable-http", tools: 11 },
   }),
@@ -525,6 +530,42 @@ handoffRoutes.delete("/:id", async (context) => {
 });
 
 app.route("/v1/handoff", handoffRoutes);
+
+/**
+ * Settings sync: a user's settings.json, OpenProfile and skills as one
+ * snapshot under a revision, so every machine signed in to the same account
+ * sees the same myna. The handlers and the conflict rule live in
+ * @profullstack/synconfig; this only wires them to a Postgres store and the
+ * cloud user. /v1/syncfg is the same thing under the short name.
+ */
+const synconfigRoutes = new Hono<{ Variables: { user: cloud.CloudUser } }>();
+
+synconfigRoutes.use("*", async (context, next) => {
+  if (!hasDatabase()) return context.json({ ok: false, error: "This instance has no DATABASE_URL, so settings sync is off." }, 503);
+  const user = await requireUser(context);
+  if (!user) return context.json({ ok: false, error: "Unauthorized" }, 401);
+  context.set("user", user);
+  return next();
+});
+
+synconfigRoutes.get("/", async (context) => {
+  const reply = await synconfigGet(synconfigStore, context.get("user").id);
+  return context.json(reply.body, reply.status as 200);
+});
+
+synconfigRoutes.put("/", async (context) => {
+  const body = await context.req.json().catch(() => ({}));
+  const reply = await synconfigPut(synconfigStore, context.get("user").id, body);
+  return context.json(reply.body, reply.status as 200);
+});
+
+synconfigRoutes.get("/revisions", async (context) => {
+  const reply = await synconfigRevisions(synconfigStore, context.get("user").id);
+  return context.json(reply.body, reply.status as 200);
+});
+
+app.route("/v1/synconfig", synconfigRoutes);
+app.route("/v1/syncfg", synconfigRoutes);
 
 app.notFound((context) => context.json({ ok: false, error: "Not found" }, 404));
 

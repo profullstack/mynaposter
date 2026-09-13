@@ -12,6 +12,7 @@
     "@profullstack/myna-core": "workspace:*",
     "hono": "^4.13.5",
     "postgres": "^3.4.9",
-    "@profullstack/myna-mcp": "workspace:*"
+    "@profullstack/myna-mcp": "workspace:*",
+    "@profullstack/synconfig": "workspace:*"
   }
 }

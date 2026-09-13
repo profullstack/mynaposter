@@ -849,6 +849,33 @@ setup and every send are in `outreach.json`. An opted-out contact
 candidate's contact block exactly as the board shows it to the account you are
 logged in with, and writes the source on every contact.
 
+## Your settings on every machine
+
+`myna config`, the profile, the pacing, the graph limits, and every skill file
+under `skills/` are a snapshot that syncs through your myna cloud account:
+
+```bash
+myna cloud login you@example.com
+myna synconfig save            # this machine's settings become revision 1
+# on another machine
+myna synconfig load            # and it has them
+myna synconfig                 # where this machine stands: changed here, newer there
+```
+
+`myna run` does it on its own every five minutes once you are signed in
+(`myna synconfig off` stops that): pull what another machine saved, then push
+what changed here. Two machines that both edit before either syncs do not get
+merged; the second save is refused with "another machine saved first", and
+you pick: `load` to take theirs (it will not overwrite a file you edited here
+unless `--force`), or `save --force` to make yours the newest. The cloud keeps
+the last ten revisions. `syncfg` and `sync` are the same command.
+
+What never syncs: the vault and its key, the cloud session, the queue, the
+history, the follow ledger, hand-offs, contacts. Accounts travel sealed with
+`myna cloud push`. The mechanism is [`@profullstack/synconfig`](packages/synconfig)
+(alias `@profullstack/syncfg`), extracted from moshcode's settings sync so any
+tool with a config directory and a cloud can do the same.
+
 ## Cloud backup, if you want it
 
 Optional. myna never contacts a server unless you run a `cloud` command.

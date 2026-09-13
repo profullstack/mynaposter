@@ -83,6 +83,8 @@ export interface Settings {
   did: DidSettings;
   /** Direct mail and texts: the most that go out in a rolling day. */
   outreach: OutreachSettings;
+  /** Settings sync with myna cloud (@profullstack/synconfig): settings.json, OpenProfile, skills. */
+  synconfig: SynconfigSettings;
   /** Plugin specs: an absolute path, or a package name installed by `myna plugins add`. */
   plugins: string[];
   /**
@@ -221,6 +223,14 @@ export interface OutreachSettings {
 
 export const DEFAULT_OUTREACH: OutreachSettings = { maxEmailsPerDay: 200, maxSmsPerDay: 100 };
 
+export interface SynconfigSettings {
+  /** Let the daemon pull and push on a schedule. On by default; it only runs once signed in to myna cloud. */
+  auto: boolean;
+  everyMinutes: number;
+}
+
+export const DEFAULT_SYNCONFIG: SynconfigSettings = { auto: true, everyMinutes: 5 };
+
 export const DEFAULT_DID: DidSettings = {
   server: "https://coinpayportal.com",
   // myna's public OAuth client at CoinPay: PKCE, loopback redirect, scopes openid profile did.
@@ -279,6 +289,7 @@ export const DEFAULT_SETTINGS: Settings = {
   engage: { ...DEFAULT_ENGAGE },
   did: { ...DEFAULT_DID },
   outreach: { ...DEFAULT_OUTREACH },
+  synconfig: { ...DEFAULT_SYNCONFIG },
   plugins: [],
   directories: [],
 };
@@ -300,6 +311,7 @@ export function loadSettings(): Settings {
     engage: { ...DEFAULT_ENGAGE, ...stored.engage },
     did: { ...DEFAULT_DID, ...stored.did },
     outreach: { ...DEFAULT_OUTREACH, ...stored.outreach },
+    synconfig: { ...DEFAULT_SYNCONFIG, ...stored.synconfig },
     skills: {
       defaults: { ...(stored.skills?.defaults ?? {}) },
       rotate: { ...(stored.skills?.rotate ?? {}) },

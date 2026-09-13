@@ -17,6 +17,7 @@
       "dependencies": {
         "@profullstack/myna-core": "workspace:*",
         "@profullstack/myna-mcp": "workspace:*",
+        "@profullstack/synconfig": "workspace:*",
         "hono": "^4.13.5",
         "postgres": "^3.4.9",
       },
@@ -60,6 +61,7 @@
       "version": "0.25.1",
       "dependencies": {
         "@anthropic-ai/sdk": "^0.123.0",
+        "@profullstack/synconfig": "workspace:*",
       },
     },
     "packages/mcp": {
@@ -112,6 +114,17 @@
       "peerDependencies": {
         "@profullstack/myna-core": ">=0.5.0",
       },
+    },
+    "packages/syncfg": {
+      "name": "@profullstack/syncfg",
+      "version": "0.1.0",
+      "dependencies": {
+        "@profullstack/synconfig": "workspace:*",
+      },
+    },
+    "packages/synconfig": {
+      "name": "@profullstack/synconfig",
+      "version": "0.1.0",
     },
   },
   "packages": {
@@ -228,6 +241,10 @@
     "@profullstack/myna-plugin-outreachgraph": ["@profullstack/myna-plugin-outreachgraph@workspace:packages/plugin-outreachgraph"],
 
     "@profullstack/myna-web": ["@profullstack/myna-web@workspace:apps/web"],
+
+    "@profullstack/syncfg": ["@profullstack/syncfg@workspace:packages/syncfg"],
+
+    "@profullstack/synconfig": ["@profullstack/synconfig@workspace:packages/synconfig"],
 
     "@sindresorhus/is": ["@sindresorhus/is@4.6.0", "", {}, "sha512-t09vSN3MdfsyCHoFcTRCH/iUtG7OJ0CsjzB8cjAmKc/va/kIgeDI/TxsigdncE/4be734m0cvIYwNaV4i2XqAw=="],
 
