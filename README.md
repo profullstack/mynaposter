@@ -611,11 +611,14 @@ carry its slots. The bundled plugin turns a blog post into a campaign the
 moment it is published: after `myna post` lands a page on a Git blog or an
 HTML blog, the page's URL goes to CrawlProof, which reads it, writes the
 creatives and starts serving. Social posts do not get a campaign of their
-own; `--ad true` on any post runs one for the first URL in it.
+own; `--ad true` on any post runs one for the first URL in it. Pass `--ad false`
+to publish one post without creating a campaign, keeping automatic ads enabled
+for other posts.
 
 ```bash
 myna crawlproof login                 # paste an API token from Social → API tokens
 myna post --to htmlblog < post.md     # …and the new page gets a campaign
+myna post --to htmlblog --ad false < post.md # publish this page without an ad
 myna crawlproof ad https://example.com/launch --budget 300
 myna crawlproof ads                   # campaigns, newest first
 myna crawlproof ads show crawlproof-ad-144      # delivery, and the visits it sent

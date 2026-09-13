@@ -153,6 +153,8 @@ export function firstUrl(text: string): string | undefined {
  * or — with `--ad true` — the first URL in the text when no blog was in it.
  */
 export function urlsToPromote(event: PostedEvent): string[] {
+  // A single organic post can opt out without changing the account's defaults.
+  if (event.extra?.ad === "false") return [];
   const urls = new Set<string>();
   for (const target of event.targets) {
     if (target.ok && target.url && target.category === "blog") urls.add(target.url);

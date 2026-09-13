@@ -58,6 +58,18 @@ test("afterPost is silent without a token, and when automatic ads are off", asyn
   expect(await plugin.afterPost!(event([blogTarget]), context({ token: "crp_x", auto: "off" }).ctx)).toBeUndefined();
 });
 
+test("--ad false never starts a campaign even with automatic ads enabled", async () => {
+  let requests = 0;
+  await withFetch(
+    () => {
+      requests++;
+      return new Response(JSON.stringify({}), { status: 201 });
+    },
+    () => plugin.afterPost!(event([blogTarget], { ad: "false" }), context({ token: "crp_x", auto: "on" }).ctx),
+  );
+  expect(requests).toBe(0);
+});
+
 test("afterPost creates a campaign for each blog page and says what happened", async () => {
   const calls: { url: string; body: Record<string, unknown> }[] = [];
   const line = await withFetch(
