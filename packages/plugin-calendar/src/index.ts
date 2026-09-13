@@ -94,12 +94,37 @@ async function accessToken(account: Account): Promise<string> {
   if (account.creds.accessToken && Date.now() < expiresAt - 60_000) return account.creds.accessToken;
   if (!account.creds.refreshToken) return account.creds.accessToken;
 
-  const tokens = await refresh(config(account.creds.clientId, account.creds.clientSecret), account.creds.refreshToken);
+  const tokens = await refresh(config(account.creds.clientId, account.creds.clientSecret), account.creds.refreshToken).catch(
+    (error: unknown) => {
+      const signedOut = signedOutMessage(account.id, error);
+      throw signedOut ? new Error(signedOut) : error;
+    },
+  );
   account.creds.accessToken = tokens.access_token;
   if (tokens.refresh_token) account.creds.refreshToken = tokens.refresh_token;
   account.meta.expiresAt = String(Date.now() + (tokens.expires_in ?? 3600) * 1000);
   saveAccount(account);
   return tokens.access_token;
+}
+
+/**
+ * What to say when Google will no longer refresh an account.
+ *
+ * `invalid_grant` ("Token has been expired or revoked") is not a network
+ * fault to retry: the refresh token is dead, which Google does every seven
+ * days while the app's consent screen is still in testing. The fix is one
+ * `myna login gcal`, and because the client id and secret are kept from the
+ * stored account that is a single browser click. Anything else passes
+ * through untouched, so a real outage still reads as one.
+ */
+export function signedOutMessage(accountId: string, error: unknown): string | null {
+  const text = error instanceof Error ? error.message : String(error);
+  if (!/expired or revoked|invalid_grant/i.test(text)) return null;
+  const reason = text.replace(/^.*— /, "").trim();
+  return (
+    `Google has signed ${accountId} out (${reason}). Run: myna login gcal — the saved client id and secret are kept, so it is one browser click. ` +
+    "While the app's consent screen is in testing, Google does this every seven days; publishing the app in the Google Cloud console makes the sign-in permanent."
+  );
 }
 
 const auth = (token: string) => ({ authorization: `Bearer ${token}` });
@@ -264,11 +289,12 @@ const gcal: Network = {
       "Create a project at console.cloud.google.com, enable the Google Calendar API, and add an OAuth client id of " +
       "type 'Web application'. While the app's consent screen is still in testing, Google expires the sign-in after " +
       `seven days; publishing it makes the sign-in permanent. Add ${GOOGLE_LOCAL_REDIRECT} as an authorized redirect ` +
-      `URI, and ${GOOGLE_HOSTED_REDIRECT} too if you will authorize from a browser on another machine (answer "yes" to pasting a code).`,
+      `URI, and ${GOOGLE_HOSTED_REDIRECT} too if you will authorize from a browser on another machine (answer "yes" to pasting a code). ` +
+      "A second `myna login gcal` keeps the client id and secret already stored, so renewing an expired sign-in is one browser click.",
     docsUrl: "https://console.cloud.google.com/apis/credentials",
     fields: [
-      { key: "clientId", label: "Client id", placeholder: "….apps.googleusercontent.com" },
-      { key: "clientSecret", label: "Client secret", secret: true },
+      { key: "clientId", label: "Client id", placeholder: "….apps.googleusercontent.com", reuse: true },
+      { key: "clientSecret", label: "Client secret", secret: true, reuse: true },
       { key: "calendar", label: "Calendar id", optional: true, help: "Leave empty for your primary calendar; `myna calendar calendars` lists the rest." },
       PASTE_FIELD,
     ],
@@ -371,13 +397,15 @@ const plugin: MynaPlugin = {
         "calendar remove <event id> --yes",
         "calendar auto on|off                       An event for every scheduled post (on by default)",
         "calendar status",
-        "login gcal                                 Connect a Google account (a calendar is a network)",
+        "login gcal                                 Connect a Google account, or connect it again after Google signs it out (the saved client is kept)",
       ],
       async run(args, ctx) {
         const [sub = "status", ...rest] = args;
         switch (sub) {
           case "login":
-            ctx.out("A calendar is a network here. Run: myna login gcal");
+            ctx.out(
+              "A calendar is a network here. Run: myna login gcal — a second login keeps the saved client id and secret, so an expired sign-in is one browser click.",
+            );
             return 0;
           case "status": {
             const accounts = calendarAccounts(ctx);
