@@ -164,7 +164,7 @@ test("the server checks shape and size, and a bad snapshot never reaches disk", 
   expect(snapshotProblem({ version: 1, files: {} })).toMatch(/no files/);
   expect(snapshotProblem({ version: 1, files: { "../x": { content: "" } } })).toMatch(/relative/);
   expect(snapshotProblem({ version: 1, files: { "a.md": { content: 1 } } })).toMatch(/string/);
-  expect(snapshotProblem({ version: 1, files: { "a.md": { content: "x".repeat(70_000) } } })).toMatch(/bytes/);
+  expect(snapshotProblem({ version: 1, files: { "a.md": { content: "x".repeat(70_000) } } })).toMatch(/cap/);
   expect(snapshotProblem({ version: 1, files: { "a.md": { content: "ok" } }, host: "h", app: "t" })).toBeNull();
 
   const bad = await handlePut(store, "u1", { snapshot: { version: 1, files: { "../x": { content: "" } } } });
