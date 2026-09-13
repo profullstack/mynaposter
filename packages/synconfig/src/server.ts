@@ -112,10 +112,23 @@ export async function handlePut(store: SnapshotStore, userId: string, body: unkn
   return { status: 200, body: { ok: true, revision: inserted.revision, digest, savedAt: inserted.savedAt } };
 }
 
-/** `GET`: the latest snapshot, or 404 when nothing has been saved. */
-export async function handleGet(store: SnapshotStore, userId: string): Promise<HandlerReply> {
+export interface GetOptions {
+  /**
+   * What an account with nothing saved answers. 404 by default, which is what
+   * moshcode's client expects; 200 for an API whose documented GETs are
+   * probed by a test that reads 404 as "not mounted". Either way the body
+   * carries `empty: true` and no snapshot, and the client treats both alike.
+   */
+  emptyStatus?: 200 | 404;
+}
+
+/** `GET`: the latest snapshot, or (by default) 404 when nothing has been saved. */
+export async function handleGet(store: SnapshotStore, userId: string, options: GetOptions = {}): Promise<HandlerReply> {
   const latest = await store.latest(userId);
-  if (!latest) return { status: 404, body: { ok: false, error: "nothing synced yet" } };
+  if (!latest) {
+    const status = options.emptyStatus ?? 404;
+    return { status, body: status === 200 ? { ok: true, empty: true, revision: null, snapshot: null } : { ok: false, empty: true, error: "nothing synced yet" } };
+  }
   return { status: 200, body: { ok: true, revision: latest.revision, digest: latest.digest, savedAt: latest.savedAt, host: latest.host, version: latest.version, size: latest.size, snapshot: latest.body } };
 }
 

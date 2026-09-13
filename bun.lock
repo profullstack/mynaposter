@@ -117,14 +117,14 @@
     },
     "packages/syncfg": {
       "name": "@profullstack/syncfg",
-      "version": "0.1.1",
+      "version": "0.1.2",
       "dependencies": {
         "@profullstack/synconfig": "workspace:*",
       },
     },
     "packages/synconfig": {
       "name": "@profullstack/synconfig",
-      "version": "0.1.1",
+      "version": "0.1.2",
     },
   },
   "packages": {

@@ -170,6 +170,12 @@ test("the server checks shape and size, and a bad snapshot never reaches disk", 
   const bad = await handlePut(store, "u1", { snapshot: { version: 1, files: { "../x": { content: "" } } } });
   expect(bad.status).toBe(400);
 
+  // An API may answer an empty account with 200; the client reads it as empty either way.
+  const empty200 = await handleGet(store, "nobody", { emptyStatus: 200 });
+  expect(empty200).toEqual({ status: 200, body: { ok: true, empty: true, revision: null, snapshot: null } });
+  const empty404 = await handleGet(store, "nobody");
+  expect(empty404.status).toBe(404);
+
   // A stale marker against an account with nothing in it is not a conflict: there is nothing to lose.
   store.rows.clear();
   const fresh = await handlePut(store, "u1", { snapshot: { version: 1, host: "h", app: "t", files: { "a.md": { content: "x" } } }, ifRevision: 7 });
