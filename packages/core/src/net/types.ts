@@ -38,6 +38,14 @@ export interface CredentialField {
   /** One line shown under the field in the login dialog. */
   help?: string;
   default?: string;
+  /**
+   * On a second login, keep the value the connected account already holds
+   * instead of asking for it again. For the OAuth client an app was registered
+   * with once: Google expires a calendar sign-in every seven days while the
+   * app's consent screen is in testing, and renewing it should not mean
+   * finding the client secret again.
+   */
+  reuse?: boolean;
 }
 
 export interface NetworkCapabilities {

@@ -107,7 +107,7 @@ import { runEngage } from "./engage.ts";
 import { runDid } from "./did.ts";
 import { runContacts, runEmail, runSms, runSmtp } from "./outreach.ts";
 import { parseWhen, describeWhen, parseDuration } from "../tui/when.ts";
-import { loginValuesFromArgs } from "../login-args.ts";
+import { keptLoginValues, loginValuesFromArgs } from "../login-args.ts";
 
 /** A duration in ms, or the fallback's, or undefined when neither reads. */
 function parseDurationOr(value: string, fallback: string): number | undefined {
@@ -323,6 +323,9 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
       await ensureUnlocked();
 
       const given = loginValuesFromArgs(network, positional.slice(1), flags);
+      // A second login keeps what the connected account already holds (the
+      // OAuth client, for one), so renewing an expired sign-in asks nothing.
+      const kept = keptLoginValues(network, listAccounts(), given);
       const interactive = Boolean(process.stdin.isTTY);
 
       out(`Connecting ${network.name}.`);
@@ -339,6 +342,12 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
         if (supplied) {
           values[field.key] = supplied;
           out(`  ${field.label}: ${field.secret ? "•".repeat(8) : supplied}`);
+          continue;
+        }
+        const held = kept.values[field.key];
+        if (held) {
+          values[field.key] = held;
+          out(`  ${field.label}: kept from ${kept.from}`);
           continue;
         }
         if (!interactive) {

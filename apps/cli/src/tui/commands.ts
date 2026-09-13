@@ -56,7 +56,7 @@ import { homedir } from "node:os";
 import { selectedAccounts, toast, type State, SCREENS, type Screen } from "./state.ts";
 import { Field } from "./field.ts";
 import { startLogin } from "./login.ts";
-import { loginValuesFromArgs } from "../login-args.ts";
+import { keptLoginValues, loginValuesFromArgs } from "../login-args.ts";
 import { parseWhen, describeWhen } from "./when.ts";
 
 export interface Command {
@@ -136,7 +136,10 @@ export const COMMANDS: Command[] = [
       // `/login tsbb https://bbs.hqtui.com/ app-showcase` fills the dialog in
       // the order the adapter declares its fields and lands on the first one
       // still empty, so a board you already know is one line and one Enter.
-      startLogin(state, network, redraw, loginValuesFromArgs(network, rest));
+      // What the connected account already holds (the OAuth client) fills its
+      // boxes too, so renewing an expired sign-in lands straight on Enter.
+      const given = loginValuesFromArgs(network, rest);
+      startLogin(state, network, redraw, { ...keptLoginValues(network, listAccounts(), given).values, ...given });
     },
   },
   {
