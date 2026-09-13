@@ -375,6 +375,16 @@ export { didSession, saveDidSession, clearDidSession, requireDidSession, isDid, 
 export { DEFAULT_DID, type DidSettings } from "./store/settings.ts";
 // AT Protocol servers: the probe, and the directory at mynaposter.com/listing/atproto.
 export { probeAtproto, atprotoOrigin, type AtprotoProbe, type AtprotoKind } from "./core/atproto.ts";
+export {
+  createAccount as createAtprotoAccount,
+  pushProfile as pushAtprotoProfile,
+  profileRecordFrom as atprotoProfileRecord,
+  handleFor as atprotoHandleFor,
+  identityValue as profileIdentityValue,
+  type SignupInput as AtprotoSignupInput,
+  type SignupResult as AtprotoSignupResult,
+  type PushResult as AtprotoPushResult,
+} from "./core/atproto-account.ts";
 export * as atproto from "./store/atproto.ts";
 
 // Hand-offs: the steps only a person can do, as cards here and at mynaposter.com/handoff/<id>.

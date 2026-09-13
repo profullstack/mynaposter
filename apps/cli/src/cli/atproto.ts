@@ -6,11 +6,16 @@
  *   myna atproto add <url> [--description "..."] [--tags a,b]    needs myna cloud login
  *   myna atproto refresh <id> | rm <id>
  *   myna atproto probe <url>           what the directory would find, without listing it
+ *   myna atproto signup <pds> [--handle x] [--email e] [--invite code] [--no-profile]
+ *                                      make an account there from your OpenProfile
+ *   myna atproto profile [account] [--dry-run]
+ *                                      push your OpenProfile to a Bluesky profile
  *
- * A PDS listed here is a place to make an account; myna login bluesky takes
- * its URL as the service.
+ * A PDS listed here is a place to make an account; myna atproto signup makes
+ * one from your OpenProfile, and myna login bluesky takes its URL as the
+ * service for one that already exists.
  */
-import { atproto, cloud, probeAtproto, type AtprotoKind } from "@profullstack/myna-core";
+import { atproto, cloud, probeAtproto, createAtprotoAccount, pushAtprotoProfile, currentProfile, listAccounts, saveAccount, type AtprotoKind } from "@profullstack/myna-core";
 import { out } from "./io.ts";
 
 type Flags = Record<string, unknown>;
@@ -82,7 +87,52 @@ export async function runAtproto(positional: string[], flags: Flags): Promise<nu
       out((await atproto.removeServer(rest[0])) ? `Removed ${rest[0]}.` : "Nothing removed.");
       return 0;
     }
+    case "signup": {
+      // myna atproto signup <pds> [--handle x] [--email e] [--invite code] [--password p] [--no-profile]
+      if (!rest[0]) throw new Error("Usage: myna atproto signup <pds url> [--handle name] [--email you@example.com] [--invite code] [--no-profile]");
+      const profile = currentProfile();
+      const result = await createAtprotoAccount({
+        service: rest[0],
+        profile,
+        ...(typeof flags.handle === "string" ? { handle: flags.handle } : {}),
+        ...(typeof flags.email === "string" ? { email: flags.email } : {}),
+        ...(typeof flags.invite === "string" ? { inviteCode: flags.invite } : {}),
+        ...(typeof flags.password === "string" ? { password: flags.password } : {}),
+      });
+      saveAccount(result.account);
+      if (json) {
+        out(JSON.stringify({ id: result.account.id, handle: result.account.handle, did: result.did, service: result.service }, null, 2));
+      } else {
+        out(`Made ${result.account.handle} at ${result.service} (${result.did}).`);
+        out(`Connected as ${result.account.id}; the password is in the vault${typeof flags.password === "string" ? "" : ", generated, 144 bits"}.`);
+      }
+      if (flags.noProfile) return 0;
+      const pushed = await pushAtprotoProfile(result.account, profile);
+      if (!json) {
+        out(`Profile set from your OpenProfile: ${pushed.record.displayName ?? result.account.handle}${pushed.record.description ? `, "${pushed.record.description.split("\n")[0]}"` : ""}${pushed.avatar ? ", avatar uploaded" : ""}.`);
+        if (pushed.avatarNote) out(`  ${pushed.avatarNote}`);
+        out("myna profile now lists the new account. myna atproto profile pushes changes again later.");
+      }
+      return 0;
+    }
+    case "profile": {
+      // myna atproto profile [account] [--dry-run]
+      const profile = currentProfile();
+      const spec = rest[0];
+      const accounts = listAccounts().filter((account) => account.network === "bluesky" && (!spec || account.id === spec || account.handle === spec || `bluesky:${spec}` === account.id));
+      if (!accounts.length) throw new Error(spec ? `No connected Bluesky account matching "${spec}".` : "No Bluesky account connected. myna login bluesky, or myna atproto signup <pds>.");
+      for (const account of accounts) {
+        const pushed = await pushAtprotoProfile(account, profile, { dryRun: flags.dryRun === true });
+        if (json) {
+          out(JSON.stringify({ account: account.id, record: pushed.record, avatar: pushed.avatar, avatarNote: pushed.avatarNote }, null, 2));
+          continue;
+        }
+        out(`${account.id}  ${flags.dryRun ? "would set" : "set"}: ${pushed.record.displayName ?? account.handle}${pushed.record.description ? ` / ${pushed.record.description.replace(/\n+/g, " · ")}` : ""}${pushed.avatar ? "  (avatar uploaded)" : ""}`);
+        if (pushed.avatarNote) out(`  ${pushed.avatarNote}`);
+      }
+      return 0;
+    }
     default:
-      throw new Error(`Unknown: myna atproto ${sub}. Try list, add, probe, refresh or rm.`);
+      throw new Error(`Unknown: myna atproto ${sub}. Try list, add, probe, signup, profile, refresh or rm.`);
   }
 }

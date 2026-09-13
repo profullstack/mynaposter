@@ -151,6 +151,8 @@ export function parseFlags(argv: string[]): { positional: string[]; flags: Flags
       "outreachgraph", "followers", "allFollowing", "allFollowers", "both",
       // handoff list --all, handoff add --local
       "all", "local",
+      // atproto signup
+      "noProfile",
     ]);
     if (BOOLS.has(name)) {
       flags[name === "noThread" ? "thread" : name] = name !== "noThread";
@@ -528,6 +530,8 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
 
     case "atproto":
     case "at": {
+      // Making an account or pushing a profile reads the vault; the directory does not.
+      if (positional[0] === "signup" || positional[0] === "profile") await ensureUnlocked();
       return await runAtproto(positional, flags);
     }
 

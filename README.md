@@ -804,6 +804,28 @@ myna atproto probe https://bsky.social
 myna atproto add https://pds.example --tags community,open-signup   # after myna cloud login
 ```
 
+### An account on any PDS, from your OpenProfile
+
+The network behind Bluesky is servers anyone can run, and an account is a
+request to one of them. Everything that request needs is already in your
+OpenProfile (`myna profile`): the handle you go by, your email, your name,
+your headline, your home page, your avatar. So:
+
+```bash
+myna atproto list --kind pds --online        # servers with open signup say "open"
+myna atproto signup https://pds.example      # ada.bsky.social becomes ada.pds.example
+myna atproto signup https://pds.example --handle lovelace --invite pds-example-abc
+myna atproto profile                         # push the OpenProfile to every Bluesky account
+myna atproto profile bluesky:ada.pds.example --dry-run
+```
+
+The password is generated (144 bits) and kept in the vault beside the other
+accounts; the new account posts, follows and reads like any `myna login
+bluesky` one. The profile record is the OpenProfile's name, headline, home
+page and topics within Bluesky's limits, and the avatar when the Avatar line
+is an image under 1 MB. Fields the OpenProfile does not speak to (a banner,
+labels) are left as they are.
+
 ## Mail and texts to people
 
 Posts reach networks; these reach people. An SMTP server you already have, a
