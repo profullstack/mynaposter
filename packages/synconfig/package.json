@@ -4,11 +4,40 @@
   "description": "Sync a tool's config files with its cloud: an allowlisted snapshot, a digest, optimistic revisions, and the server half to store them. Extracted from moshcode's settings sync; myna is the second user.",
   "license": "MIT",
   "type": "module",
-  "main": "./src/index.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./src/index.ts",
-    "./server": "./src/server.ts"
+    ".": {
+      "bun": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./server": {
+      "bun": "./src/server.ts",
+      "types": "./dist/server.d.ts",
+      "import": "./dist/server.js"
+    }
   },
-  "keywords": ["config", "settings", "sync", "cloud", "snapshot", "syncfg", "synconfig"],
-  "repository": { "type": "git", "url": "https://github.com/profullstack/mynaposter", "directory": "packages/synconfig" }
+  "files": [
+    "src",
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "rm -rf dist && bun x tsc -p tsconfig.build.json",
+    "prepublishOnly": "bun run build"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": ["config", "settings", "sync", "cloud", "snapshot", "syncfg", "synconfig", "dotfiles"],
+  "homepage": "https://github.com/profullstack/mynaposter/tree/main/packages/synconfig",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/profullstack/mynaposter.git",
+    "directory": "packages/synconfig"
+  }
 }

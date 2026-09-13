@@ -18,6 +18,9 @@ export interface SnapshotFile {
   content: string;
 }
 
+/** The snapshot shape this build writes and is willing to read. */
+export const SNAPSHOT_VERSION = 1;
+
 export interface Snapshot {
   version: 1;
   /** The machine it was taken on. */
@@ -90,11 +93,11 @@ export function collectSnapshot(rootDir: string, policy: SyncPolicy, meta: { hos
     const content = readFileSync(full, "utf8");
     const bytes = Buffer.byteLength(content, "utf8");
     if (bytes > limits.maxFileBytes) {
-      skipped.push({ path, reason: `${bytes} bytes, over the ${limits.maxFileBytes} limit` });
+      skipped.push({ path, reason: `${bytes} bytes; the cap is ${limits.maxFileBytes}` });
       continue;
     }
     if (total + bytes > limits.maxTotalBytes) {
-      skipped.push({ path, reason: `would take the snapshot over ${limits.maxTotalBytes} bytes` });
+      skipped.push({ path, reason: `the snapshot is at its ${limits.maxTotalBytes} byte cap` });
       continue;
     }
     const entry = entryFor(policy, path);
@@ -113,10 +116,17 @@ export function collectSnapshot(rootDir: string, policy: SyncPolicy, meta: { hos
 }
 
 /** Check a snapshot that arrived from the server against the policy, file by file. Nothing here throws. */
-export function validateSnapshot(snapshot: unknown, policy: SyncPolicy): { files: Record<string, SnapshotFile>; rejected: Skipped[] } {
+export function validateSnapshot(snapshot: unknown, policy: SyncPolicy): { files: Record<string, SnapshotFile>; rejected: Skipped[]; newer?: number } {
   const files: Record<string, SnapshotFile> = {};
   const rejected: Skipped[] = [];
   const limits = limitsOf(policy);
+  const version = Number((snapshot as { version?: unknown })?.version);
+  // A snapshot written by a build that knows a shape this one does not is
+  // refused whole: applying the half of it that parses would leave a machine
+  // on a mix of two generations, and the fix is an upgrade, not a load.
+  if (Number.isFinite(version) && version > SNAPSHOT_VERSION) {
+    return { files, rejected: [{ path: "*", reason: `saved by a newer build (snapshot v${version}); upgrade first` }], newer: version };
+  }
   const raw = (snapshot as { files?: unknown })?.files;
   if (!raw || typeof raw !== "object") return { files, rejected: [{ path: "*", reason: "no files in the snapshot" }] };
   for (const [path, value] of Object.entries(raw as Record<string, unknown>)) {
@@ -135,7 +145,7 @@ export function validateSnapshot(snapshot: unknown, policy: SyncPolicy): { files
       continue;
     }
     if (Buffer.byteLength(content, "utf8") > limits.maxFileBytes) {
-      rejected.push({ path, reason: `over the ${limits.maxFileBytes} byte limit` });
+      rejected.push({ path, reason: `${Buffer.byteLength(content, "utf8")} bytes; the cap is ${limits.maxFileBytes}` });
       continue;
     }
     const entry = entryFor(policy, rel);

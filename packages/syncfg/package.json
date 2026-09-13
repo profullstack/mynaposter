@@ -4,12 +4,42 @@
   "description": "Alias of @profullstack/synconfig: the same package under the shorter name.",
   "license": "MIT",
   "type": "module",
-  "main": "./src/index.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./src/index.ts",
-    "./server": "./src/server.ts"
+    ".": {
+      "bun": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./server": {
+      "bun": "./src/server.ts",
+      "types": "./dist/server.d.ts",
+      "import": "./dist/server.js"
+    }
+  },
+  "files": [
+    "src",
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "rm -rf dist && bun x tsc -p tsconfig.build.json",
+    "prepublishOnly": "bun run build"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public"
   },
   "keywords": ["config", "settings", "sync", "cloud", "syncfg", "synconfig"],
+  "homepage": "https://github.com/profullstack/mynaposter/tree/main/packages/synconfig",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/profullstack/mynaposter.git",
+    "directory": "packages/syncfg"
+  },
   "dependencies": {
     "@profullstack/synconfig": "workspace:*"
   }

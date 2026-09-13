@@ -16,6 +16,7 @@
 export { DEFAULT_LIMITS, entryFor, isSyncable, limitsOf, normalizeRel, type SyncLimits, type SyncPolicy, type SyncedDir, type SyncedFile } from "./policy.ts";
 export {
   MARKER_FILE,
+  SNAPSHOT_VERSION,
   applyFiles,
   collectSnapshot,
   digestFiles,

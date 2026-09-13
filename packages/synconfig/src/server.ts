@@ -52,6 +52,7 @@ export function snapshotProblem(body: unknown, limits: SyncLimits = DEFAULT_LIMI
   if (snapshot.version !== 1) return "snapshot.version must be 1";
   if (!snapshot.files || typeof snapshot.files !== "object" || Array.isArray(snapshot.files)) return "snapshot.files must be an object";
   const entries = Object.entries(snapshot.files as Record<string, unknown>);
+  if (!entries.length) return "no files in the snapshot";
   if (entries.length > limits.maxFiles) return `at most ${limits.maxFiles} files`;
   let total = 0;
   for (const [path, value] of entries) {
@@ -76,7 +77,15 @@ export interface HandlerReply {
 export const KEEP_REVISIONS = 10;
 
 /** `PUT`: `{ snapshot, ifRevision }` → 200 with the revision (old one when unchanged), 400 when malformed, 409 when another machine saved first. */
-export async function handlePut(store: SnapshotStore, userId: string, body: unknown, limits: SyncLimits = DEFAULT_LIMITS): Promise<HandlerReply> {
+export interface PutOptions {
+  limits?: SyncLimits;
+  /** Where the app's version is in a snapshot, when it is not `app`. moshcode writes `moshcode`. */
+  versionOf?: (snapshot: Snapshot) => string | null | undefined;
+}
+
+export async function handlePut(store: SnapshotStore, userId: string, body: unknown, options: SyncLimits | PutOptions = DEFAULT_LIMITS): Promise<HandlerReply> {
+  const opts: PutOptions = "maxFileBytes" in options ? { limits: options } : options;
+  const limits = opts.limits ?? DEFAULT_LIMITS;
   const input = (body ?? {}) as { snapshot?: unknown; ifRevision?: unknown };
   const problem = snapshotProblem(input.snapshot, limits);
   if (problem) return { status: 400, body: { ok: false, error: problem } };
@@ -90,9 +99,15 @@ export async function handlePut(store: SnapshotStore, userId: string, body: unkn
     return { status: 200, body: { ok: true, revision: latest.revision, digest, savedAt: latest.savedAt, unchanged: true } };
   }
   const size = Buffer.byteLength(JSON.stringify(snapshot), "utf8");
-  const inserted = await store.insert(userId, { digest, host: snapshot.host ?? null, version: snapshot.app ?? null, size, body: snapshot }, ifRevision);
+  // A precondition against an account with nothing in it protects nothing:
+  // the revisions it names are gone (forgotten from the web, or never made),
+  // so there is no other machine's save to lose. Refusing here would strand
+  // every machine behind a force after a perfectly deliberate delete.
+  const precondition = latest ? ifRevision : null;
+  const version = (opts.versionOf ? opts.versionOf(snapshot) : snapshot.app) ?? null;
+  const inserted = await store.insert(userId, { digest, host: snapshot.host ?? null, version: version ? String(version).slice(0, 40) : null, size, body: snapshot }, precondition);
   if ("conflict" in inserted) {
-    return { status: 409, body: { ok: false, error: inserted.revision === 0 ? "the stored settings were forgotten; save with force to start again" : "another machine saved first; load, or save with force", revision: inserted.revision } };
+    return { status: 409, body: { ok: false, error: "another machine saved first; load, or save with force", revision: inserted.revision } };
   }
   return { status: 200, body: { ok: true, revision: inserted.revision, digest, savedAt: inserted.savedAt } };
 }

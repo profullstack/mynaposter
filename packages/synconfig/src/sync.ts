@@ -46,7 +46,7 @@ export async function save(ctx: SyncContext, options: { force?: boolean } = {}):
 }
 
 export interface LoadResult {
-  status: "loaded" | "same" | "empty" | "local_changes" | "planned";
+  status: "loaded" | "same" | "empty" | "local_changes" | "planned" | "newer";
   revision?: number;
   plan: PlanEntry[];
   written: string[];
@@ -57,7 +57,8 @@ export interface LoadResult {
 export async function load(ctx: SyncContext, options: { force?: boolean; dryRun?: boolean } = {}): Promise<LoadResult> {
   const latest = await ctx.client.get();
   if (!latest) return { status: "empty", plan: [], written: [], drifted: [], rejected: [] };
-  const { files, rejected } = validateSnapshot(latest.snapshot, ctx.policy);
+  const { files, rejected, newer } = validateSnapshot(latest.snapshot, ctx.policy);
+  if (newer) return { status: "newer", revision: latest.revision, plan: [], written: [], drifted: [], rejected };
   const plan = planApply(ctx.rootDir, files);
 
   const marker = loadMarker(ctx.rootDir, ctx.markerName);
