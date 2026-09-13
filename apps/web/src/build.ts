@@ -298,6 +298,7 @@ writeFileSync(
 
 // The atproto directory: a page that reads the hosted list at request time,
 // so a server listed with `myna atproto add` shows up without a site build.
+// Script and stylesheet are files: the site CSP allows nothing inline.
 mkdirSync(join(out, "listing", "atproto"), { recursive: true });
 writeFileSync(
   join(out, "listing", "atproto", "index.html"),
@@ -307,16 +308,9 @@ writeFileSync(
 <meta name="description" content="A public directory of AT Protocol servers: PDSes you can make an account on, relays, feed generators and labelers. Probed before they are listed and every half hour after. Add one with myna atproto add.">
 <link rel="canonical" href="https://mynaposter.com/listing/atproto">
 <link rel="stylesheet" href="/site.css"><link rel="icon" href="/favicon.svg" type="image/svg+xml">
-<style>
-.dir{max-width:64rem;margin:0 auto;padding:0 1rem}
-.dir table{width:100%;border-collapse:collapse;margin-top:1rem;font-size:.95rem}
-.dir th,.dir td{text-align:left;padding:.5rem .6rem;border-bottom:1px solid rgba(128,128,128,.25);vertical-align:top}
-.dir .on{color:#16a34a}.dir .off{color:#9ca3af}
-.dir .kind{font-variant:small-caps;letter-spacing:.04em}
-.dir code{font-size:.9em}
-</style></head>
+<link rel="stylesheet" href="/atproto.css"></head>
 <body><header class="top"><a class="wordmark" href="/"><img src="/brand/myna-mark.svg" alt="" width="28" height="28">myna</a></header>
-<main class="dir"><section class="hero"><h1>AT Protocol servers</h1>
+<main class="dir" data-api="${cloud.DEFAULT_SERVER}"><section class="hero"><h1>AT Protocol servers</h1>
 <p class="lede">The network behind Bluesky is servers anyone can run. A <strong>PDS</strong> holds accounts (it is where you sign up), a <strong>relay</strong> streams the firehose, a <strong>feed generator</strong> serves a custom feed, a <strong>labeler</strong> applies labels. Everything here answered a probe before it was listed, and is probed again every half hour.</p>
 <p class="fineprint">List one from a terminal: <code>myna atproto add https://pds.example</code> (after <code>myna cloud login</code>). Read it as data: <code>GET ${cloud.DEFAULT_SERVER}/v1/atproto</code>.</p>
 </section>
@@ -324,31 +318,7 @@ writeFileSync(
 <table id="servers" hidden><thead><tr><th></th><th>Kind</th><th>Server</th><th>Handles / what it is</th><th>Signup</th><th>Last seen</th></tr></thead><tbody></tbody></table>
 <noscript><p class="fineprint">This page reads the list with JavaScript. Without it: <a href="${cloud.DEFAULT_SERVER}/v1/atproto">the list as JSON</a>.</p></noscript>
 </main>
-<script>
-(async () => {
-  const status = document.getElementById("status");
-  const table = document.getElementById("servers");
-  const body = table.querySelector("tbody");
-  const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
-  try {
-    const reply = await fetch("${cloud.DEFAULT_SERVER}/v1/atproto", { headers: { accept: "application/json" } });
-    const data = await reply.json();
-    if (!data.ok) throw new Error(data.error || "no answer");
-    if (!data.servers.length) { status.textContent = "Nothing listed yet. Be the first: myna atproto add <url>."; return; }
-    for (const s of data.servers) {
-      const tr = document.createElement("tr");
-      const what = s.kind === "pds" ? (s.userDomains.length ? s.userDomains.map((d) => "<code>" + esc(d) + "</code>").join(" ") : "no handle domains") : esc(s.name || s.did || s.description || "");
-      const signup = s.kind !== "pds" ? "" : s.inviteCodeRequired === false ? "open" : s.inviteCodeRequired === true ? "invite code" : "unknown";
-      tr.innerHTML = '<td class="' + (s.online ? "on" : "off") + '">' + (s.online ? "&#9679;" : "&#9675;") + '</td><td class="kind">' + esc(s.kind) + '</td><td><a href="' + esc(s.url) + '" rel="nofollow noopener">' + esc(s.url.replace(/^https?:\/\//, "")) + '</a>' + (s.description ? '<br><span class="fineprint">' + esc(s.description) + '</span>' : '') + '</td><td>' + what + '</td><td>' + signup + '</td><td class="fineprint">' + (s.seenAt ? esc(s.seenAt.slice(0, 16).replace("T", " ")) : "never") + '</td>';
-      body.appendChild(tr);
-    }
-    status.textContent = data.servers.length + " server" + (data.servers.length === 1 ? "" : "s") + ", " + data.servers.filter((s) => s.online).length + " online.";
-    table.hidden = false;
-  } catch (error) {
-    status.textContent = "The directory could not be read: " + error.message;
-  }
-})();
-</script></body></html>`,
+<script src="/atproto.js"></script></body></html>`,
 );
 
 // Served at /oauth/callback, for authorizing from a browser that is not on the
@@ -453,6 +423,8 @@ for (const asset of [
   // The icon set for every platform, generated from favicon.png with
   // @profullstack/favicon-generator.
   "handoff.js",
+  "atproto.js",
+  "atproto.css",
   "handoff.css",
   ...readdirSync(join(root, "assets", "icons")).map((name) => `icons/${name}`),
   "site.css", "site.js", "favicon.svg", "favicon.png", "apple-touch-icon.png", "og.png", "install.sh", "oauth-callback.js",

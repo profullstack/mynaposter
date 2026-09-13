@@ -211,7 +211,11 @@ export async function pushProfile(account: Account, profile: OpenProfile, option
       const picture = await doFetch(avatarUrl, { headers: { accept: "image/*" } });
       const mime = picture.headers.get("content-type")?.split(";")[0]?.trim() ?? "";
       const bytes = new Uint8Array(await picture.arrayBuffer());
+      // A profile record takes PNG or JPEG only. Bluesky's own CDN serves
+      // avatars as WebP, so an OpenProfile pointing at one leaves the
+      // avatar as it is rather than failing the whole push.
       if (!picture.ok || !mime.startsWith("image/")) result.avatarNote = `${avatarUrl} is not an image (${picture.status}, ${mime || "no type"})`;
+      else if (mime !== "image/png" && mime !== "image/jpeg") result.avatarNote = `${avatarUrl} is ${mime}; a profile avatar must be PNG or JPEG, so the current one was kept`;
       else if (bytes.byteLength > AVATAR_MAX_BYTES) result.avatarNote = `${avatarUrl} is ${Math.round(bytes.byteLength / 1024)} KB; a PDS takes up to 1000 KB`;
       else {
         const uploaded = await call<{ blob: unknown }>(doFetch, `${service}/xrpc/com.atproto.repo.uploadBlob`, {
