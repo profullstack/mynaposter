@@ -19,6 +19,7 @@ import {
   parseOpenProfile,
   renderOpenProfile,
   samePerson,
+  sectionKeys,
   topics,
 } from "../src/index.ts";
 
@@ -202,6 +203,13 @@ describe("overrides", () => {
     const rendered = renderOpenProfile(applyOverrides(generated, o));
     expect(rendered).toContain("## Colophon");
     expect(rendered).not.toContain("Email");
+  });
+
+  test("a section written twice in an edited file keeps both bodies", () => {
+    const o = overridesFromDocument("# A\n\n## Broadcast\n\n- **Show**: One\n- **Feed**: https://a/1\n\n## Broadcast\n\n- **Seeking**: guests\n");
+    expect(o.sections?.broadcast).toBe("- **Show**: One\n- **Feed**: https://a/1\n\n- **Seeking**: guests");
+    const shown = applyOverrides(parseOpenProfile("# A\n\n## Broadcast\n\n- **Show**: Old\n"), o);
+    expect(sectionKeys(shown.sections[0]!.body)).toEqual({ Show: "One", Feed: "https://a/1", Seeking: "guests" });
   });
 
   test("mergeOverrides: the patch wins key by key and section names normalise", () => {
