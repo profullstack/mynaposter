@@ -377,6 +377,10 @@ export { DEFAULT_DID, type DidSettings } from "./store/settings.ts";
 export { probeAtproto, atprotoOrigin, type AtprotoProbe, type AtprotoKind } from "./core/atproto.ts";
 export * as atproto from "./store/atproto.ts";
 
+// Hand-offs: the steps only a person can do, as cards here and at mynaposter.com/handoff/<id>.
+export * as handoffs from "./store/handoffs.ts";
+export { normaliseHandoff, type Handoff, type HandoffInput, type CloudHandoff } from "./store/handoffs.ts";
+
 // Outreach: SMTP servers, texts through Telnyx, contacts and lists.
 export { sendSmtp, buildMime, dotStuff, addressOf, SmtpError, type SmtpServer, type SmtpMessage, type SmtpResult, type SmtpOptions, type SmtpSecurity } from "./core/smtp.ts";
 export { sendSms, e164, TELNYX_MESSAGES_URL, type SmsConfig, type SmsResult } from "./core/sms.ts";

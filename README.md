@@ -763,6 +763,33 @@ under the post they shared; everyone gets a follow-back. One per person per
 week, at most `maxPerDay` an account, `gapMinutes` apart, likes ignored unless
 asked. Off by default. The whole thing is in [docs/engage.md](docs/engage.md).
 
+## Hand-offs
+
+myna posts everywhere it has an account. What is left after a launch is the
+step only a person can do: a comment on the Reddit thread, a Hacker News
+submission, a reply on LinkedIn. A hand-off is that step written down as a
+card, with the exact text to paste, the page to open and the steps, so it
+takes thirty seconds from a phone instead of a paragraph of instructions
+nobody gets round to.
+
+```bash
+myna handoff add "r/ArtificialInteligence" --title "Comment on the thread" \
+  --open https://www.reddit.com/r/ArtificialInteligence/comments/1wesii0/ \
+  --step "Copy" --step "Open the thread, Add a comment" --step "Paste, Comment" < comment.md
+# Hand-off 3f9a2c1d: r/ArtificialInteligence, Comment on the thread
+# https://mynaposter.com/handoff/AbCdEfGhIjKlMnOpQrStUv
+
+myna handoff                  # what is waiting on you
+myna handoff show 3f9a        # the card, in the terminal
+myna handoff done 3f9a        # or press Mark done on the page
+```
+
+The card is kept in `handoffs.json`. When this machine is signed in to myna
+cloud (`myna cloud login`) it is published too, at a link that is the whole
+secret: anyone holding it can read the card and mark it done, nobody else can
+find it. `--local` keeps a card off the cloud. The daily recap lists open
+hand-offs with their links, so the mail is enough to finish them.
+
 ## AT Protocol servers
 
 The network behind Bluesky is servers anyone can run: a PDS holds accounts, a

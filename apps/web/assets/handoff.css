@@ -1,0 +1,19 @@
+/* The hand-off card. Sits on site.css; only what the card needs is here. */
+.handoff { max-width: 42rem; margin: 0 auto; padding: 1.5rem 1rem 4rem; display: grid; gap: 1rem; }
+.handoff .eyebrow { font-size: .78rem; letter-spacing: .08em; text-transform: uppercase; opacity: .7; margin: 0; }
+.handoff h1 { font-size: 1.6rem; line-height: 1.2; margin: .25rem 0 0; text-wrap: balance; }
+.handoff .block { border: 1px solid var(--line, rgba(128,128,128,.35)); border-radius: 6px; overflow: hidden; margin-top: 1rem; }
+.handoff .block-head { display: flex; justify-content: space-between; gap: .75rem; padding: .6rem .9rem; border-bottom: 1px solid var(--line, rgba(128,128,128,.35)); font-size: .85rem; opacity: .75; }
+.handoff textarea { display: block; width: 100%; box-sizing: border-box; min-height: 18rem; resize: vertical; border: 0; outline: 0; background: transparent; color: inherit; font: .95rem/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; padding: .9rem 1rem; }
+.handoff textarea:focus-visible { box-shadow: inset 0 0 0 2px var(--accent, #d9541e); }
+.handoff .actions { display: flex; flex-wrap: wrap; gap: .75rem; align-items: center; margin-top: 1rem; }
+.handoff button, .handoff .link { font: inherit; font-weight: 600; font-size: .95rem; border-radius: 6px; padding: .6rem 1rem; cursor: pointer; text-decoration: none; border: 1px solid transparent; }
+.handoff button { background: var(--accent, #d9541e); color: #fff; }
+.handoff button.quiet, .handoff .link { background: transparent; color: inherit; border-color: var(--line, rgba(128,128,128,.35)); }
+.handoff button:focus-visible, .handoff .link:focus-visible { outline: 2px solid var(--accent, #d9541e); outline-offset: 2px; }
+.handoff button:disabled { opacity: .6; cursor: default; }
+.handoff .status { font-size: .9rem; min-height: 1.4em; }
+.handoff .steps { margin: 1rem 0 0; padding-left: 1.25rem; display: grid; gap: .25rem; }
+.handoff #card.done .block { opacity: .6; }
+.handoff #card.done h1::after { content: " · done"; opacity: .6; font-weight: 500; }
+@media (max-width: 480px) { .handoff textarea { min-height: 22rem; } }

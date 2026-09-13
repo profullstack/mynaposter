@@ -15,6 +15,7 @@ import { handleMcpBody } from "./mcp.ts";
 import * as cloud from "./cloud.ts";
 import * as reshare from "./reshare.ts";
 import * as atproto from "./atproto.ts";
+import * as handoff from "./handoff.ts";
 import { VERSION } from "@profullstack/myna-core";
 
 const app = new Hono();
@@ -41,7 +42,7 @@ app.use("/v1/*", async (context, next) => {
   // this instance, while those belong to an end user with an account. Running
   // both would mean nobody could sign up without the operator's token.
   const path = new URL(context.req.url).pathname;
-  if (path.startsWith("/v1/cloud") || path.startsWith("/v1/reshare") || path.startsWith("/v1/atproto")) return next();
+  if (path.startsWith("/v1/cloud") || path.startsWith("/v1/reshare") || path.startsWith("/v1/atproto") || path.startsWith("/v1/handoff")) return next();
 
   const expected = process.env.MYNA_API_TOKEN;
   const isRead = context.req.method === "GET";
@@ -163,6 +164,11 @@ app.get("/", (context) =>
       "POST /v1/atproto {url, description?, tags?}",
       "POST /v1/atproto/:id/refresh",
       "DELETE /v1/atproto/:id",
+      "GET  /v1/handoff/:id",
+      "POST /v1/handoff {place, title, text, openUrl?, steps?, account?}",
+      "POST /v1/handoff/:id/done {done?}",
+      "GET  /v1/handoff?all=1",
+      "DELETE /v1/handoff/:id",
     ],
     mcp: { endpoint: "/api/mcp", transport: "streamable-http", tools: 11 },
   }),
@@ -460,6 +466,65 @@ if (hasDatabase()) {
     void atproto.refreshAll().then((r) => console.log(`atproto refresh: ${r.online}/${r.probed} online`)).catch((error: Error) => console.error(`atproto refresh failed: ${error.message}`));
   }, 30 * 60_000).unref();
 }
+
+/**
+ * Hand-offs: the steps only a person can do, as cards at
+ * mynaposter.com/handoff/<id>. Made by a signed-in myna cloud user; read and
+ * marked done by anyone holding the link, which is 128 random bits and the
+ * whole secret. Listing and deleting are the owner's.
+ */
+const handoffRoutes = new Hono<{ Variables: { user: cloud.CloudUser | null } }>();
+
+handoffRoutes.use("*", async (context, next) => {
+  if (!hasDatabase()) return context.json({ ok: false, error: "This instance has no DATABASE_URL, so hand-offs are off." }, 503);
+  const path = new URL(context.req.url).pathname.replace(/\/+$/, "");
+  const readOne = context.req.method === "GET" && path !== "/v1/handoff";
+  const markDone = context.req.method === "POST" && path.endsWith("/done");
+  context.set("user", readOne || markDone ? null : await requireUser(context));
+  return next();
+});
+
+handoffRoutes.get("/", async (context) => {
+  const user = context.get("user");
+  if (!user) return context.json({ ok: false, error: "Unauthorized" }, 401);
+  const handoffs = await handoff.listHandoffs(user.id, { all: context.req.query("all") === "1" });
+  return context.json({ ok: true, handoffs, total: handoffs.length });
+});
+
+handoffRoutes.get("/:id", async (context) => {
+  const card = await handoff.getHandoff(context.req.param("id"));
+  return card ? context.json({ ok: true, handoff: card }) : context.json({ ok: false, error: "No such hand-off." }, 404);
+});
+
+handoffRoutes.post("/", async (context) => {
+  const user = context.get("user");
+  if (!user) return context.json({ ok: false, error: "Sign in with myna cloud login to publish a hand-off." }, 401);
+  try {
+    const input = (await context.req.json().catch(() => ({}))) as Record<string, unknown>;
+    return context.json({ ok: true, handoff: await handoff.createHandoff(user.id, input) }, 201);
+  } catch (error) {
+    return context.json({ ok: false, error: (error as Error).message }, 400);
+  }
+});
+
+handoffRoutes.post("/:id/done", async (context) => {
+  const input = (await context.req.json().catch(() => ({}))) as { done?: unknown };
+  const card = await handoff.finishHandoff(context.req.param("id"), input.done !== false);
+  return card ? context.json({ ok: true, handoff: card }) : context.json({ ok: false, error: "No such hand-off." }, 404);
+});
+
+handoffRoutes.delete("/:id", async (context) => {
+  const user = context.get("user");
+  if (!user) return context.json({ ok: false, error: "Unauthorized" }, 401);
+  try {
+    const removed = await handoff.removeHandoff(context.req.param("id"), user.id);
+    return removed ? context.json({ ok: true }) : context.json({ ok: false, error: "No such hand-off." }, 404);
+  } catch (error) {
+    return context.json({ ok: false, error: (error as Error).message }, 403);
+  }
+});
+
+app.route("/v1/handoff", handoffRoutes);
 
 app.notFound((context) => context.json({ ok: false, error: "Not found" }, 404));
 

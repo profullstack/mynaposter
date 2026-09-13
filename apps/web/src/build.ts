@@ -12,6 +12,7 @@ import { fileURLToPath } from "node:url";
 import { renderToHtml } from "@profullstack/hqtui";
 import { NETWORKS, authSummary, cloud } from "@profullstack/myna-core";
 import { composeScreenshot, loginScreenshot } from "./screens.ts";
+import { renderHandoffPage } from "./handoff-page.ts";
 
 const root = join(fileURLToPath(new URL(".", import.meta.url)), "..");
 const out = join(root, "public");
@@ -366,9 +367,14 @@ for (const provider of ["google", "facebook", "instagram"]) {
   copyFileSync(join(root, "assets", "oauth-callback.html"), join(out, "api", "v1", provider, "oauth", "callback.html"));
 }
 
+// A hand-off card: one shell for every card, the id in the path, the card
+// read from the API by handoff.js. The server maps /handoff/<id> here.
+mkdirSync(join(out, "handoff"), { recursive: true });
+writeFileSync(join(out, "handoff", "index.html"), renderHandoffPage(cloud.DEFAULT_SERVER));
+
 writeFileSync(
   join(out, "robots.txt"),
-  "User-agent: *\nAllow: /\nDisallow: /oauth/\nDisallow: /api/v1/\n\nSitemap: https://mynaposter.com/sitemap.xml\n",
+  "User-agent: *\nAllow: /\nDisallow: /oauth/\nDisallow: /api/v1/\nDisallow: /handoff/\n\nSitemap: https://mynaposter.com/sitemap.xml\n",
 );
 
 writeFileSync(
@@ -446,6 +452,8 @@ for (const asset of [
   "manifest.json", "browserconfig.xml",
   // The icon set for every platform, generated from favicon.png with
   // @profullstack/favicon-generator.
+  "handoff.js",
+  "handoff.css",
   ...readdirSync(join(root, "assets", "icons")).map((name) => `icons/${name}`),
   "site.css", "site.js", "favicon.svg", "favicon.png", "apple-touch-icon.png", "og.png", "install.sh", "oauth-callback.js",
   ".well-known/openmcp.json",

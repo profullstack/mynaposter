@@ -148,6 +148,12 @@ AT Protocol (the network behind Bluesky; a directory of its servers):
        [--description] [--tags]     said about itself. Needs myna cloud login
   atproto probe <url>               What the directory would find, listing nothing
   atproto refresh <id> | rm <id>
+Hand-offs (the steps only a person can do: a Reddit comment, an HN submission):
+  handoff add <place> --title "..."  A card: the text to paste (stdin or --from
+       [--open <url>] [--step "..."]  <file>), the page to open, the steps.
+       [--account x] [--local]       Published to mynaposter.com/handoff/<id> when
+                                    signed in to myna cloud; the recap lists it
+  handoff [list] [--all] | show <id> | done <id> | undo <id> | rm <id>
 
 Follow-ups (the people who replied, reposted or followed you):
   engage                            The queue: who engaged, the reply the

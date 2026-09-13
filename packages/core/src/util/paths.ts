@@ -39,5 +39,7 @@ export const OUTREACH_FILE = "outreach.json";
 export const PROFILE_FILE = "openprofile.md";
 /** When the daily recap was last sent. State, not preference, so not in settings. */
 export const RECAP_FILE = "recap.json";
+/** Hand-off cards: the steps a person does by hand. Plain JSON, nothing secret. */
+export const HANDOFFS_FILE = "handoffs.json";
 /** Where `myna plugins add <package>` installs to. */
 export const PLUGINS_DIR = "plugins";
