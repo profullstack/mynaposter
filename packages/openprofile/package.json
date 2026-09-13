@@ -1,6 +1,6 @@
 {
   "name": "@profullstack/openprofile",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Read, write, merge and de-duplicate OpenProfile.md documents (logicsrc.com/openprofile), including the Broadcast (OpenBroadcast) and Guest (OpenGuest) sections. One parser for every house app that serves a profile.",
   "license": "MIT",
   "type": "module",

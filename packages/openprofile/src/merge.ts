@@ -108,7 +108,12 @@ export function overridesFromDocument(markdown: string, generated?: OpenProfileD
       if (!doc.identity.some((x) => x.key.toLowerCase() === e.key.toLowerCase())) overrides.identity[e.key] = null;
     }
   }
-  for (const s of doc.sections) overrides.sections![s.name] = s.body;
+  // A file may carry the same section twice (rule 4 allows two Broadcast
+  // sections for two shows); both survive, one after the other.
+  for (const s of doc.sections) {
+    const prior = overrides.sections![s.name];
+    overrides.sections![s.name] = prior ? `${prior}\n\n${s.body}` : s.body;
+  }
   if (dropMissing && generated) {
     for (const s of generated.sections) if (!doc.sections.some((x) => x.name === s.name)) overrides.sections![s.name] = REMOVED;
   }
