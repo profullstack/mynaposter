@@ -1,6 +1,6 @@
 {
   "name": "@profullstack/syncfg",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Alias of @profullstack/synconfig: the same package under the shorter name.",
   "license": "MIT",
   "type": "module",
@@ -33,7 +33,14 @@
   "publishConfig": {
     "access": "public"
   },
-  "keywords": ["config", "settings", "sync", "cloud", "syncfg", "synconfig"],
+  "keywords": [
+    "config",
+    "settings",
+    "sync",
+    "cloud",
+    "syncfg",
+    "synconfig"
+  ],
   "homepage": "https://github.com/profullstack/mynaposter/tree/main/packages/synconfig",
   "repository": {
     "type": "git",

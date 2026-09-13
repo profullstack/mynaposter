@@ -1,6 +1,6 @@
 {
   "name": "@profullstack/synconfig",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Sync a tool's config files with its cloud: an allowlisted snapshot, a digest, optimistic revisions, and the server half to store them. Extracted from moshcode's settings sync; myna is the second user.",
   "license": "MIT",
   "type": "module",
@@ -33,7 +33,16 @@
   "publishConfig": {
     "access": "public"
   },
-  "keywords": ["config", "settings", "sync", "cloud", "snapshot", "syncfg", "synconfig", "dotfiles"],
+  "keywords": [
+    "config",
+    "settings",
+    "sync",
+    "cloud",
+    "snapshot",
+    "syncfg",
+    "synconfig",
+    "dotfiles"
+  ],
   "homepage": "https://github.com/profullstack/mynaposter/tree/main/packages/synconfig",
   "repository": {
     "type": "git",

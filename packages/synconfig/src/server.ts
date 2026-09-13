@@ -53,17 +53,17 @@ export function snapshotProblem(body: unknown, limits: SyncLimits = DEFAULT_LIMI
   if (!snapshot.files || typeof snapshot.files !== "object" || Array.isArray(snapshot.files)) return "snapshot.files must be an object";
   const entries = Object.entries(snapshot.files as Record<string, unknown>);
   if (!entries.length) return "no files in the snapshot";
-  if (entries.length > limits.maxFiles) return `at most ${limits.maxFiles} files`;
+  if (entries.length > limits.maxFiles) return `too many files (${entries.length}; the cap is ${limits.maxFiles})`;
   let total = 0;
   for (const [path, value] of entries) {
     if (normalizeRel(path) !== path) return `not a plain relative path: ${path}`;
     const content = (value as { content?: unknown })?.content;
     if (typeof content !== "string") return `${path}: content must be a string`;
     const bytes = Buffer.byteLength(content, "utf8");
-    if (bytes > limits.maxFileBytes) return `${path}: over ${limits.maxFileBytes} bytes`;
+    if (bytes > limits.maxFileBytes) return `${path} is ${bytes} bytes; the cap is ${limits.maxFileBytes}`;
     total += bytes;
   }
-  if (total > limits.maxTotalBytes) return `snapshot over ${limits.maxTotalBytes} bytes`;
+  if (total > limits.maxTotalBytes) return `the snapshot is ${total} bytes; the cap is ${limits.maxTotalBytes}`;
   if (snapshot.host !== undefined && typeof snapshot.host !== "string") return "snapshot.host must be a string";
   if (snapshot.app !== undefined && typeof snapshot.app !== "string") return "snapshot.app must be a string";
   return null;
