@@ -164,6 +164,34 @@ export const misskey: Network = {
     return out.slice(0, limit);
   },
 
+  async followers(account, handle, limit) {
+    const who = await showUser(account, handle);
+    const out: Profile[] = [];
+    let untilId: string | undefined;
+    while (out.length < limit) {
+      const page = await postJson<{ id: string; follower: MisskeyUser }[]>(`${account.meta.instance}/api/users/followers`, {
+        i: account.creds.token,
+        userId: who.id,
+        limit: Math.min(100, limit - out.length),
+        ...(untilId ? { untilId } : {}),
+      });
+      for (const item of page) {
+        out.push({
+          handle: misskeyHandle(item.follower, account.meta.instance),
+          id: item.follower.id,
+          displayName: item.follower.name || undefined,
+          bio: item.follower.description || undefined,
+          followers: item.follower.followersCount,
+          following: item.follower.followingCount,
+          url: `${account.meta.instance}/${misskeyHandle(item.follower, account.meta.instance)}`,
+        });
+      }
+      if (!page.length) break;
+      untilId = page[page.length - 1].id;
+    }
+    return out.slice(0, limit);
+  },
+
   async follow(account, handle) {
     const who = await showUser(account, handle);
     const url = `${account.meta.instance}/${misskeyHandle(who, account.meta.instance)}`;

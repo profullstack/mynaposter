@@ -13,7 +13,7 @@
  * Nothing here imports the rest of myna, so a plugin author's dependency on
  * `@profullstack/myna-core` is types only.
  */
-import type { Account, Network } from "../net/types.ts";
+import type { Account, Network, Profile } from "../net/types.ts";
 import type { Directory } from "../directories/types.ts";
 import type { Settings } from "../store/settings.ts";
 import type { SeedInput } from "../core/graph.ts";
@@ -36,6 +36,14 @@ export interface PluginContext {
   };
   graph: {
     addSeeds(seeds: SeedInput[]): { added: number; updated: number };
+    /**
+     * Who `handle` follows, read through `account`'s network. Throws when the
+     * network cannot list it. Optional so a hand-built context in a test, or
+     * an older host, can leave it out.
+     */
+    following?(account: Account, handle: string, limit: number): Promise<Profile[]>;
+    /** Who follows `handle`. Same rules. */
+    followers?(account: Account, handle: string, limit: number): Promise<Profile[]>;
   };
   /** myna's config directory. A plugin that needs a file of its own puts it under `plugins/<id>/`. */
   configDir: string;
@@ -99,6 +107,22 @@ export interface CancelledEvent {
   id: string;
 }
 
+/** What `afterFollow` receives: who was followed, from which account, and how they were found. */
+export interface FollowedEvent {
+  account: Account;
+  network: string;
+  handle: string;
+  id?: string;
+  displayName?: string;
+  url?: string;
+  bio?: string;
+  followers?: number;
+  /** `manual` for `myna follow`, `list` for a pasted follows or followers page, `graph` for the follow graph. */
+  source: "manual" | "list" | "graph";
+  /** The seed or list they came from, when there was one: `bluesky|alice`, or `followers:bluesky|alice`. */
+  via?: string;
+}
+
 /** A source of seeds. The daemon calls it on its own schedule and feeds the result to the graph. */
 export interface SeedProvider {
   id: string;
@@ -124,6 +148,14 @@ export interface MynaPlugin {
    * the person, or nothing. Throwing is reported and never undoes the post.
    */
   afterPost?(event: PostedEvent, ctx: PluginContext): Promise<string | void>;
+  /**
+   * Called once a follow has gone out, from `myna follow`, a pasted list, the
+   * graph and the daemon alike. `ctx.flags` carries the command's flags when a
+   * person ran it, so a plugin can act on `--something` and stay quiet
+   * otherwise. Same rules as `afterPost`: a line back, and throwing never
+   * undoes the follow.
+   */
+  afterFollow?(event: FollowedEvent, ctx: PluginContext): Promise<string | void>;
   /**
    * Called once a post has been queued for later — from `myna schedule`, the
    * TUI and the MCP server. For a plugin that keeps a calendar, or wants to

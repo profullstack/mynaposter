@@ -247,6 +247,34 @@ export const bluesky: Network = {
     return out.slice(0, limit);
   },
 
+  async followers(account, handle, limit) {
+    const base = service(account);
+    const { accessJwt } = await session(account);
+    const actor = blueskyActor(handle);
+    const out: Profile[] = [];
+    let cursor: string | undefined;
+    // getFollowers pages at 100, the same as getFollows.
+    while (out.length < limit) {
+      const page = await getJson<{ followers: Record<string, any>[]; cursor?: string }>(
+        `${base}/xrpc/app.bsky.graph.getFollowers?actor=${encodeURIComponent(actor)}&limit=${Math.min(100, limit - out.length)}` +
+          (cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""),
+        { headers: auth(accessJwt) },
+      );
+      for (const item of page.followers) {
+        out.push({
+          handle: item.handle,
+          id: item.did,
+          displayName: item.displayName || undefined,
+          bio: item.description || undefined,
+          url: `https://bsky.app/profile/${item.handle}`,
+        });
+      }
+      if (!page.cursor || !page.followers.length) break;
+      cursor = page.cursor;
+    }
+    return out.slice(0, limit);
+  },
+
   async follow(account, handle) {
     const base = service(account);
     const { accessJwt, did } = await session(account);

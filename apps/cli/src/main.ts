@@ -83,12 +83,17 @@ Following (Bluesky, Mastodon, Misskey, X, Nostr):
   follow <account> <url>/follows    Follow everyone they follow: paste their
        [--limit 25] [--dry-run]     follows page. Paced by the graph's hourly
                                     and daily ceilings; run again to continue
+  follow <account> <url>/followers  Follow everyone who follows them, same pace
+       [--outreachgraph]             Also hand each person followed to
+                                    OutreachGraph for assessment (any follow)
   following <account> [handle]      Who an account follows. Yours by default
+  followers <account> [handle]      Who follows an account. Yours by default
   graph                             The follow graph: seed it with people
                                     worth learning from, read who they follow,
                                     follow the ones they agree on
     graph seed <network> <handle>   Add a seed (--weight N to count it more)
-    graph expand                    Read who the seeds follow
+    graph expand [--followers|--both]  Read who the seeds follow, or who
+                                    follows them (graph.expand sets the default)
     graph candidates                Who to follow next, best first
     graph follow [--limit N]        Follow the next few, within the limits
     graph on | off                  Let the daemon do all of this
@@ -185,6 +190,8 @@ Plugins:
   plugins                           What is loaded, and what each one adds
   plugins add <package or path>     Install a plugin
   plugins remove <package or id>    Forget one
+  outreachgraph push <account>      Hand who you follow (or --followers) to
+       [--followers] [--limit N]     OutreachGraph for assessment + OpenProfile
   outreachgraph login | sync        Pull OutreachGraph's ranked people in as
                                     seeds (bundled plugin)
 

@@ -283,6 +283,7 @@ export type {
   SeedProvider,
   LoadedPlugin,
   PostedEvent,
+  FollowedEvent,
   PostedTarget,
   ScheduledEvent,
   CancelledEvent,
