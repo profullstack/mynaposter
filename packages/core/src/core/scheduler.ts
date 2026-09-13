@@ -142,14 +142,20 @@ export async function runDuePosts(now = new Date()): Promise<RunResult[]> {
     updateQueued(post.id, { status: "sending", attempts: (post.attempts ?? 0) + 1, targets: accounts.map((account) => account.id) });
 
     try {
-      const results = await postToAll(accounts, {
-        text: post.text,
-        title: post.title,
-        media: post.mediaPaths?.length ? loadAllMedia(post.mediaPaths) : undefined,
-        thread: post.thread ?? loadSettings().threadByDefault,
-        extra: post.extra,
-        type: post.type,
-      });
+      const results = await postToAll(
+        accounts,
+        {
+          text: post.text,
+          title: post.title,
+          media: post.mediaPaths?.length ? loadAllMedia(post.mediaPaths) : undefined,
+          thread: post.thread ?? loadSettings().threadByDefault,
+          extra: post.extra,
+          type: post.type,
+        },
+        // Booked at the tick, so the next gap is measured from when the
+        // daemon acted, not from whatever the wall clock read.
+        { at: now.getTime() },
+      );
 
       const byAccount: QueuedPost["results"] = {};
       for (const result of results) {

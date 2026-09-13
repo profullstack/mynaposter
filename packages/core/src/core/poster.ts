@@ -168,8 +168,19 @@ export function refuseDuplicateTitles(accounts: Account[], options: Pick<Compose
  */
 export type PostOutcome = TargetResult[] & { hooks: HookOutcome[] };
 
+/** When a send is booked: the moment the caller is acting at, or the wall clock. */
+export interface SendStamp {
+  /**
+   * Epoch ms the history entry is dated. The daemon passes its tick, so what
+   * the pacing rules measure the next gap from is the moment the daemon was
+   * acting at rather than whenever the wall clock happened to read; the two
+   * agree in production and differ under a fixed clock.
+   */
+  at?: number;
+}
+
 /** Post to every target at once and return one result per target. */
-export async function postToAll(accounts: Account[], options: ComposeOptions): Promise<PostOutcome> {
+export async function postToAll(accounts: Account[], options: ComposeOptions, stamp: SendStamp = {}): Promise<PostOutcome> {
   if (!accounts.length) throw new Error("No targets. Run /login <network> first, or check your --to value.");
 
   // Which skill each account is on. Taking it moves a rotating account's
@@ -180,9 +191,10 @@ export async function postToAll(accounts: Account[], options: ComposeOptions): P
   const results = await Promise.all(accounts.map((account) => postOne(account, options)));
   for (const result of results) result.skill = skills.get(result.account.id);
 
+  const at = new Date(stamp.at ?? Date.now()).toISOString();
   recordHistory(
     results.map((result) => ({
-      at: new Date().toISOString(),
+      at,
       accountId: result.account.id,
       network: result.account.network,
       handle: result.account.handle,
@@ -276,7 +288,7 @@ export async function postPaced(accounts: Account[], options: ComposeOptions, pa
     : [];
   for (const move of reflowed) updateQueued(move.id, { scheduledFor: new Date(move.to).toISOString() });
 
-  const results: PostOutcome = plan.now.length ? await postToAll(plan.now, options) : Object.assign([], { hooks: [] });
+  const results: PostOutcome = plan.now.length ? await postToAll(plan.now, options, { at: paced.now }) : Object.assign([], { hooks: [] });
 
   const queued: QueuedPost[] = [];
   const scheduleHooks: HookOutcome[] = [];
