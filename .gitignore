@@ -10,3 +10,5 @@ apps/desktop/src/core.cjs
 apps/desktop/dist/
 apps/web/public/
 apps/cli/dist/
+# Built output of the published packages (synconfig, syncfg); the source is what the repo carries.
+packages/*/dist/

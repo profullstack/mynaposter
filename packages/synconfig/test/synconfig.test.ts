@@ -161,6 +161,7 @@ test("syncOnce pulls then pushes, and a fresh machine simply pushes", async () =
 test("the server checks shape and size, and a bad snapshot never reaches disk", async () => {
   expect(snapshotProblem(null)).toMatch(/object/);
   expect(snapshotProblem({ version: 2, files: {} })).toMatch(/version/);
+  expect(snapshotProblem({ version: 1, files: {} })).toMatch(/no files/);
   expect(snapshotProblem({ version: 1, files: { "../x": { content: "" } } })).toMatch(/relative/);
   expect(snapshotProblem({ version: 1, files: { "a.md": { content: 1 } } })).toMatch(/string/);
   expect(snapshotProblem({ version: 1, files: { "a.md": { content: "x".repeat(70_000) } } })).toMatch(/bytes/);
@@ -168,6 +169,19 @@ test("the server checks shape and size, and a bad snapshot never reaches disk", 
 
   const bad = await handlePut(store, "u1", { snapshot: { version: 1, files: { "../x": { content: "" } } } });
   expect(bad.status).toBe(400);
+
+  // A stale marker against an account with nothing in it is not a conflict: there is nothing to lose.
+  store.rows.clear();
+  const fresh = await handlePut(store, "u1", { snapshot: { version: 1, host: "h", app: "t", files: { "a.md": { content: "x" } } }, ifRevision: 7 });
+  expect(fresh.status).toBe(200);
+  expect(fresh.body.revision).toBe(1);
+
+  // A snapshot from a newer build is refused whole, with the upgrade named.
+  expect(validateSnapshot({ version: 2, files: { "settings.json": { content: "{}" } } }, policy)).toMatchObject({ files: {}, newer: 2 });
+  store.rows.clear();
+  await store.insert("u1", { digest: "d", host: null, version: null, size: 1, body: { version: 2 as never, host: "x", app: "t", files: { "settings.json": { content: "{}" } } } }, null);
+  expect((await load(ctx(b, "desktop"))).status).toBe("newer");
+  store.rows.clear();
 
   // A snapshot the server holds with a file the policy does not admit is filtered on the way in.
   await store.insert("u1", { digest: "d", host: null, version: null, size: 1, body: { version: 1, host: "x", app: "t", files: { "vault.json": { content: "SECRET" }, "settings.json": { content: "{}" } } } }, null);
