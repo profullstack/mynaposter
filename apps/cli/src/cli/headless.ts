@@ -151,6 +151,8 @@ export function parseFlags(argv: string[]): { positional: string[]; flags: Flags
       "outreachgraph", "followers", "allFollowing", "allFollowers", "both",
       // handoff list --all, handoff add --local
       "all", "local",
+      // atproto list --online
+      "online",
       // atproto signup
       "noProfile",
     ]);

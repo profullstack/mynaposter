@@ -1,0 +1,7 @@
+/* The atproto directory page. */
+.dir{max-width:64rem;margin:0 auto;padding:0 1rem}
+.dir table{width:100%;border-collapse:collapse;margin-top:1rem;font-size:.95rem}
+.dir th,.dir td{text-align:left;padding:.5rem .6rem;border-bottom:1px solid rgba(128,128,128,.25);vertical-align:top}
+.dir .on{color:#16a34a}.dir .off{color:#9ca3af}
+.dir .kind{font-variant:small-caps;letter-spacing:.04em}
+.dir code{font-size:.9em}

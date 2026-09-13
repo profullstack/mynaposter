@@ -53,6 +53,7 @@ function fakePds(options: { kind?: "pds" | "relay"; invite?: boolean; domains?: 
     if (url.endsWith("/xrpc/com.atproto.repo.putRecord")) return json({ uri: "at://did:plc:newada/app.bsky.actor.profile/self", cid: "bafynew" });
     if (url === "https://ada.example/ada.png") return new Response(new Uint8Array([1, 2, 3]), { status: 200, headers: { "content-type": "image/png" } });
     if (url === "https://ada.example/not-an-image") return new Response("<html>", { status: 200, headers: { "content-type": "text/html" } });
+    if (url === "https://ada.example/ada.webp") return new Response(new Uint8Array([1, 2, 3]), { status: 200, headers: { "content-type": "image/webp" } });
     return json({ error: "NotFound" }, 404);
   }) as unknown as typeof fetch;
 }
@@ -127,6 +128,15 @@ test("pushing writes the record with the old cid as the swap, and uploads the av
   const kept = await pushProfile(account, notImage, { fetch: fakePds() });
   expect(kept.avatar).toBe(false);
   expect(kept.avatarNote).toMatch(/not an image/);
+
+  // WebP, which Bluesky's own CDN serves, is kept out of the record rather than failing it.
+  const webp = parseOpenProfile("# Ada\n\n- **Avatar**: https://ada.example/ada.webp\n");
+  const webpCalls: { url: string; body?: unknown }[] = [];
+  const skipped = await pushProfile(account, webp, { fetch: fakePds({ calls: webpCalls }) });
+  expect(skipped.avatar).toBe(false);
+  expect(skipped.avatarNote).toMatch(/PNG or JPEG/);
+  expect(webpCalls.some((entry) => entry.url.endsWith("uploadBlob"))).toBe(false);
+  expect(webpCalls.some((entry) => entry.url.endsWith("putRecord"))).toBe(true);
 });
 
 interface ProfileLike {
