@@ -148,6 +148,12 @@ AT Protocol (the network behind Bluesky; a directory of its servers):
        [--description] [--tags]     said about itself. Needs myna cloud login
   atproto probe <url>               What the directory would find, listing nothing
   atproto refresh <id> | rm <id>
+  atproto signup <pds url>          Make an account there from your OpenProfile:
+       [--handle x] [--email e]     the handle under the server's domain, your
+       [--invite code] [--no-profile] email, a generated password in the vault,
+                                    then the profile itself (name, headline, web, avatar)
+  atproto profile [account]         Push your OpenProfile to a Bluesky profile
+       [--dry-run]                   (any PDS), keeping what it does not describe
 Hand-offs (the steps only a person can do: a Reddit comment, an HN submission):
   handoff add <place> --title "..."  A card: the text to paste (stdin or --from
        [--open <url>] [--step "..."]  <file>), the page to open, the steps.
