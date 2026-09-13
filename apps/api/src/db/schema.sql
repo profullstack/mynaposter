@@ -231,3 +231,58 @@ create table if not exists settings_snapshots (
 );
 
 create index if not exists settings_snapshots_user_idx on settings_snapshots(user_id, revision desc);
+
+-- OpenConnection (https://logicsrc.com/openconnection): the door an app that
+-- cannot register walks through. A signed-in person makes a setup token, pastes
+-- it into the app, and the app claims it once for a bearer of its own. The
+-- setup secret and the bearer are stored as sha256, shown once, like api_tokens.
+-- Nothing here holds a social credential: an app acts through the bridge.
+create table if not exists oc_setup_tokens (
+  id            uuid primary key default gen_random_uuid(),
+  user_id       uuid not null references users(id) on delete cascade,
+  secret_hash   text not null unique,
+  scopes        text[] not null default '{}',
+  expires_at    timestamptz not null,
+  claimed_at    timestamptz,
+  -- What the app said about itself at claim: {name, url, version}.
+  claimed_by    jsonb,
+  -- A second claim of a used token means someone else saw it. Counted so the
+  -- person's apps page can say so.
+  reclaims      integer not null default 0,
+  created_at    timestamptz not null default now()
+);
+
+create index if not exists oc_setup_tokens_user_idx on oc_setup_tokens(user_id, created_at desc);
+
+create table if not exists oc_access_tokens (
+  id            uuid primary key default gen_random_uuid(),
+  user_id       uuid not null references users(id) on delete cascade,
+  setup_id      uuid references oc_setup_tokens(id) on delete set null,
+  token_hash    text not null unique,
+  app           jsonb not null default '{}'::jsonb,
+  scopes        text[] not null default '{}',
+  issued_at     timestamptz not null default now(),
+  expires_at    timestamptz,
+  last_used_at  timestamptz,
+  revoked_at    timestamptz
+);
+
+create index if not exists oc_access_tokens_user_idx on oc_access_tokens(user_id, issued_at desc);
+
+-- What an app posted with the person's own hands, reported back so the
+-- person's history and recap see it. The bridge never made the post.
+create table if not exists oc_activity (
+  id            uuid primary key default gen_random_uuid(),
+  user_id       uuid not null references users(id) on delete cascade,
+  token_id      uuid references oc_access_tokens(id) on delete set null,
+  app           text,
+  network       text not null,
+  kind          text not null default 'post',
+  url           text,
+  text          text,
+  project       text,
+  at            timestamptz not null default now(),
+  created_at    timestamptz not null default now()
+);
+
+create index if not exists oc_activity_user_idx on oc_activity(user_id, at desc);

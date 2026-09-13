@@ -309,6 +309,24 @@ export {
   type ListingCopyRequest,
 } from "./ai/writer.ts";
 export { fetchPage, type PageSummary } from "./ai/extract.ts";
+export { readSiteFiles, looksLikeOpenProfile, looksLikeLlms, MAX_SITE_FILE, type SiteFiles } from "./ai/sitefiles.ts";
+export {
+  variations,
+  projectCopy,
+  suggestPlaces,
+  parseVariations,
+  resolveNetwork,
+  briefBlock,
+  NETWORK_ALIASES,
+  TONES,
+  type ProjectBrief,
+  type VariationsRequest,
+  type Variations,
+  type ProjectCopy,
+  type ProjectCopyRequest,
+  type PlaceSuggestions,
+  type NetworkShape,
+} from "./ai/promote.ts";
 export { renderInfographic, renderSvg, type InfographicStyle, type RenderOptions } from "./graphics/infographic.ts";
 export { availableRasterizers } from "./graphics/raster.ts";
 

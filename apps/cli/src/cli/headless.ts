@@ -101,6 +101,7 @@ import { runSkill } from "./skill.ts";
 import { runProfile, runReshareCommand } from "./reshare.ts";
 import { runAtproto } from "./atproto.ts";
 import { runHandoff } from "./handoff.ts";
+import { runConnect } from "./connect.ts";
 import { runSynconfig } from "./synconfig.ts";
 import { runEngage } from "./engage.ts";
 import { runDid } from "./did.ts";
@@ -541,6 +542,11 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
     case "handoff":
     case "handoffs": {
       return await runHandoff(positional, flags);
+    }
+
+    case "connect":
+    case "openconnection": {
+      return await runConnect(positional, flags);
     }
 
     case "synconfig":

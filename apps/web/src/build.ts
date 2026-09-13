@@ -13,6 +13,7 @@ import { renderToHtml } from "@profullstack/hqtui";
 import { NETWORKS, authSummary, cloud } from "@profullstack/myna-core";
 import { composeScreenshot, loginScreenshot } from "./screens.ts";
 import { renderHandoffPage } from "./handoff-page.ts";
+import { renderConnectPage } from "./connect-page.ts";
 
 const root = join(fileURLToPath(new URL(".", import.meta.url)), "..");
 const out = join(root, "public");
@@ -342,6 +343,10 @@ for (const provider of ["google", "facebook", "instagram"]) {
 mkdirSync(join(out, "handoff"), { recursive: true });
 writeFileSync(join(out, "handoff", "index.html"), renderHandoffPage(cloud.DEFAULT_SERVER));
 
+// OpenConnection (https://logicsrc.com/openconnection): where a person makes
+// the setup token an app such as DefPromo asks for, and revokes an app.
+writeFileSync(join(out, "connect.html"), renderConnectPage(cloud.DEFAULT_SERVER));
+
 writeFileSync(
   join(out, "robots.txt"),
   "User-agent: *\nAllow: /\nDisallow: /oauth/\nDisallow: /api/v1/\nDisallow: /handoff/\n\nSitemap: https://mynaposter.com/sitemap.xml\n",
@@ -426,9 +431,12 @@ for (const asset of [
   "atproto.js",
   "atproto.css",
   "handoff.css",
+  "connect.js",
+  "connect.css",
   ...readdirSync(join(root, "assets", "icons")).map((name) => `icons/${name}`),
   "site.css", "site.js", "favicon.svg", "favicon.png", "apple-touch-icon.png", "og.png", "install.sh", "oauth-callback.js",
   ".well-known/openmcp.json",
+  ".well-known/openconnection.json",
   // The logo in every form someone might need to reuse it: the bare mark,
   // and the mark with the wordmark for dark and light backgrounds.
   "brand/myna-mark.svg", "brand/myna-mark-1024.png", "brand/myna-mark-512.png", "brand/myna-mark-256.png",

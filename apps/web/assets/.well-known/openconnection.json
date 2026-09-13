@@ -1,0 +1,18 @@
+{
+  "bridge": {
+    "name": "myna",
+    "web": "https://mynaposter.com",
+    "operator": "https://logicsrc.com/.well-known/openprofile.md"
+  },
+  "versions": ["1"],
+  "setup": "https://mynaposter.com/connect",
+  "profiles": ["social"],
+  "scopes": {
+    "accounts:read": "The networks and handles this person connected",
+    "analyze:create": "Read a product page into a name, description, audience and features",
+    "write:create": "Draft posts and comments in this person's voice",
+    "suggest:create": "Suggest subreddits, hashtags, keywords and forums for a product",
+    "activity:write": "Record a post the app made with the person's own hands"
+  },
+  "spec": "https://logicsrc.com/openconnection"
+}

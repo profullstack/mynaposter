@@ -294,12 +294,24 @@ export const DEFAULT_SETTINGS: Settings = {
   directories: [],
 };
 
+/**
+ * MYNA_AI_PROVIDER and MYNA_AI_MODEL win over settings.json. A hosted API has
+ * no settings file and no `myna config`, so the environment is its only knob.
+ */
+function aiFromEnv(): Partial<Settings["ai"]> {
+  const out: Partial<Settings["ai"]> = {};
+  const provider = process.env.MYNA_AI_PROVIDER;
+  if (provider === "anthropic" || provider === "openai" || provider === "ollama") out.provider = provider;
+  if (process.env.MYNA_AI_MODEL) out.model = process.env.MYNA_AI_MODEL;
+  return out;
+}
+
 export function loadSettings(): Settings {
   const stored = readJson<Partial<Settings>>(SETTINGS_FILE, {});
   return {
     ...DEFAULT_SETTINGS,
     ...stored,
-    ai: { ...DEFAULT_SETTINGS.ai, ...stored.ai },
+    ai: { ...DEFAULT_SETTINGS.ai, ...stored.ai, ...aiFromEnv() },
     infographic: { ...DEFAULT_SETTINGS.infographic, ...stored.infographic },
     graph: { ...DEFAULT_SETTINGS.graph, ...stored.graph },
     pacing: { ...DEFAULT_SETTINGS.pacing, ...stored.pacing },
