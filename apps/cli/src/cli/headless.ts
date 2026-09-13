@@ -142,7 +142,11 @@ export function parseFlags(argv: string[]): { positional: string[]; flags: Flags
     // Boolean flags take no value. `--now`, `--off` and `--no-open` are as
     // much switches as `--json`; without them here the parser eats the next
     // argument, so `myna post all "hi" --now` died asking for a value.
-    const BOOLS = new Set(["json", "yes", "thread", "dryRun", "noThread", "force", "now", "off", "on", "noOpen", "front", "skipQueue", "send", "check", "noAi", "allowDuplicate"]);
+    const BOOLS = new Set([
+      "json", "yes", "thread", "dryRun", "noThread", "force", "now", "off", "on", "noOpen", "front", "skipQueue", "send", "check", "noAi", "allowDuplicate",
+      // follow, followers, graph expand and outreachgraph push
+      "outreachgraph", "followers", "allFollowing", "allFollowers", "both",
+    ]);
     if (BOOLS.has(name)) {
       flags[name === "noThread" ? "thread" : name] = name !== "noThread";
       continue;
@@ -274,11 +278,11 @@ async function resolvePostArgs(positional: string[], flags: Flags): Promise<{ ac
 }
 
 /** Accounts that can do `cap`, from a target spec, with a message naming the ones that cannot. */
-function accountsWith(spec: string, cap: "follow" | "following"): Account[] {
+function accountsWith(spec: string, cap: "follow" | "following" | "followers"): Account[] {
   const accounts = resolveTargets(spec).filter((account) => getNetwork(account.network)?.[cap]);
   if (!accounts.length) {
     throw new Error(
-      `No connected account matching "${spec}" can ${cap === "follow" ? "follow" : "read a following list"}. ` +
+      `No connected account matching "${spec}" can ${cap === "follow" ? "follow" : cap === "followers" ? "read a followers list" : "read a following list"}. ` +
         `Networks that can: ${NETWORKS.filter((network) => network.caps.follow).map((network) => network.id).join(", ")}.`,
     );
   }
@@ -1052,23 +1056,32 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
       const accounts = accountsWith(spec, "follow");
       let failed = 0;
 
-      // A pasted "follows" page, or --all-following: copy their list, on the
-      // graph's pace. Four hundred people become a few an hour, not a burst.
-      const lists = handles.filter((handle) => followsListRef(handle).all || flags.allFollowing);
+      // A pasted "follows" or "followers" page, or --all-following /
+      // --all-followers: copy their list, on the graph's pace. Four hundred
+      // people become a few an hour, not a burst. --outreachgraph hands each
+      // person to OutreachGraph as well (the plugin's afterFollow reads it).
+      const wantFollowers = Boolean(flags.allFollowers || flags.followers);
+      const lists = handles.filter((handle) => followsListRef(handle).all || flags.allFollowing || wantFollowers);
       if (lists.length) {
         for (const account of accounts) {
           for (const ref of lists) {
+            const direction = followsListRef(ref).direction ?? (wantFollowers ? "followers" : "following");
             const result = await followAllFollowing({
               account,
               ref,
+              direction,
               limit: numberFlag(flags, "limit", 25),
               dryRun: Boolean(flags.dryRun),
               ignoreBudget: Boolean(flags.force),
+              hookFlags: flags,
               log: (line) => out(`  ${line}`),
             });
             const ok = result.followed.filter((record) => record.ok).length;
             failed += result.followed.length - ok;
-            out(`${account.id}  ${followsListRef(ref).profile} follows ${result.read}: ${flags.dryRun ? "would follow" : "followed"} ${ok}, skipped ${result.skipped.length}${result.remaining ? `, ${result.remaining} left for next time (run it again)` : ""}`);
+            out(
+              `${account.id}  ${followsListRef(ref).profile} ${direction === "followers" ? "is followed by" : "follows"} ${result.read}: ` +
+                `${flags.dryRun ? "would follow" : "followed"} ${ok}, skipped ${result.skipped.length}${result.remaining ? `, ${result.remaining} left for next time (run it again)` : ""}`,
+            );
           }
         }
         if (lists.length === handles.length) return failed ? 1 : 0;
@@ -1076,7 +1089,7 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
       }
       for (const account of accounts) {
         for (const handle of handles) {
-          const record = await followOne(account, handle);
+          const record = await followOne(account, handle, handle, { source: "manual", flags, log: (line) => out(`  ${line}`) });
           if (record.ok) out(`${account.id}  followed ${handle}`);
           else {
             failed++;
@@ -1107,6 +1120,26 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
       return 0;
     }
 
+    case "followers": {
+      // myna followers <account|network> [handle] — who follows them, or who follows you.
+      await ensureUnlocked();
+      const [spec, handle] = positional;
+      if (!spec) throw new Error("Usage: myna followers <account or network> [handle] [--limit N]");
+      const account = accountsWith(spec, "followers")[0];
+      const network = requireNetwork(account.network);
+      const limit = numberFlag(flags, "limit", 50);
+      const profiles = await network.followers!(account, handle ?? account.handle, limit);
+      if (flags.json) {
+        out(JSON.stringify(profiles, null, 2));
+        return 0;
+      }
+      out(`${handle ?? account.handle} is followed by ${profiles.length}${profiles.length >= limit ? "+" : ""} on ${network.name}:`);
+      for (const profile of profiles) {
+        out(`  ${profile.handle.padEnd(36)} ${profile.displayName ?? ""}${profile.followers !== undefined ? `  (${profile.followers} followers)` : ""}`);
+      }
+      return 0;
+    }
+
     case "graph": {
       const [sub = "status", ...rest] = positional;
       switch (sub) {
@@ -1117,6 +1150,8 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
           out(`candidates  ${status.candidates} (${status.ready} ready to follow)`);
           out(`followed    ${status.followed}${status.failed ? ` (${status.failed} failed)` : ""}${status.lastFollowAt ? `, last ${status.lastFollowAt}` : ""}`);
           out(`limits      ${settings.graph.followsPerHour}/hour, ${settings.graph.followsPerDay}/day per account, ${settings.graph.minSeeds}+ seeds, networks: ${settings.graph.networks}`);
+          out(`reads       ${settings.graph.expand}${settings.graph.expand !== "following" ? ` (a follower counts ${settings.graph.followerWeight} of a follow)` : ""}`);
+          out(`outreachgraph ${settings.graph.outreachgraph ? "every follow is handed over for assessment" : "off  (myna config graph.outreachgraph true)"}`);
           try {
             for (const account of listAccounts().filter((account) => getNetwork(account.network)?.follow)) {
               out(`  ${account.id.padEnd(40)} budget ${followBudget(account.id, settings)} more this hour`);
@@ -1181,6 +1216,7 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
           const only = rest.length >= 2 ? [{ network: rest[0], handle: rest[1] }] : undefined;
           const result = await expandSeeds({
             only,
+            direction: flags.both ? "both" : flags.followers ? "followers" : undefined,
             perSeed: flags.limit !== undefined ? numberFlag(flags, "limit", settings.graph.perSeed) : undefined,
             staleMs: flags.force ? 0 : undefined,
             log: (line) => out(`  ${line}`),
@@ -1224,6 +1260,7 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
           const limit = numberFlag(flags, "limit", 5);
           const sent = await followNext({
             limit,
+            hookFlags: flags,
             dryRun: flags.dryRun,
             ignoreBudget: Boolean(flags.force),
             networks: flags.network ? [String(flags.network)] : undefined,

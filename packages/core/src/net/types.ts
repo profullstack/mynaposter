@@ -219,6 +219,12 @@ export interface Network {
    * people's lists and not only the account's own. Returns at most `limit`.
    */
   following?(account: Account, handle: string, limit: number): Promise<Profile[]>;
+  /**
+   * Who follows `handle`: the list anyone can see on the profile page, read
+   * through the same public door as `following`. Not every network serves
+   * it, and the graph treats it as the noisier of the two lists.
+   */
+  followers?(account: Account, handle: string, limit: number): Promise<Profile[]>;
   /** Follow `handle` from this account. Following twice is not an error. */
   follow?(account: Account, handle: string): Promise<FollowResult>;
 }

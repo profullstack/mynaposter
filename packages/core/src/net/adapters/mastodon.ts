@@ -264,6 +264,18 @@ function make(id: string, name: string, blurb: string, charLimit: number): Netwo
       }
     },
 
+    async followers(account, handle, limit) {
+      const target = fediverseRef(handle, base(account));
+      try {
+        const remote = `https://${target.host}`;
+        const who = await getJson<MastodonAccount>(`${remote}/api/v1/accounts/lookup?acct=${encodeURIComponent(target.user)}`);
+        return await listOf("followers", remote, who.id, target.host, limit);
+      } catch {
+        const who = await resolveAccount(account, target);
+        return listOf("followers", base(account), who.id, new URL(base(account)).host, limit, auth(account));
+      }
+    },
+
     async follow(account, handle) {
       const target = fediverseRef(handle, base(account));
       const who = await resolveAccount(account, target);
@@ -289,10 +301,20 @@ async function resolveAccount(account: Account, target: { user: string; host: st
   return who;
 }
 
-/** Page through `/accounts/:id/following`, which paginates by a Link header rather than an offset. */
-async function followingOf(instance: string, id: string, host: string, limit: number, headers?: Record<string, string>): Promise<Profile[]> {
+const followingOf = (instance: string, id: string, host: string, limit: number, headers?: Record<string, string>): Promise<Profile[]> =>
+  listOf("following", instance, id, host, limit, headers);
+
+/** Page through `/accounts/:id/following` or `/followers`, which paginate by a Link header rather than an offset. */
+async function listOf(
+  list: "following" | "followers",
+  instance: string,
+  id: string,
+  host: string,
+  limit: number,
+  headers?: Record<string, string>,
+): Promise<Profile[]> {
   const out: Profile[] = [];
-  let url: string | undefined = `${instance}/api/v1/accounts/${id}/following?limit=${Math.min(80, limit)}`;
+  let url: string | undefined = `${instance}/api/v1/accounts/${id}/${list}?limit=${Math.min(80, limit)}`;
   while (url && out.length < limit) {
     const response = await request(url, { headers });
     const page = (await response.json()) as MastodonAccount[];

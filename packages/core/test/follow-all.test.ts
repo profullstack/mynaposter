@@ -61,8 +61,8 @@ afterEach(() => {
 });
 
 test("the pasted page is recognised and reduced to the profile", () => {
-  expect(followsListRef("https://bsky.app/profile/mary.my.id/follows")).toEqual({ profile: "https://bsky.app/profile/mary.my.id", all: true });
-  expect(followsListRef("https://hachyderm.io/@mary/following?page=2")).toEqual({ profile: "https://hachyderm.io/@mary", all: true });
+  expect(followsListRef("https://bsky.app/profile/mary.my.id/follows")).toEqual({ profile: "https://bsky.app/profile/mary.my.id", all: true, direction: "following" });
+  expect(followsListRef("https://hachyderm.io/@mary/following?page=2")).toEqual({ profile: "https://hachyderm.io/@mary", all: true, direction: "following" });
   expect(followsListRef("https://bsky.app/profile/mary.my.id")).toEqual({ profile: "https://bsky.app/profile/mary.my.id", all: false });
   expect(followsListRef("mary.my.id")).toEqual({ profile: "mary.my.id", all: false });
 });

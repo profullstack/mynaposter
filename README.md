@@ -199,6 +199,7 @@ myna post "shipped resume downloads" --to all        # the board is included
 myna post --to agenticjobs "we closed the backend role https://acme.dev/blog"
 myna follow agenticjobs acme                         # or candidate:ada, or a page URL
 myna follow bluesky https://bsky.app/profile/mary.my.id/follows   # everyone mary follows, a few an hour
+myna follow bluesky https://bsky.app/profile/mary.my.id/followers --outreachgraph   # her followers, each handed to OutreachGraph
 ```
 
 An update goes through the board's own MCP endpoint (`/api/mcp`, its
@@ -401,7 +402,8 @@ myna infographic <url|topic>      myna run
 myna config [key] [value]         myna doctor
 myna keys                         myna repost <account> <post url>
 myna search [network] <query>     myna follow <account> <handle>
-myna following <account> [handle] myna graph <subcommand>
+myna following <account> [handle] myna followers <account> [handle]
+myna graph <subcommand>           myna outreachgraph push <account>
 myna plugins [add|remove]         myna outreachgraph <subcommand>
 myna crawlproof <subcommand>      myna calendar <subcommand>
 myna directory <id> <url>         myna directory listings [id]
@@ -455,7 +457,46 @@ nobody is followed on one seed's word alone.
 
 Two direct commands sit under the graph: `myna following <account> [handle]`
 lists who anyone follows (yours by default), and `myna follow <account> <handle>`
-follows one person now.
+follows one person now. `myna followers <account> [handle]` lists the other
+direction.
+
+### Followers, when you want them
+
+The graph reads who a seed *follows* by default, for the reason above. When
+the people who follow a seed are the audience you are after (a rival's
+customers, a conference account's attendees), read that list instead:
+
+```bash
+myna config graph.expand followers      # or both; following is the default
+myna graph expand --followers           # for one read, whatever the setting
+myna follow bluesky https://bsky.app/profile/rival.example/followers   # a pasted followers page
+myna follow bluesky rival.example --followers                          # the same by flag
+```
+
+A follower of a seed scores `graph.followerWeight` (0.5) of a follow, so a
+person three seeds follow still outranks a person three seeds are followed by.
+Followers lists are read on Bluesky, Mastodon and its relatives, and Misskey.
+
+### Handing who you follow to OutreachGraph
+
+[OutreachGraph](https://outreachgraph.com) can take every account myna
+follows, open a person for each, read their profile and home page into an
+[OpenProfile.md](https://logicsrc.com/openprofile), and work out which offer
+to reach them with once it has their contact details. Nothing is sent to
+anyone; it is assessment. Sign in once with `myna outreachgraph login`, then:
+
+```bash
+myna follow bluesky mary.my.id --outreachgraph            # this follow, handed over as it goes
+myna graph follow --limit 5 --outreachgraph               # the graph's follows too
+myna config graph.outreachgraph true                      # every follow, the daemon's included
+myna outreachgraph push bluesky:me.example                # who you already follow, in pages of 100
+myna outreachgraph push bluesky:me.example --followers    # or who follows you
+```
+
+Each person goes over with their handle, display name, bio and profile URL;
+OutreachGraph answers with who was new, who it knew, and how many OpenProfile
+reads it queued. Networks it has no name for (a job board) are skipped and
+said so.
 
 Works on Bluesky, Mastodon and its relatives, Misskey, X and Nostr. Two
 caveats. **X reads following lists only on the Basic tier and above**; on a

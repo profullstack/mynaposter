@@ -9,6 +9,11 @@
  *
  *   seeds  --following-->  candidates  --ranked, throttled-->  follows
  *
+ * The followers list can be read too (`graph.expand`, or a pasted followers
+ * page), for the case where the people who follow a seed are the audience
+ * you want: they count for `graph.followerWeight` of a follow, so a person
+ * three seeds follow still outranks a person three seeds are followed by.
+ *
  * Every step here is pure over the graph file except the two that touch a
  * network, and those are the only two that can fail.
  */
@@ -82,8 +87,11 @@ export function removeSeed(network: string, handle: string): boolean {
   return true;
 }
 
+/** Which of a seed's two lists to read. */
+export type Direction = "following" | "followers";
+
 /** The first connected account on a network that can do what `cap` names. */
-function accountFor(network: string, cap: "following" | "follow", accounts: Account[]): Account | undefined {
+function accountFor(network: string, cap: Direction | "follow", accounts: Account[]): Account | undefined {
   const adapter = getNetwork(network);
   if (!adapter?.[cap]) return undefined;
   return accounts.find((account) => account.network === adapter.id);
@@ -99,6 +107,8 @@ export interface ExpandOptions {
   maxSeeds?: number;
   /** Only these seeds, regardless of staleness. */
   only?: { network: string; handle: string }[];
+  /** Which list to read. Default: the `graph.expand` setting. */
+  direction?: Direction | "both";
   log?: (line: string) => void;
 }
 
@@ -126,19 +136,26 @@ export async function expandSeeds(options: ExpandOptions = {}): Promise<ExpandRe
     return Date.now() - Date.parse(seed.expandedAt) >= staleMs;
   });
 
+  const wantedDirections: Direction[] =
+    (options.direction ?? settings.graph.expand) === "both" ? ["following", "followers"] : [(options.direction ?? settings.graph.expand) as Direction];
+
   for (const seed of due.slice(0, options.maxSeeds ?? due.length)) {
-    const account = accountFor(seed.network, "following", accounts);
-    if (!account) {
+    const readable = wantedDirections
+      .map((direction) => ({ direction, account: accountFor(seed.network, direction, accounts) }))
+      .filter((entry): entry is { direction: Direction; account: Account } => Boolean(entry.account));
+    if (!readable.length) {
       result.unreadable.push(seed);
       continue;
     }
     const network = getNetwork(seed.network)!;
     try {
-      options.log?.(`reading who ${seed.handle} follows on ${network.name}`);
-      // By handle, not id: every adapter takes what a person would type, and
-      // a numeric X id or a DID is not that.
-      const follows = await network.following!(account, seed.handle, perSeed);
-      result.discovered += mergeCandidates(graph, seed, follows, settings);
+      for (const { direction, account } of readable) {
+        options.log?.(direction === "followers" ? `reading who follows ${seed.handle} on ${network.name}` : `reading who ${seed.handle} follows on ${network.name}`);
+        // By handle, not id: every adapter takes what a person would type, and
+        // a numeric X id or a DID is not that.
+        const people = await network[direction]!(account, seed.handle, perSeed);
+        result.discovered += mergeCandidates(graph, seed, people, settings, direction);
+      }
       seed.expandedAt = new Date().toISOString();
       seed.error = undefined;
       result.expanded++;
@@ -155,9 +172,13 @@ export async function expandSeeds(options: ExpandOptions = {}): Promise<ExpandRe
   return result;
 }
 
-/** Fold one seed's following list into the pool. Returns how many were new. */
-function mergeCandidates(graph: GraphFile, seed: Seed, follows: Profile[], settings: Settings): number {
+/** The `via` entry for a follower: the seed key behind a prefix, so ranking can weigh it down. */
+export const followerVia = (seedKey: string): string => `followers:${seedKey}`;
+
+/** Fold one seed's list into the pool. Returns how many were new. */
+function mergeCandidates(graph: GraphFile, seed: Seed, follows: Profile[], settings: Settings, direction: Direction = "following"): number {
   const seedKey = graphKey(seed.network, seed.handle);
+  const listVia = direction === "followers" ? followerVia(seedKey) : seedKey;
   const byKey = new Map(graph.candidates.map((candidate) => [graphKey(candidate.network, candidate.handle), candidate]));
   let added = 0;
 
@@ -189,7 +210,7 @@ function mergeCandidates(graph: GraphFile, seed: Seed, follows: Profile[], setti
   };
 
   if (settings.graph.followSeeds) upsert({ handle: seed.handle, id: seed.id, displayName: seed.displayName }, "seed");
-  for (const profile of follows) upsert(profile, seedKey);
+  for (const profile of follows) upsert(profile, listVia);
 
   graph.candidates = [...byKey.values()];
   return added;
@@ -253,6 +274,10 @@ export function rankCandidates(options: RankOptions = {}): RankedCandidate[] {
       } else if (weights.has(via)) {
         score += weights.get(via)!;
         seeds++;
+      } else if (via.startsWith("followers:") && weights.has(via.slice("followers:".length))) {
+        // Being followed by a seed says less than being followed *by* one.
+        score += weights.get(via.slice("followers:".length))! * settings.graph.followerWeight;
+        seeds++;
       }
     }
     if (seeds < minSeeds && !candidate.via.includes("seed")) continue;
@@ -303,6 +328,8 @@ export interface FollowOptions {
   /** Ignore the hourly and daily ceilings. For a person at the keyboard, not the daemon. */
   ignoreBudget?: boolean;
   dryRun?: boolean;
+  /** The command's flags, handed to every plugin's `afterFollow`. */
+  hookFlags?: Record<string, unknown>;
   log?: (line: string) => void;
 }
 
@@ -334,7 +361,13 @@ export async function followNext(options: FollowOptions = {}): Promise<FollowRec
       continue;
     }
 
-    const record = await followOne(account, candidate.handle);
+    const record = await followOne(account, candidate.handle, candidate.handle, {
+      profile: candidate,
+      source: "graph",
+      via: candidate.via.find((via) => via !== "seed"),
+      flags: options.hookFlags,
+      log: options.log,
+    });
     sent.push(record);
     options.log?.(
       record.ok
@@ -346,8 +379,18 @@ export async function followNext(options: FollowOptions = {}): Promise<FollowRec
   return sent;
 }
 
-/** Follow one person from one account and write it to the ledger. */
-export async function followOne(account: Account, ref: string, handle = ref): Promise<FollowRecord> {
+export interface FollowOneOptions {
+  /** What is known about them, for the plugins. The ledger keeps only the handle. */
+  profile?: Profile;
+  source?: "manual" | "list" | "graph";
+  via?: string;
+  /** The command's flags, handed to every plugin's `afterFollow`. */
+  flags?: Record<string, unknown>;
+  log?: (line: string) => void;
+}
+
+/** Follow one person from one account, write it to the ledger, and tell the plugins. */
+export async function followOne(account: Account, ref: string, handle = ref, options: FollowOneOptions = {}): Promise<FollowRecord> {
   const network = getNetwork(account.network);
   if (!network?.follow) throw new Error(`${network?.name ?? account.network} has no follow API.`);
   const record: FollowRecord = { accountId: account.id, network: network.id, handle: handle.replace(/^@/, ""), at: new Date().toISOString(), ok: false };
@@ -364,6 +407,33 @@ export async function followOne(account: Account, ref: string, handle = ref): Pr
   const candidate = graph.candidates.find((entry) => graphKey(entry.network, entry.handle) === key);
   if (candidate && record.ok) candidate.followedAt = record.at;
   writeGraph(graph);
+
+  if (record.ok) {
+    // Imported here rather than at the top: the hooks reach the plugin
+    // loader, which reaches this file, and a cycle at module load would hand
+    // one of them an undefined import.
+    const { runAfterFollow } = await import("../plugins/hooks.ts");
+    const profile = options.profile;
+    const outcomes = await runAfterFollow(
+      {
+        account,
+        network: network.id,
+        handle: record.handle,
+        id: profile?.id,
+        displayName: profile?.displayName,
+        url: profile?.url,
+        bio: profile?.bio,
+        followers: profile?.followers,
+        source: options.source ?? "manual",
+        via: options.via,
+      },
+      { log: options.log, flags: options.flags },
+    );
+    for (const outcome of outcomes) {
+      if (outcome.line) options.log?.(`${outcome.plugin}  ${outcome.line}`);
+      if (outcome.error) options.log?.(`${outcome.plugin}  ${outcome.error}`);
+    }
+  }
   return record;
 }
 
@@ -405,10 +475,12 @@ export { readGraph, clearGraph, graphPath, type Seed, type Candidate, type Follo
  * `/@x/following`. The suffix says "everyone on this list"; what is left is
  * the profile the adapters already understand.
  */
-export function followsListRef(ref: string): { profile: string; all: boolean } {
+export function followsListRef(ref: string): { profile: string; all: boolean; direction?: Direction } {
   const trimmed = ref.trim();
-  const match = /^(.*?)\/(follows|following|followings)\/?(?:[?#].*)?$/i.exec(trimmed);
-  if (match && /^https?:\/\//i.test(trimmed)) return { profile: match[1] as string, all: true };
+  const match = /^(.*?)\/(follows|following|followings|followers)\/?(?:[?#].*)?$/i.exec(trimmed);
+  if (match && /^https?:\/\//i.test(trimmed)) {
+    return { profile: match[1] as string, all: true, direction: /^followers$/i.test(match[2] as string) ? "followers" : "following" };
+  }
   return { profile: trimmed, all: false };
 }
 
@@ -420,9 +492,13 @@ export interface FollowAllOptions {
   limit?: number;
   /** How far down their list to read. */
   readLimit?: number;
+  /** Which list: who they follow (default), or who follows them. A pasted `/followers` page sets this. */
+  direction?: Direction;
   ignoreBudget?: boolean;
   dryRun?: boolean;
   settings?: Settings;
+  /** The command's flags, handed to every plugin's `afterFollow`. */
+  hookFlags?: Record<string, unknown>;
   log?: (line: string) => void;
 }
 
@@ -449,13 +525,19 @@ export interface FollowAllResult {
 export async function followAllFollowing(options: FollowAllOptions): Promise<FollowAllResult> {
   const { account } = options;
   const network = getNetwork(account.network);
-  if (!network?.following) throw new Error(`${network?.name ?? account.network} cannot list who someone follows.`);
+  const ref = followsListRef(options.ref);
+  const direction: Direction = options.direction ?? ref.direction ?? "following";
+  const reader = network?.[direction];
+  if (!network || !reader) {
+    throw new Error(`${network?.name ?? account.network} cannot list ${direction === "followers" ? "who follows someone" : "who someone follows"}.`);
+  }
   if (!network.follow) throw new Error(`${network.name} has no follow API.`);
   const settings = options.settings ?? loadSettings();
   const log = options.log ?? (() => {});
-  const { profile } = followsListRef(options.ref);
+  const { profile } = ref;
 
-  const people = await network.following(account, profile, options.readLimit ?? 500);
+  const people = await reader.call(network, account, profile, options.readLimit ?? 500);
+  const via = direction === "followers" ? followerVia(graphKey(network.id, profile)) : graphKey(network.id, profile);
   const result: FollowAllResult = { read: people.length, followed: [], skipped: [], remaining: 0 };
 
   const graph = readGraph();
@@ -487,7 +569,7 @@ export async function followAllFollowing(options: FollowAllOptions): Promise<Fol
       budget--;
       continue;
     }
-    const record = await followOne(account, person.id || person.handle, person.handle);
+    const record = await followOne(account, person.id || person.handle, person.handle, { profile: person, source: "list", via, flags: options.hookFlags, log });
     result.followed.push(record);
     if (record.ok) {
       done.add(key);

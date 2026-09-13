@@ -42,6 +42,18 @@ export interface Settings {
     minSeeds: number;
     /** Which networks the daemon follows on: "all" or a comma list. */
     networks: string;
+    /**
+     * Which of a seed's lists to read: who they follow ("following", the
+     * default), who follows them ("followers"), or both. Followers are the
+     * noisier list, so they count for `followerWeight` of a follow.
+     */
+    expand: "following" | "followers" | "both";
+    followerWeight: number;
+    /**
+     * Hand every account followed to OutreachGraph for assessment, the way
+     * `--outreachgraph` does for one command. Needs `myna outreachgraph login`.
+     */
+    outreachgraph: boolean;
   };
   /**
    * How fast posts go out. Nothing is sent at the rate it was asked for:
@@ -253,6 +265,9 @@ export const DEFAULT_SETTINGS: Settings = {
     followSeeds: true,
     minSeeds: 1,
     networks: "all",
+    expand: "following",
+    followerWeight: 0.5,
+    outreachgraph: false,
   },
   pacing: { ...DEFAULT_PACING },
   evergreen: { ...DEFAULT_EVERGREEN },

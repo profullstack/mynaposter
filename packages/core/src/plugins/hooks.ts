@@ -12,7 +12,7 @@ import type { TargetResult } from "../core/poster.ts";
 import { listPlugins } from "./loader.ts";
 import { pluginContext } from "./context.ts";
 import type { QueuedPost } from "../store/queue.ts";
-import type { CancelledEvent, MynaPlugin, PostedEvent, ScheduledEvent } from "./types.ts";
+import type { CancelledEvent, FollowedEvent, MynaPlugin, PostedEvent, ScheduledEvent } from "./types.ts";
 
 export interface HookOutcome {
   plugin: string;
@@ -37,15 +37,15 @@ export function postedEvent(results: TargetResult[], options: { text: string; ti
   };
 }
 
-type Hook = "afterPost" | "afterSchedule" | "afterCancel";
+type Hook = "afterPost" | "afterSchedule" | "afterCancel" | "afterFollow";
 
 /** Run one hook on every plugin that has it, in load order, one at a time. */
-async function runHook<E>(hook: Hook, event: E, log?: (line: string) => void): Promise<HookOutcome[]> {
+async function runHook<E>(hook: Hook, event: E, log?: (line: string) => void, flags?: Record<string, unknown>): Promise<HookOutcome[]> {
   const outcomes: HookOutcome[] = [];
   for (const { plugin } of listPlugins()) {
     const fn = plugin?.[hook] as ((event: E, ctx: ReturnType<typeof pluginContext>) => Promise<string | void>) | undefined;
     if (!plugin || !fn) continue;
-    const ctx = pluginContext(plugin, { log: log ? (line) => log(`${plugin.id}  ${line}`) : undefined });
+    const ctx = pluginContext(plugin, { log: log ? (line) => log(`${plugin.id}  ${line}`) : undefined, flags });
     try {
       const line = await fn.call(plugin as MynaPlugin, event, ctx);
       outcomes.push({ plugin: plugin.id, line: line || undefined });
@@ -73,6 +73,10 @@ export const scheduledEvent = (post: QueuedPost): ScheduledEvent => ({
 /** Run every plugin's `afterSchedule` for a post that was just queued. */
 export const runAfterSchedule = (post: QueuedPost, log?: (line: string) => void): Promise<HookOutcome[]> =>
   runHook("afterSchedule", scheduledEvent(post), log);
+
+/** Run every plugin's `afterFollow` for a follow that just went out. `flags` are the command's, when a person ran one. */
+export const runAfterFollow = (event: FollowedEvent, options: { log?: (line: string) => void; flags?: Record<string, unknown> } = {}): Promise<HookOutcome[]> =>
+  runHook("afterFollow", event, options.log, options.flags);
 
 /** Run every plugin's `afterCancel` for a queue entry that was just removed. */
 export const runAfterCancel = (id: string, log?: (line: string) => void): Promise<HookOutcome[]> =>

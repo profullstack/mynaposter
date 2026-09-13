@@ -187,7 +187,24 @@ directly). Keep `@profullstack/myna-core` out of `dependencies`; it is a type
 dependency only.
 
 The bundled `packages/plugin-outreachgraph` is the reference: a login command
-that stores credentials in the vault, a read command, a sync command, and a
-seed provider the daemon runs every six hours. `packages/plugin-crawlproof`
-is the reference for a plugin that reacts to posting: a token in the vault,
-an `afterPost` hook, and commands to do the same by hand.
+that stores credentials in the vault, a read command, a sync command, a seed
+provider the daemon runs every six hours, and an `afterFollow` hook that hands
+each person followed to a server when the command carried `--outreachgraph`
+(or `graph.outreachgraph` is on). `packages/plugin-crawlproof` is the
+reference for a plugin that reacts to posting: a token in the vault, an
+`afterPost` hook, and commands to do the same by hand.
+
+## Reacting to a follow
+
+`afterFollow(event, ctx)` runs once a follow has gone out, from `myna follow`,
+a pasted follows or followers page, `myna graph follow` and the daemon alike.
+The event carries the account that followed, the network and handle, what the
+adapter knew about the person (id, display name, bio, URL, follower count), a
+`source` (`manual`, `list` or `graph`) and the seed or list they came through
+as `via`. `ctx.flags` holds the command's flags when a person ran one, so a
+plugin can act on `--something` and stay quiet otherwise; the daemon passes
+none, which is what a setting is for. `ctx.graph.following` and
+`ctx.graph.followers` read a list through a connected account, for a plugin
+that wants to hand over more than the one person just followed. As with
+`afterPost`, a line back is shown to the person and a throw never undoes the
+follow.

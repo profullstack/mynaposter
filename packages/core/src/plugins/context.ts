@@ -3,7 +3,16 @@ import { getPluginSecrets, listAccounts, setPluginSecrets } from "../store/accou
 import { loadSettings } from "../store/settings.ts";
 import { configDir } from "../util/paths.ts";
 import { addSeeds } from "../core/graph.ts";
+import { getNetwork } from "../net/registry.ts";
+import type { Account, Profile } from "../net/types.ts";
 import type { MynaPlugin, PluginContext } from "./types.ts";
+
+async function readList(list: "following" | "followers", account: Account, handle: string, limit: number): Promise<Profile[]> {
+  const network = getNetwork(account.network);
+  const read = network?.[list];
+  if (!network || !read) throw new Error(`${network?.name ?? account.network} cannot list ${list === "followers" ? "who follows someone" : "who someone follows"}.`);
+  return read.call(network, account, handle, limit);
+}
 
 export interface HostOptions {
   out?: (line?: string) => void;
@@ -25,7 +34,11 @@ export function pluginContext(plugin: MynaPlugin, host: HostOptions = {}): Plugi
       set: (values) => setPluginSecrets(plugin.id, values),
       clear: () => setPluginSecrets(plugin.id, {}),
     },
-    graph: { addSeeds },
+    graph: {
+      addSeeds,
+      following: (account, handle, limit) => readList("following", account, handle, limit),
+      followers: (account, handle, limit) => readList("followers", account, handle, limit),
+    },
     configDir: configDir(),
     flags: host.flags ?? {},
   };
