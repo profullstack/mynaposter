@@ -10,8 +10,8 @@
  * stale copy.
  */
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { basename, dirname, extname, join, relative } from "node:path";
 import { entryFor, isSyncable, limitsOf, normalizeRel, type SyncPolicy } from "./policy.ts";
 
 export interface SnapshotFile {
@@ -180,13 +180,63 @@ export function planApply(rootDir: string, files: Record<string, SnapshotFile>):
     });
 }
 
-/** Write the files that differ, each through a temp file and a rename, mode 0600 in 0700 directories. Returns what was written. */
-export function applyFiles(rootDir: string, files: Record<string, SnapshotFile>, plan = planApply(rootDir, files)): string[] {
+const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/**
+ * Where a file goes before it is replaced: beside it, as `<name>.bak-NNN.<ext>`
+ * (`settings.json` → `settings.bak-001.json`, `.zshrc` → `.zshrc.bak-001`),
+ * NNN one more than the highest already there, zero-padded, never reused.
+ *
+ * A load that overwrites a config file is the one moment a sync can destroy
+ * something the server never had — a local edit made since the last save,
+ * or a file the operator meant to keep. The marker catches the first case
+ * when it can; the copy catches everything, and costs a few kilobytes.
+ */
+export function backupPath(full: string): string {
+  const dir = dirname(full);
+  const ext = extname(full);
+  const stem = basename(full, ext);
+  const re = new RegExp(`^${escapeRe(stem)}\\.bak-(\\d{3,})${escapeRe(ext)}$`);
+  let max = 0;
+  if (existsSync(dir)) {
+    for (const name of readdirSync(dir)) {
+      const m = re.exec(name);
+      if (m) max = Math.max(max, Number(m[1]));
+    }
+  }
+  return join(dir, `${stem}.bak-${String(max + 1).padStart(3, "0")}${ext}`);
+}
+
+export interface ApplyOptions {
+  /** Copy each file that is about to be replaced to its backupPath first. Default true. */
+  backup?: boolean;
+  /** Called once per backup made, with both paths relative to rootDir. */
+  onBackup?: (path: string, backup: string) => void;
+}
+
+/**
+ * Write the files that differ, each through a temp file and a rename, mode
+ * 0600 in 0700 directories. A file that already exists with other content is
+ * copied to its backupPath first (see there). Returns what was written.
+ */
+export function applyFiles(
+  rootDir: string,
+  files: Record<string, SnapshotFile>,
+  plan = planApply(rootDir, files),
+  options: ApplyOptions = {},
+): string[] {
+  const { backup = true, onBackup } = options;
   const written: string[] = [];
   for (const entry of plan) {
     if (entry.status === "same") continue;
     const full = join(rootDir, entry.path);
     mkdirSync(dirname(full), { recursive: true, mode: 0o700 });
+    if (backup && entry.status === "changed" && existsSync(full)) {
+      const bak = backupPath(full);
+      copyFileSync(full, bak);
+      chmodSync(bak, 0o600);
+      onBackup?.(entry.path, relative(rootDir, bak));
+    }
     const tmp = `${full}.${process.pid}.${Date.now()}.tmp`;
     writeFileSync(tmp, files[entry.path]!.content, { encoding: "utf8", mode: 0o600 });
     renameSync(tmp, full);

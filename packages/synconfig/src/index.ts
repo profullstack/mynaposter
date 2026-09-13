@@ -27,6 +27,8 @@ export {
   saveMarker,
   sha256,
   validateSnapshot,
+  backupPath,
+  type ApplyOptions,
   type Marker,
   type PlanEntry,
   type PlanStatus,
@@ -35,4 +37,4 @@ export {
   type SnapshotFile,
 } from "./snapshot.ts";
 export { createClient, type ClientOptions, type Latest, type PutResult, type StoredSnapshotInfo, type SyncTransport } from "./client.ts";
-export { autosync, load, save, status, syncOnce, type AutosyncHandle, type LoadResult, type SaveResult, type StatusResult, type SyncContext } from "./sync.ts";
+export { autosync, load, save, status, syncOnce, type AutosyncHandle, type Backup, type LoadResult, type SaveResult, type StatusResult, type SyncContext } from "./sync.ts";

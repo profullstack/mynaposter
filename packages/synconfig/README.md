@@ -25,6 +25,13 @@ fact. Extracted from moshcode's settings sync; myna is the second user.
 - **A marker on each machine** (`sync.json`) with per-file digests, so a
   load refuses to overwrite a file edited locally since the last sync
   unless forced, and a dry run shows the plan.
+- **A backup before every overwrite.** A file a load replaces is copied
+  first, beside itself, as `<name>.bak-NNN.<ext>` (`settings.json` →
+  `settings.bak-001.json`; the next time `bak-002`; never reused). The
+  marker catches a local edit when it can; the copy catches everything,
+  including a forced load. `load(ctx, { backup: false })` turns it off;
+  the result's `backups` lists what was made. Backups are never synced —
+  the policy names files exactly, and `.bak-NNN` is not one of them.
 - **Retries only when nobody heard you**: no response, 502, 503, 504. Safe
   because a save is conditional.
 
@@ -57,8 +64,8 @@ autosync({ everyMs: 300_000, tick: () => syncOnce(ctx).then(() => {}) });
 ```
 
 The pure pieces are exported too: `collectSnapshot`, `validateSnapshot`,
-`planApply`, `applyFiles`, `localDrift`, `digestFiles`, `markerFor`,
-`loadMarker`, `saveMarker`, `isSyncable`, `normalizeRel`.
+`planApply`, `applyFiles`, `backupPath`, `localDrift`, `digestFiles`,
+`markerFor`, `loadMarker`, `saveMarker`, `isSyncable`, `normalizeRel`.
 
 ## Server
 
