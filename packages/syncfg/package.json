@@ -1,0 +1,16 @@
+{
+  "name": "@profullstack/syncfg",
+  "version": "0.1.0",
+  "description": "Alias of @profullstack/synconfig: the same package under the shorter name.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./server": "./src/server.ts"
+  },
+  "keywords": ["config", "settings", "sync", "cloud", "syncfg", "synconfig"],
+  "dependencies": {
+    "@profullstack/synconfig": "workspace:*"
+  }
+}

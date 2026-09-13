@@ -119,6 +119,8 @@ export {
 } from "./store/bundle.ts";
 export { vaultExists, vaultMode, rekeyVault, VaultLockedError } from "./util/crypto/vault.ts";
 export * as cloud from "./store/cloud.ts";
+// Settings sync with myna cloud, through @profullstack/synconfig.
+export * as synconfig from "./store/synconfig.ts";
 
 export { postToAll, postPaced, refuseDuplicateTitles, tailor, charsFor, summarize, type ComposeOptions, type TargetResult, type PostOutcome, type PacedOptions, type PacedOutcome } from "./core/poster.ts";
 export {

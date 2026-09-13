@@ -9,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.123.0"
+    "@anthropic-ai/sdk": "^0.123.0",
+    "@profullstack/synconfig": "workspace:*"
   }
 }

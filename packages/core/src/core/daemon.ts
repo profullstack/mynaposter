@@ -15,6 +15,7 @@ import { pluginTasks, seedProviders } from "../plugins/loader.ts";
 import { pluginContext } from "../plugins/context.ts";
 import { runEvergreen } from "./evergreen.ts";
 import { runRecap } from "./recap.ts";
+import { canSync, syncConfigOnce } from "../store/synconfig.ts";
 
 export interface DaemonJob {
   id: string;
@@ -67,6 +68,15 @@ export function builtinJobs(log: (line: string) => void, tickMs: number): Daemon
         const turn = await runEvergreen({ log });
         if (turn.page) return `evergreen: ${turn.page.url}`;
       },
+    });
+  }
+  if (settings.synconfig.auto && canSync()) {
+    jobs.push({
+      id: "synconfig",
+      // Pull what another machine saved, then push what changed here. Never
+      // forced: a crossing edit is logged, and the person decides.
+      everyMs: Math.max(30_000, settings.synconfig.everyMinutes * 60_000),
+      run: () => syncConfigOnce(),
     });
   }
   if (settings.recap.enabled) {
