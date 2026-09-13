@@ -75,6 +75,10 @@
         "@profullstack/myna-core": "workspace:*",
       },
     },
+    "packages/openprofile": {
+      "name": "@profullstack/openprofile",
+      "version": "0.1.1",
+    },
     "packages/plugin-calendar": {
       "name": "@profullstack/myna-plugin-calendar",
       "version": "0.8.4",
@@ -241,6 +245,8 @@
     "@profullstack/myna-plugin-outreachgraph": ["@profullstack/myna-plugin-outreachgraph@workspace:packages/plugin-outreachgraph"],
 
     "@profullstack/myna-web": ["@profullstack/myna-web@workspace:apps/web"],
+
+    "@profullstack/openprofile": ["@profullstack/openprofile@workspace:packages/openprofile"],
 
     "@profullstack/syncfg": ["@profullstack/syncfg@workspace:packages/syncfg"],
 

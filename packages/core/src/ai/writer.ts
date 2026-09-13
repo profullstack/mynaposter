@@ -41,7 +41,7 @@ Rules, all of them load-bearing:
 - Hashtags only where the network uses them, lowercase, specific, at most the number requested. No #innovation, #tech, #future.
 - Return only the JSON described. No preamble, no code fences.`;
 
-function providerComplete(system: string, prompt: string, maxTokens = 4000): Promise<string> {
+export function providerComplete(system: string, prompt: string, maxTokens = 4000): Promise<string> {
   const { ai } = loadSettings();
   switch (ai.provider) {
     case "openai":

@@ -161,6 +161,12 @@ Hand-offs (the steps only a person can do: a Reddit comment, an HN submission):
                                     signed in to myna cloud; the recap lists it
   handoff [list] [--all] | show <id> | done <id> | undo <id> | rm <id>
 
+OpenConnection (an app you paste a token into, such as DefPromo, acts through myna):
+  connect token [--scopes a,b]      A setup token to paste into the app: single
+       [--minutes 15]               use, expires; the app claims it once
+  connect apps [--all] [--json]     The apps holding a connection, and their scopes
+  connect revoke <id>               Cut one off; its next call is refused
+
 Follow-ups (the people who replied, reposted or followed you):
   engage                            The queue: who engaged, the reply the
                                     writer drafted from what they said, and

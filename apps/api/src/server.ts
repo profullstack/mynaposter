@@ -5,17 +5,30 @@
  * Writes require a bearer token; the token is compared in constant time and
  * never logged.
  */
-import { Hono } from "hono";
+import { Hono, type MiddlewareHandler } from "hono";
+import { cors } from "hono/cors";
 import { timingSafeEqual, createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { hasDatabase, migrate, closeDatabase } from "./db/index.ts";
-import { startScheduler, configDir, availableRasterizers, writerAvailable } from "@profullstack/myna-core";
+import {
+  startScheduler,
+  configDir,
+  availableRasterizers,
+  writerAvailable,
+  fetchPage,
+  readSiteFiles,
+  projectCopy,
+  variations,
+  suggestPlaces,
+  type ProjectBrief,
+} from "@profullstack/myna-core";
 import * as service from "./service.ts";
 import { handleMcpBody } from "./mcp.ts";
 import * as cloud from "./cloud.ts";
 import * as reshare from "./reshare.ts";
 import * as atproto from "./atproto.ts";
 import * as handoff from "./handoff.ts";
+import * as oc from "./openconnection.ts";
 import { store as synconfigStore } from "./synconfig.ts";
 import { handleGet as synconfigGet, handlePut as synconfigPut, handleRevisions as synconfigRevisions } from "@profullstack/synconfig/server";
 import { VERSION } from "@profullstack/myna-core";
@@ -44,7 +57,7 @@ app.use("/v1/*", async (context, next) => {
   // this instance, while those belong to an end user with an account. Running
   // both would mean nobody could sign up without the operator's token.
   const path = new URL(context.req.url).pathname;
-  if (path.startsWith("/v1/cloud") || path.startsWith("/v1/reshare") || path.startsWith("/v1/atproto") || path.startsWith("/v1/handoff") || path.startsWith("/v1/synconfig") || path.startsWith("/v1/syncfg")) return next();
+  if (path.startsWith("/v1/cloud") || path.startsWith("/v1/reshare") || path.startsWith("/v1/atproto") || path.startsWith("/v1/handoff") || path.startsWith("/v1/synconfig") || path.startsWith("/v1/syncfg") || path.startsWith("/v1/openconnection")) return next();
 
   const expected = process.env.MYNA_API_TOKEN;
   const isRead = context.req.method === "GET";
@@ -566,6 +579,229 @@ synconfigRoutes.get("/revisions", async (context) => {
 
 app.route("/v1/synconfig", synconfigRoutes);
 app.route("/v1/syncfg", synconfigRoutes);
+
+/**
+ * OpenConnection (https://logicsrc.com/openconnection): the door an app that
+ * cannot register walks through. A signed-in person makes a setup token at
+ * /v1/openconnection/setup (or mynaposter.com/connect), pastes it into the
+ * app, and the app claims it once at /openconnection/claim/<secret> for a
+ * bearer of its own. From then on the app acts under /openconnection/v1
+ * with that bearer, scoped to what the person chose, revocable from the
+ * person's list. CORS is open on these routes because the bearer is the
+ * credential and no cookie is involved: a browser extension is the first
+ * app, and it has no origin a server could allowlist.
+ */
+app.get("/.well-known/openconnection.json", (context) =>
+  context.json(oc.descriptor(handoff.siteUrl()), 200, {
+    "cache-control": "public, max-age=300",
+    "access-control-allow-origin": "*",
+  }),
+);
+
+const ocPersonRoutes = new Hono<{ Variables: { user: cloud.CloudUser } }>();
+
+ocPersonRoutes.use("*", async (context, next) => {
+  if (!hasDatabase()) return context.json({ ok: false, error: "This instance has no DATABASE_URL, so OpenConnection is off." }, 503);
+  const user = await requireUser(context);
+  if (!user) return context.json({ ok: false, error: "Unauthorized" }, 401);
+  context.set("user", user);
+  return next();
+});
+
+ocPersonRoutes.get("/", (context) => context.json({ ok: true, descriptor: oc.descriptor(handoff.siteUrl()) }));
+
+ocPersonRoutes.post("/setup", async (context) => {
+  const input = (await context.req.json().catch(() => ({}))) as { scopes?: unknown; minutes?: unknown };
+  try {
+    return context.json({ ok: true, ...(await oc.issueSetup(context.get("user").id, input)) }, 201);
+  } catch (error) {
+    return context.json({ ok: false, error: (error as Error).message }, 400);
+  }
+});
+
+ocPersonRoutes.get("/apps", async (context) => {
+  const apps = await oc.listApps(context.get("user").id, { all: context.req.query("all") === "1" });
+  return context.json({ ok: true, apps, total: apps.length });
+});
+
+ocPersonRoutes.delete("/apps/:id", async (context) => {
+  const removed = await oc.revokeApp(context.get("user").id, context.req.param("id"));
+  return removed ? context.json({ ok: true }) : context.json({ ok: false, error: "No such connection." }, 404);
+});
+
+app.route("/v1/openconnection", ocPersonRoutes);
+
+type OcEnv = { Variables: { connection: oc.Connection } };
+const ocRoutes = new Hono<OcEnv>();
+
+ocRoutes.use(
+  "*",
+  cors({ origin: "*", allowHeaders: ["Authorization", "Content-Type"], allowMethods: ["GET", "POST", "DELETE", "OPTIONS"], maxAge: 600 }),
+);
+
+ocRoutes.use("*", async (context, next) => {
+  if (!hasDatabase()) return context.json({ error: "unavailable", message: "This instance has no DATABASE_URL, so OpenConnection is off." }, 503);
+  return next();
+});
+
+ocRoutes.post("/claim/:secret", async (context) => {
+  const input = (await context.req.json().catch(() => ({}))) as { app?: unknown };
+  try {
+    return context.json(await oc.claim(context.req.param("secret"), input.app));
+  } catch (error) {
+    if (error instanceof oc.ClaimError) return context.json({ error: error.code, message: error.message }, error.status);
+    return context.json({ error: "claim", message: (error as Error).message }, 400);
+  }
+});
+
+const ocAuth: MiddlewareHandler<OcEnv> = async (context, next) => {
+  const header = context.req.header("authorization") ?? "";
+  const bearer = header.startsWith("Bearer ") ? header.slice(7).trim() : "";
+  try {
+    context.set("connection", await oc.authenticate(bearer));
+  } catch (error) {
+    if (error instanceof oc.AuthError) return context.json({ error: error.code, message: error.message }, 401);
+    throw error;
+  }
+  return next();
+};
+ocRoutes.use("/v1", ocAuth);
+ocRoutes.use("/v1/*", ocAuth);
+
+const scoped =
+  (scope: string): MiddlewareHandler<OcEnv> =>
+  async (context, next) => {
+    if (!oc.hasScope(context.get("connection").scopes, scope)) {
+      return context.json({ error: "scope", scope, message: `This connection lacks ${scope}. Ask the person for a setup token that carries it.` }, 403);
+    }
+    return next();
+  };
+
+// The bridge pays for every model call, so writes are metered per connection.
+const ocWriteLimiter = new oc.RateLimiter(Number(process.env.OC_WRITES_PER_HOUR ?? 60), 60 * 60 * 1000);
+const ocReadLimiter = new oc.RateLimiter(Number(process.env.OC_READS_PER_HOUR ?? 600), 60 * 60 * 1000);
+
+const limited =
+  (limiter: oc.RateLimiter): MiddlewareHandler<OcEnv> =>
+  async (context, next) => {
+    const taken = limiter.take(context.get("connection").id);
+    if (!taken.ok) {
+      return context.json({ error: "rate_limited", message: `Too many requests; try again in ${taken.retryAfter}s.` }, 429, { "retry-after": String(taken.retryAfter) });
+    }
+    return next();
+  };
+
+const writerGate: MiddlewareHandler<OcEnv> = async (context, next) => {
+  const state = writerAvailable();
+  if (!state.ok) return context.json({ error: "writer", message: state.reason ?? "The writer is off on this bridge." }, 503);
+  return next();
+};
+
+const briefOf = (input: unknown): ProjectBrief | null => {
+  const project = (input && typeof input === "object" ? input : null) as Record<string, unknown> | null;
+  if (!project || typeof project.name !== "string" || !project.name.trim()) return null;
+  return {
+    name: project.name.trim().slice(0, 200),
+    description: typeof project.description === "string" ? project.description.slice(0, 2000) : "",
+    audience: typeof project.audience === "string" ? project.audience.slice(0, 500) : undefined,
+    features: Array.isArray(project.features) ? project.features.map(String).slice(0, 10) : undefined,
+    tone: typeof project.tone === "string" ? project.tone.slice(0, 40) : undefined,
+    url: typeof project.url === "string" && /^https?:\/\//.test(project.url) ? project.url.slice(0, 500) : undefined,
+  };
+};
+
+ocRoutes.get("/v1/info", limited(ocReadLimiter), async (context) => {
+  const connection = context.get("connection");
+  return context.json({
+    versions: [...oc.VERSIONS],
+    profiles: [...oc.PROFILES],
+    scopes: connection.scopes,
+    principal: { name: await oc.principalName(connection.userId) },
+    app: connection.app,
+    issued: connection.issuedAt,
+    expires: connection.expiresAt,
+  });
+});
+
+ocRoutes.get("/v1/accounts", limited(ocReadLimiter), scoped("accounts:read"), async (context) =>
+  context.json(await oc.accountsFor(context.get("connection").userId)),
+);
+
+const ocLeave: MiddlewareHandler<OcEnv> = async (context) => {
+  await oc.revokeToken(context.get("connection").id);
+  return context.json({ ok: true, revoked: true });
+};
+ocRoutes.delete("/v1", ocLeave);
+ocRoutes.delete("/v1/", ocLeave);
+
+ocRoutes.post("/v1/analyze", limited(ocWriteLimiter), scoped("analyze:create"), writerGate, async (context) => {
+  const input = (await context.req.json().catch(() => ({}))) as { url?: unknown };
+  const url = typeof input.url === "string" ? input.url.trim() : "";
+  if (!url || !/^(https?:\/\/)?[\w.-]+\.[a-z]{2,}(\/\S*)?$/i.test(url)) return context.json({ error: "url", message: "analyze needs a URL." }, 400);
+  try {
+    const [files, page] = await Promise.all([readSiteFiles(url), fetchPage(url)]);
+    const copy = await projectCopy({ page, openprofile: files.openprofile, llms: files.llms });
+    return context.json({ ...copy, url: page.url, image: page.image || null, read_from: [...files.readFrom, "html"] });
+  } catch (error) {
+    return context.json({ error: "analyze", message: (error as Error).message }, 502);
+  }
+});
+
+ocRoutes.post("/v1/write", limited(ocWriteLimiter), scoped("write:create"), writerGate, async (context) => {
+  const input = (await context.req.json().catch(() => ({}))) as Record<string, unknown>;
+  const project = briefOf(input.project);
+  if (!project) return context.json({ error: "project", message: "write needs a project with a name." }, 400);
+  const raw = input.context && typeof input.context === "object" ? (input.context as Record<string, unknown>) : null;
+  try {
+    const result = await variations({
+      kind: input.kind === "comment" ? "comment" : "post",
+      network: typeof input.network === "string" ? input.network : null,
+      count: Number(input.count) || 5,
+      project,
+      context: raw
+        ? {
+            title: typeof raw.title === "string" ? raw.title : undefined,
+            content: typeof raw.content === "string" ? raw.content : undefined,
+            url: typeof raw.url === "string" ? raw.url : undefined,
+          }
+        : null,
+      includeLink: Boolean(input.include_link ?? input.includeLink),
+      title: Boolean(input.title),
+    });
+    return context.json({ title: result.title, variations: result.variations, network: result.network });
+  } catch (error) {
+    return context.json({ error: "write", message: (error as Error).message }, 502);
+  }
+});
+
+ocRoutes.post("/v1/suggest", limited(ocWriteLimiter), scoped("suggest:create"), writerGate, async (context) => {
+  const input = (await context.req.json().catch(() => ({}))) as Record<string, unknown>;
+  const project = briefOf(input.project);
+  if (!project) return context.json({ error: "project", message: "suggest needs a project with a name." }, 400);
+  try {
+    const places = await suggestPlaces(project);
+    const forums = await oc.forumsFor(places.keywords.length ? places.keywords : [project.name]);
+    const submit = `https://nichedb.dev/submit${project.url ? `?url=${encodeURIComponent(project.url)}` : ""}`;
+    return context.json({ ...places, forums, directories: [{ name: "nichedb.dev", url: submit }] });
+  } catch (error) {
+    return context.json({ error: "suggest", message: (error as Error).message }, 502);
+  }
+});
+
+ocRoutes.get("/v1/activity", limited(ocReadLimiter), scoped("activity:write"), async (context) =>
+  context.json({ activity: await oc.listActivity(context.get("connection").userId, Number(context.req.query("limit")) || 100) }),
+);
+
+ocRoutes.post("/v1/activity", limited(ocReadLimiter), scoped("activity:write"), async (context) => {
+  const input = (await context.req.json().catch(() => ({}))) as oc.ActivityInput;
+  try {
+    return context.json(await oc.recordActivity(context.get("connection"), input), 201);
+  } catch (error) {
+    return context.json({ error: "activity", message: (error as Error).message }, 400);
+  }
+});
+
+app.route("/openconnection", ocRoutes);
 
 app.notFound((context) => context.json({ ok: false, error: "Not found" }, 404));
 
