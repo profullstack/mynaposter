@@ -1,6 +1,6 @@
 {
   "name": "@profullstack/myna-plugin-dashboard",
-  "version": "0.25.0",
+  "version": "0.25.1",
   "description": "myna plugin: a local dashboard for what went out, what is queued, and which network is gated.",
   "license": "MIT",
   "type": "module",
