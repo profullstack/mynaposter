@@ -252,11 +252,13 @@ function directoryHint(id: string): string | undefined {
 async function resolvePostArgs(positional: string[], flags: Flags): Promise<{ accounts: Account[]; text: string }> {
   const words = [...positional];
 
-  const looksLikeTarget = (word: string): boolean =>
+  const looksLikeSingleTarget = (word: string): boolean =>
     word === "all" ||
     word === "*" ||
     Boolean(getNetwork(word)) ||
     listAccounts().some((account) => account.id === word || account.handle === word);
+  const looksLikeTarget = (word: string): boolean =>
+    word.split(",").every((part) => looksLikeSingleTarget(part.trim()));
 
   // Work out what is a target and what is text before touching stdin, because
   // reading stdin when the text is already on the command line means waiting on
