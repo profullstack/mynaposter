@@ -1,7 +1,23 @@
-import { test, expect } from "bun:test";
+import { test, expect, beforeEach, afterEach } from "bun:test";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { buildRecap, recapDue, recapSubject, renderRecapText, DEFAULT_RECAP, RECAP_GUARD_MS } from "../src/core/recap.ts";
 import type { HistoryEntry } from "../src/store/history.ts";
 import type { QueuedPost } from "../src/store/queue.ts";
+
+// Nothing here may read the machine's own files: a recap built from a given
+// history and queue must not pick up the hand-offs (or anything else) that
+// happen to be in ~/.config/myna on the box running the tests.
+let home = "";
+beforeEach(() => {
+  home = mkdtempSync(join(tmpdir(), "myna-recap-"));
+  process.env.MYNA_HOME = home;
+});
+afterEach(() => {
+  rmSync(home, { recursive: true, force: true });
+  delete process.env.MYNA_HOME;
+});
 
 const NOW = new Date("2026-09-06T18:00:00Z");
 const hoursAgo = (n: number) => new Date(NOW.getTime() - n * 3_600_000).toISOString();
