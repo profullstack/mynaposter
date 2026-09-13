@@ -191,3 +191,23 @@ create table if not exists atproto_servers (
 );
 
 create index if not exists atproto_servers_kind_idx on atproto_servers(kind, online);
+
+-- Hand-offs: the steps only a person can do (a Reddit comment, an HN
+-- submission), kept as cards a phone can open at mynaposter.com/handoff/<id>.
+-- The id is 128 random bits and is the whole secret: reading a card and
+-- marking it done need the link and nothing else; listing and deleting are
+-- the owner's.
+create table if not exists handoffs (
+  id          text primary key,
+  user_id     uuid not null references users(id) on delete cascade,
+  place       text not null,
+  title       text not null,
+  text        text not null,
+  open_url    text,
+  steps       text[] not null default '{}',
+  account     text,
+  created_at  timestamptz not null default now(),
+  done_at     timestamptz
+);
+
+create index if not exists handoffs_user_idx on handoffs(user_id, created_at desc);

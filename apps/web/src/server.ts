@@ -9,6 +9,7 @@ import { join, extname, normalize } from "node:path";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { apiPath, forward } from "./proxy.ts";
+import { handoffPath } from "./handoff-page.ts";
 
 const root = join(fileURLToPath(new URL(".", import.meta.url)), "..", "public");
 const port = Number(process.env.PORT ?? 3000);
@@ -64,7 +65,9 @@ const server = Bun.serve({
     const api = apiPath(url.pathname);
     if (api !== null) return forward(request, api);
 
-    const file = resolve(url.pathname);
+    // A hand-off card is one page for every id: the shell is static, the
+    // card is read from the API once the page is open.
+    const file = handoffPath(url.pathname) ? join(root, "handoff", "index.html") : resolve(url.pathname);
 
     if (!file) {
       const notFound = join(root, "404.html");
@@ -90,7 +93,9 @@ const server = Bun.serve({
         "x-content-type-options": "nosniff",
         "referrer-policy": "strict-origin-when-cross-origin",
         "content-security-policy":
-          "default-src 'none'; img-src 'self' data:; style-src 'self'; script-src 'self'; font-src 'self'; base-uri 'none'; form-action 'none'",
+          // connect-src so a page may read the API under the same origin: the
+          // atproto directory and a hand-off card both do.
+          "default-src 'none'; img-src 'self' data:; style-src 'self'; script-src 'self'; font-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'",
       },
     });
   },

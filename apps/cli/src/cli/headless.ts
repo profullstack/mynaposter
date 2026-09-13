@@ -100,6 +100,7 @@ import { runDirectory } from "./directory.ts";
 import { runSkill } from "./skill.ts";
 import { runProfile, runReshareCommand } from "./reshare.ts";
 import { runAtproto } from "./atproto.ts";
+import { runHandoff } from "./handoff.ts";
 import { runEngage } from "./engage.ts";
 import { runDid } from "./did.ts";
 import { runContacts, runEmail, runSms, runSmtp } from "./outreach.ts";
@@ -116,6 +117,8 @@ export interface Flags {
   to?: string;
   title?: string;
   media?: string[];
+  /** `--step`, repeatable: the numbered steps on a hand-off card. */
+  step?: string[];
   json?: boolean;
   yes?: boolean;
   style?: string;
@@ -146,6 +149,8 @@ export function parseFlags(argv: string[]): { positional: string[]; flags: Flags
       "json", "yes", "thread", "dryRun", "noThread", "force", "now", "off", "on", "noOpen", "front", "skipQueue", "send", "check", "noAi", "allowDuplicate",
       // follow, followers, graph expand and outreachgraph push
       "outreachgraph", "followers", "allFollowing", "allFollowers", "both",
+      // handoff list --all, handoff add --local
+      "all", "local",
     ]);
     if (BOOLS.has(name)) {
       flags[name === "noThread" ? "thread" : name] = name !== "noThread";
@@ -160,6 +165,7 @@ export function parseFlags(argv: string[]): { positional: string[]; flags: Flags
     const value = inlineValue ?? argv[++i];
     if (value === undefined) throw new Error(`--${rawName} needs a value`);
     if (name === "media") (flags.media ??= []).push(value);
+    else if (name === "step") (flags.step ??= []).push(value);
     else flags[name] = value;
   }
 
@@ -523,6 +529,11 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
     case "atproto":
     case "at": {
       return await runAtproto(positional, flags);
+    }
+
+    case "handoff":
+    case "handoffs": {
+      return await runHandoff(positional, flags);
     }
 
     case "engage":

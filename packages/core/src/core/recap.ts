@@ -22,6 +22,7 @@ import type { HistoryEntry } from "../store/history.ts";
 import { listHistory } from "../store/history.ts";
 import type { QueuedPost } from "../store/queue.ts";
 import { listQueue } from "../store/queue.ts";
+import { listHandoffs, type Handoff } from "../store/handoffs.ts";
 import { readJson, writeJson } from "../util/json.ts";
 import { RECAP_FILE } from "../util/paths.ts";
 
@@ -64,6 +65,16 @@ export interface RecapUpcoming {
   text: string;
 }
 
+/** A card still waiting on a person: where, what, and the link to do it. */
+export interface RecapHandoff {
+  id: string;
+  place: string;
+  title: string;
+  /** The card on mynaposter.com, when it was published there. */
+  url?: string;
+  createdAt: string;
+}
+
 export interface Recap {
   /** The end of the backward window: the moment the recap describes. */
   now: string;
@@ -82,6 +93,8 @@ export interface Recap {
   nextAt?: string;
   /** When the last pending post is due: how far the queue reaches. */
   lastAt?: string;
+  /** Hand-offs not yet marked done, newest first. */
+  handoffs?: RecapHandoff[];
 }
 
 const oneLine = (text: string, limit = 72): string => {
@@ -94,6 +107,7 @@ export interface RecapInput {
   windowMs?: number;
   history?: HistoryEntry[];
   queue?: QueuedPost[];
+  handoffs?: Handoff[];
 }
 
 /**
@@ -106,6 +120,7 @@ export function buildRecap(input: RecapInput = {}): Recap {
   const windowMs = input.windowMs ?? DAY_MS;
   const history = input.history ?? listHistory();
   const queue = input.queue ?? listQueue();
+  const handoffs = (input.handoffs ?? listHandoffs()).filter((card) => !card.doneAt);
 
   const from = now.getTime() - windowMs;
   const until = now.getTime() + windowMs;
@@ -170,6 +185,7 @@ export function buildRecap(input: RecapInput = {}): Recap {
     pending: pending.length,
     nextAt: dated[0]?.post.scheduledFor,
     lastAt: dated.at(-1)?.post.scheduledFor,
+    handoffs: handoffs.map((card) => ({ id: card.id, place: card.place, title: card.title, ...(card.cloudUrl ? { url: card.cloudUrl } : {}), createdAt: card.createdAt })),
   };
 }
 
@@ -183,6 +199,7 @@ export function recapSubject(recap: Recap, tz?: string): string {
   const parts = [`${recap.sent} sent`];
   if (recap.failed) parts.push(`${recap.failed} failed`);
   parts.push(`${recap.upcoming.length} coming up`);
+  if (recap.handoffs?.length) parts.push(`${recap.handoffs.length} waiting on you`);
   return `myna — ${day(recap.now, tz)}: ${parts.join(", ")}`;
 }
 
@@ -236,6 +253,18 @@ export function renderRecapText(recap: Recap, tz?: string): string {
     lines.push(`Nothing booked for the next ${hours} hours.`);
   }
   lines.push("");
+
+  // What only a person can finish: a Reddit comment, an HN submission. The
+  // link is the card itself, so the mail is enough to do it from a phone.
+  if (recap.handoffs?.length) {
+    lines.push(`Waiting on you: ${recap.handoffs.length}`);
+    for (const card of recap.handoffs.slice(0, LIST_LIMIT)) {
+      lines.push(`  ${card.place}  ${card.title}`);
+      lines.push(`    ${card.url ?? `myna handoff show ${card.id}`}`);
+    }
+    if (recap.handoffs.length > LIST_LIMIT) lines.push(`  …and ${recap.handoffs.length - LIST_LIMIT} more; see myna handoff`);
+    lines.push("");
+  }
 
   // The queue depth matters more than any single entry: it is the number
   // that says whether a post added today goes out today or next week.
