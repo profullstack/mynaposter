@@ -1,0 +1,46 @@
+{
+  "name": "@profullstack/openprofile",
+  "version": "0.1.0",
+  "description": "Read, write, merge and de-duplicate OpenProfile.md documents (logicsrc.com/openprofile), including the Broadcast (OpenBroadcast) and Guest (OpenGuest) sections. One parser for every house app that serves a profile.",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "bun": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "src",
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "rm -rf dist && bun x tsc -p tsconfig.build.json",
+    "prepublishOnly": "bun run build"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": [
+    "openprofile",
+    "openbroadcast",
+    "openguest",
+    "profile",
+    "markdown",
+    "logicsrc",
+    "identity"
+  ],
+  "homepage": "https://github.com/profullstack/mynaposter/tree/main/packages/openprofile",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/profullstack/mynaposter.git",
+    "directory": "packages/openprofile"
+  }
+}
