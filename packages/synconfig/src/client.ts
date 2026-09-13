@@ -93,7 +93,7 @@ export function createClient(options: ClientOptions): SyncTransport {
   return {
     async get() {
       const { status, body } = await call<Latest>("GET", base);
-      if (status === 404) return null;
+      if (status === 404 || (body as { empty?: boolean }).empty) return null;
       if (!body.ok) throw new Error(body.error ?? `GET ${base} answered ${status}`);
       const { ok: _ok, ...rest } = body;
       void _ok;
