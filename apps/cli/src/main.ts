@@ -44,7 +44,7 @@ Posting:
                                     post you asked for by hand. Automated
                                     promotion never passes it
   schedule <when> [text]            Queue a post: "in 2h", "tomorrow 9am"
-  pace [--gap 4h] [--drip 48h]      The pacing rules: one post per network
+  pace [--gap 2h] [--drip 48h]      The pacing rules: one post per network
        [--repost 7d]                per gap, several accounts spread over
                                     the drip, a repeat waits out the repost gap
   evergreen <blog account>          Re-post an old page every --every 7d to
