@@ -31,13 +31,16 @@ const sent = (account: Account, text: string, agoMs: number, ok = true): History
   ok,
 });
 
-const rules = pacingRules(DEFAULT_PACING);
+// The cases below are about how the gap behaves, not about what the shipped
+// default happens to be, so they pin 4h rather than tracking DEFAULT_PACING.
+// The one test that does care about the default reads it directly.
+const rules = pacingRules({ ...DEFAULT_PACING, minGap: "4h" });
 const stable = (accounts: Account[]) => accounts;
 
-test("defaults read as 4h, 48h, 7d", () => {
-  expect(rules).toEqual({ minGapMs: 4 * H, dripMs: 48 * H, repostGapMs: 7 * 24 * H });
+test("defaults read as 2h, 48h, 7d", () => {
+  expect(pacingRules(DEFAULT_PACING)).toEqual({ minGapMs: 2 * H, dripMs: 48 * H, repostGapMs: 7 * 24 * H });
   // A bad value falls back rather than turning pacing off.
-  expect(pacingRules({ minGap: "soon", drip: "48h", repostGap: "7d" }).minGapMs).toBe(4 * H);
+  expect(pacingRules({ minGap: "soon", drip: "48h", repostGap: "7d" }).minGapMs).toBe(2 * H);
 });
 
 test("five accounts, quiet history: one goes now, the rest drip across the window", () => {

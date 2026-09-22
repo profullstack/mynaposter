@@ -7,7 +7,11 @@
  * to clear three gates, all read from settings:
  *
  *   minGap     the least time between two posts on the SAME NETWORK, whatever
- *              the account. 4h by default.
+ *              the account. 2h by default: a network whose skill file allows
+ *              12 posts a day could only reach 6 at the old 4h, so the gap
+ *              was the binding constraint rather than the cap. A network that
+ *              wants to be slower says so in its own skill file, and the
+ *              wider of the two wins.
  *   drip       a post aimed at several accounts is spread over this window,
  *              one account at a time, in a shuffled order. 48h by default;
  *              24h to 72h is the sensible range.
@@ -28,7 +32,7 @@ import type { QueuedPost } from "../store/queue.ts";
 import { parseDuration } from "../util/when.ts";
 
 export interface PacingSettings {
-  /** Least time between two posts on the same network. A duration: "4h". */
+  /** Least time between two posts on the same network. A duration: "2h". */
   minGap: string;
   /** Window a multi-account post is spread over. "48h". */
   drip: string;
@@ -36,7 +40,7 @@ export interface PacingSettings {
   repostGap: string;
 }
 
-export const DEFAULT_PACING: PacingSettings = { minGap: "4h", drip: "48h", repostGap: "7d" };
+export const DEFAULT_PACING: PacingSettings = { minGap: "2h", drip: "48h", repostGap: "7d" };
 
 export interface PacingRules {
   minGapMs: number;

@@ -72,8 +72,9 @@ test("a network keeps its colour slot however many others are connected", () => 
 test("a network posted to recently reports how long it is holding", () => {
   const snap = buildSnapshot({ ...base, history: [sent(x, "earlier", 1 * H)] });
   const lane = snap.networks.find((n) => n.network === "x");
-  expect(lane?.gatedForMs).toBe(3 * H);
-  expect(lane?.freeAt).toBe(NOW + 3 * H);
+  // Posted an hour ago against the default 2h gap, so it holds one more hour.
+  expect(lane?.gatedForMs).toBe(1 * H);
+  expect(lane?.freeAt).toBe(NOW + 1 * H);
   expect(snap.gatedCount).toBe(1);
   // A network nobody has posted to is free now.
   expect(snap.networks.find((n) => n.network === "bluesky")?.gatedForMs).toBe(0);

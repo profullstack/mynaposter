@@ -692,7 +692,7 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
       out(`drip    ${next.drip}  a post to several accounts is spread over this window`);
       out(`repost  ${next.repostGap}   the same text to the same account waits this long`);
       if (!changed) {
-        out("\nChange one: myna pace --gap 4h --drip 48h --repost 7d.");
+        out("\nChange one: myna pace --gap 2h --drip 48h --repost 7d.");
         out("Jump the queue but keep the gaps: myna post --front. Skip the gates outright: myna post --now.");
       }
       return 0;
