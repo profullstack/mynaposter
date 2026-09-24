@@ -42,9 +42,18 @@ Two-word phrases outrank single words, both as topics and as queries, because
 never sent as a query on its own when anything else exists: two narrow words
 find people talking about both, one finds the whole network.
 
+Distinctiveness alone is not enough, because it cannot tell that a phrase is
+meaningless. Post the same marketing sentence twelve times and "costs money"
+and "anyone playing" are rare across the whole history, so they look highly
+distinctive while matching any stranger who ever mentioned the price of
+anything. So a topic must also contain at least one word that is not ordinary
+English: "free browser" survives on "browser", and "costs money" does not
+survive at all.
+
 Scoring a stranger's post follows from the same idea. Brushing against one of
-your terms is a coincidence and scores zero; it takes a phrase, or two distinct
-terms, to count as on-subject at all.
+your terms is usually a coincidence, so it takes either two distinct terms or
+one narrow enough to be evidence on its own: a phrase, or a word you use in
+under 8% of your posts. Anything less scores a hard zero.
 
 ## What it does about it
 
@@ -144,7 +153,7 @@ in your own plugin and it gets the same events, in load order, one at a time.
 | `maxPerDay` | 30 | actions per account in a rolling day |
 | `gapMinutes` | 4 | least time between two actions from one account |
 | `cooldownDays` | 3 | one action per author per account in this window |
-| `minScore` | 0.25 | how well a post must match to be worth a vote |
+| `minScore` | 0.2 | how well a post must match to be worth a vote |
 | `linkMinScore` | 0.5 | the higher bar a post must clear to carry a link |
 | `repostRatio` | 0.15 | share of votes that are also shared onward |
 | `linkRatio` | 0.06 | share of votes that also get a reply with a link |

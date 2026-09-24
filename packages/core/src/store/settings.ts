@@ -405,7 +405,10 @@ export const DEFAULT_UPVOTE: UpvoteSettings = {
   queriesPerScan: 6,
   topicDays: 14,
   maxAgeHours: 48,
-  minScore: 0.25,
+  // Scoring returns a hard zero for anything that is not on subject, so this
+  // only decides how strong a match has to be, not whether it is one at all.
+  // One narrow term on its own lands near 0.24 and is worth a vote.
+  minScore: 0.2,
   repostRatio: 0.15,
   // Roughly one reply in sixteen, and never more than `linkPerDay` of them.
   linkRatio: 0.06,

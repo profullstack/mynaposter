@@ -17,7 +17,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { scanUpvotes, runUpvotes, share, ourHandles, actedToday } from "../src/core/upvote.ts";
-import { topicIndex, queriesFor, scoreAgainst, bestLink, termSet, MAX_DF } from "../src/core/topics.ts";
+import { topicIndex, queriesFor, scoreAgainst, bestLink, termSet, contentful, MAX_DF } from "../src/core/topics.ts";
 import { listUpvotes, readUpvotes, updateUpvote } from "../src/store/upvote.ts";
 import { recordHistory, listHistory } from "../src/store/history.ts";
 import { resetAccountCache, saveAccount } from "../src/store/accounts.ts";
@@ -723,13 +723,34 @@ test("a stranger's post sharing only our filler scores nothing", () => {
   for (const decoy of decoys) expect(scoreAgainst(decoy, index).score).toBe(0);
 });
 
-test("one matching word is a coincidence; a phrase or two words is a subject", () => {
-  ourHistory();
-  const index = topicIndex(listHistory(), { days: 14, now: T0 });
-  // A single shared word, and nothing else.
-  expect(scoreAgainst("the benchmarks were inconclusive", index).score).toBe(0);
-  // A phrase we actually use.
-  expect(scoreAgainst("has anyone tried rust ropes for this", index).score).toBeGreaterThan(0);
+test("one word we use widely is a coincidence; one we use narrowly is not", () => {
+  // A word sitting between STRONG_DF and MAX_DF: kept as a topic, because it
+  // is not filler, but not evidence on its own.
+  const entries = [];
+  for (let i = 0; i < 100; i += 1) {
+    entries.push({
+      at: new Date(Date.parse("2026-09-12T10:00:00.000Z") - i * 3_600_000).toISOString(),
+      accountId: "fake:me",
+      network: "fake",
+      handle: "me",
+      // "rendering" in 10 of 100 (10%: kept, not strong).
+      // "kerning" in 3 of 100 (3%: strong).
+      text: i < 10 ? "notes on rendering pipelines" : i < 13 ? "notes on kerning tables" : `unrelated subject ${i} matters`,
+      ok: true,
+      postId: `p${i}`,
+      url: `https://example.com/p${i}`,
+    });
+  }
+  const index = topicIndex(entries as never, { days: 14, now: Date.parse("2026-09-12T12:00:00.000Z") });
+
+  const rendering = index.topics.find((topic) => topic.term === "rendering");
+  expect(rendering?.strong).toBe(false);
+  // Brushing past it, and nothing else, is not evidence of anything.
+  expect(scoreAgainst("the rendering of the film was lovely", index).score).toBe(0);
+
+  const kerning = index.topics.find((topic) => topic.term === "kerning");
+  expect(kerning?.strong).toBe(true);
+  expect(scoreAgainst("anyone got a fix for kerning here", index).score).toBeGreaterThan(0);
 });
 
 test("a single word is never sent as a query on its own when anything else exists", () => {
@@ -747,4 +768,75 @@ test("a barely-used install still gets topics rather than none", () => {
   const index = topicIndex(listHistory(), { days: 14, now: T0 });
   expect(index.topics.length).toBeGreaterThan(0);
   expect(MAX_DF).toBeLessThan(1);
+});
+
+/**
+ * The second failure this guards against also shipped. Inverse document
+ * frequency fixed the single-word case but could not see that a phrase is
+ * meaningless: the same marketing sentence posted twelve times made "costs
+ * money" and "anyone playing" look highly distinctive, and they matched any
+ * stranger who mentioned the price of anything. On the real install they
+ * queued posts about the cost of living, satellite streaks, rural plumbing
+ * and a waiter's story.
+ */
+test("a phrase made only of ordinary words is never a topic", () => {
+  expect(contentful("costs money")).toBe(false);
+  expect(contentful("anyone playing")).toBe(false);
+  expect(contentful("nothing costs")).toBe(false);
+  expect(contentful("playing free")).toBe(false);
+  // One real word is enough to carry it.
+  expect(contentful("free browser")).toBe(true);
+  expect(contentful("browser desktop")).toBe(true);
+  expect(contentful("crypto coinpay")).toBe(true);
+  expect(contentful("nightcell")).toBe(true);
+});
+
+test("the template phrases never reach the topic list", () => {
+  const entries = [];
+  // The same promotional sentence, twelve times, plus real subjects elsewhere.
+  for (let i = 0; i < 60; i += 1) {
+    const text =
+      i < 12
+        ? "Anyone playing? A free sandbox browser. The desktop client costs nothing, nothing costs money."
+        : `Notes on rope editors and gap buffers, part ${i}.`;
+    entries.push({
+      at: new Date(Date.parse("2026-09-12T10:00:00.000Z") - i * 3_600_000).toISOString(),
+      accountId: "fake:me",
+      network: "fake",
+      handle: "me",
+      text,
+      ok: true,
+      postId: `p${i}`,
+      url: `https://example.com/p${i}`,
+    });
+  }
+  const index = topicIndex(entries as never, { days: 14, now: Date.parse("2026-09-12T12:00:00.000Z") });
+  const terms = index.topics.map((topic) => topic.term);
+  for (const junk of ["costs money", "nothing costs", "anyone playing", "playing free"]) {
+    expect(terms).not.toContain(junk);
+  }
+  // A stranger talking about money matches nothing at all.
+  expect(scoreAgainst("the cost of living means people spent money on other things", index).score).toBe(0);
+});
+
+test("one narrow term is evidence on its own; one common one is not", () => {
+  const entries = [];
+  // "sandbox" in a few posts (narrow), "browser" in most of them (not narrow).
+  for (let i = 0; i < 60; i += 1) {
+    entries.push({
+      at: new Date(Date.parse("2026-09-12T10:00:00.000Z") - i * 3_600_000).toISOString(),
+      accountId: "fake:me",
+      network: "fake",
+      handle: "me",
+      text: i < 3 ? "the sandbox approach to rendering" : "browser notes and rendering",
+      ok: true,
+      postId: `p${i}`,
+      url: `https://example.com/p${i}`,
+    });
+  }
+  const index = topicIndex(entries as never, { days: 14, now: Date.parse("2026-09-12T12:00:00.000Z") });
+  const sandbox = index.topics.find((topic) => topic.term === "sandbox");
+  expect(sandbox?.strong).toBe(true);
+  // Hitting that one narrow word is enough to be worth a look.
+  expect(scoreAgainst("does anyone use a sandbox for this", index).score).toBeGreaterThan(0);
 });
