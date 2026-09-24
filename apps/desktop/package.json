@@ -11,7 +11,7 @@
     "dist:linux": "electron-builder --linux --publish never",
     "dist:mac": "electron-builder --mac --publish never",
     "dist:win": "electron-builder --win --publish never",
-    "build:core": "bun build ../../packages/core/src/index.ts --target=node --format=cjs --outfile src/core.cjs"
+    "build:core": "bun build ../../packages/core/src/index.ts --target=node --format=cjs --conditions=bun --outfile src/core.cjs"
   },
   "dependencies": {
     "@profullstack/myna-core": "workspace:*"

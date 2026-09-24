@@ -863,6 +863,13 @@ An issue is a subject and a Markdown body aimed at one contacts list; the
 subscribers are that list, so `myna contacts` and `myna email --list` see the
 same people.
 
+It is the same newsletter on every surface: the CLI below; the TUI's
+Newsletter tab and `/newsletter` (write the issue in the compose box, then
+`/newsletter new <list> <subject>`, `dry`, `test`, `send`); the desktop app's
+Newsletter view (write, test, send, subscribe, import a CSV); the local
+dashboard (`myna dashboard`), which shows each issue's deliveries and each
+list's size; and the MCP tools, over stdio or at mynaposter.com/api/mcp.
+
 ```bash
 myna config newsletter.address "Profullstack, Inc., 1 Main St, San Jose, CA 95112, USA"   # required
 myna cloud login                                   # mynaposter.com hosts the unsubscribe links

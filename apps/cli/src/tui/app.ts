@@ -28,6 +28,7 @@ import {
   performanceScreen,
   queueScreen,
 } from "./screens/index.ts";
+import { newsletterScreen } from "./newsletter.ts";
 
 const TOAST_MS = 6000;
 
@@ -104,6 +105,9 @@ export function drawApp(
         break;
       case "directories":
         directoriesScreen(root, state, theme);
+        break;
+      case "newsletter":
+        newsletterScreen(root, state, theme);
         break;
       case "help":
         helpScreen(root, state, theme);

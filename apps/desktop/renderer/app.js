@@ -55,6 +55,7 @@ function refresh(view) {
   if (view === "queue") renderQueue();
   if (view === "history") renderHistory();
   if (view === "settings") renderSettings();
+  if (view === "newsletter") renderNewsletter();
 }
 
 /* ------------------------------------------------------------------ compose */
@@ -711,6 +712,180 @@ for (const button of $$("[data-close]")) {
     button.closest("dialog").close();
   });
 }
+
+/* --------------------------------------------------------------- newsletter */
+
+const nl = (id) => $(`#nl-${id}`);
+
+function nlForm() {
+  return {
+    subject: nl("subject").value.trim(),
+    subjectB: nl("subject-b").value.trim(),
+    list: nl("list").value.trim(),
+    body: nl("body").value,
+    at: nl("at").value || null,
+  };
+}
+
+function nlLoad(issue) {
+  nl("id").value = issue?.id ?? "";
+  nl("subject").value = issue?.subject ?? "";
+  nl("subject-b").value = issue?.subjectB ?? "";
+  nl("list").value = issue?.list ?? nl("list").value;
+  nl("body").value = issue?.body ?? "";
+  nl("at").value = issue?.scheduledFor ? issue.scheduledFor.slice(0, 16) : "";
+  nl("report").textContent = issue ? `${issue.id}: ${issue.status}` : "";
+}
+
+function nlReport(report) {
+  const lines = [
+    `${report.id} to ${report.list}: ${report.audience} on the list, ${report.alreadySent} already have it.`,
+    report.wouldSend?.length ? `Would go now: ${report.wouldSend.length}` : "",
+    report.sent?.length ? `Sent: ${report.sent.length}` : "",
+    report.failed?.length ? `Failed: ${report.failed.map((f) => `${f.to} (${f.error})`).join(", ")}` : "",
+    report.remaining ? `Left for a later run (daily cap): ${report.remaining}` : "",
+    report.status ? `Status: ${report.status}` : "",
+  ];
+  nl("report").textContent = lines.filter(Boolean).join("\n");
+}
+
+/** Save the form first, so what is sent is what is on screen. */
+async function nlSaved() {
+  const form = nlForm();
+  const id = nl("id").value;
+  const saved = id ? await api.newsletter.update(id, form) : await api.newsletter.create(form);
+  nl("id").value = saved.id;
+  return saved;
+}
+
+async function renderNewsletter() {
+  const view = (await guard(() => api.newsletter.overview())) ?? { issues: [], lists: [] };
+  const setup = [];
+  if (!view.address) setup.push("No postal address yet: myna config newsletter.address \"…\" (nothing sends without it).");
+  if (!view.smtp?.length) setup.push("No SMTP server: myna smtp add <id> --host … --user … --from …");
+  setup.push(view.tracking ? `Tracking through crawlproof (${view.tracking}).` : "Tracking off.");
+  nl("setup").textContent = setup.join(" ");
+
+  const issues = nl("issues");
+  issues.innerHTML = view.issues.length ? "" : `<div class="note">No issues yet.</div>`;
+  for (const issue of view.issues) {
+    const card = document.createElement("div");
+    card.className = "card";
+    card.innerHTML =
+      `<div><div class="title">${escapeHtml(issue.subject)}</div>` +
+      `<div class="sub">${escapeHtml(issue.id)} · ${issue.status} · ${escapeHtml(issue.list)} · ${issue.deliveries.sent} sent${issue.deliveries.failed ? `, ${issue.deliveries.failed} failed` : ""}</div></div>` +
+      `<div class="spacer"></div>`;
+    const open = document.createElement("button");
+    open.className = "ghost";
+    open.textContent = "Open";
+    open.addEventListener("click", () => nlLoad(issue));
+    const stats = document.createElement("button");
+    stats.className = "ghost";
+    stats.textContent = "Stats";
+    stats.disabled = !view.tracking;
+    stats.addEventListener("click", async () => {
+      const result = await guard(() => api.newsletter.stats(issue.id), "Reading crawlproof…");
+      if (!result) return;
+      nl("report").textContent = [
+        "Variant  Sent  Opens  Clicks  CTR    Unsubs",
+        ...result.rows.map((r) => `${r.variant.padEnd(8)} ${String(r.sent).padEnd(5)} ${String(r.opens).padEnd(6)} ${String(r.clicks).padEnd(7)} ${(r.ctr * 100).toFixed(1)}%  ${r.unsubscribes}`),
+        result.leader ? `Leader: ${result.leader} (by ${result.basis})` : "No leader yet.",
+      ].join("\n");
+    });
+    const remove = document.createElement("button");
+    remove.className = "ghost";
+    remove.textContent = "Delete";
+    remove.addEventListener("click", async () => {
+      if (!confirm(`Delete ${issue.id}? Its delivery ledger goes with it.`)) return;
+      await guard(() => api.newsletter.remove(issue.id));
+      if (nl("id").value === issue.id) nlLoad(null);
+      renderNewsletter();
+    });
+    card.append(open, stats, remove);
+    issues.append(card);
+  }
+
+  const lists = nl("lists");
+  lists.innerHTML = view.lists.length ? "" : `<div class="note">No lists yet. Put a list name above and subscribe someone.</div>`;
+  for (const list of view.lists) {
+    const card = document.createElement("div");
+    card.className = "card";
+    card.innerHTML = `<div><div class="title">${escapeHtml(list.name)}</div><div class="sub">${list.active} can be mailed of ${list.total}</div></div>`;
+    card.addEventListener("click", () => {
+      nl("list").value = list.name;
+    });
+    lists.append(card);
+  }
+}
+
+$("#btn-nl-new").addEventListener("click", () => nlLoad(null));
+
+$("#btn-nl-save").addEventListener("click", async () => {
+  const saved = await guard(nlSaved, "Saving…");
+  if (saved) {
+    status(`Saved ${saved.id} (${saved.status})`, "success");
+    renderNewsletter();
+  }
+});
+
+$("#btn-nl-dry").addEventListener("click", async () => {
+  const saved = await guard(nlSaved);
+  if (!saved) return;
+  const report = await guard(() => api.newsletter.dry(saved.id));
+  if (report) nlReport(report);
+});
+
+$("#btn-nl-test").addEventListener("click", async () => {
+  const to = nl("test-to").value.trim();
+  if (!to) return status("Put your address in first.", "error");
+  const saved = await guard(nlSaved);
+  if (!saved) return;
+  const report = await guard(() => api.newsletter.test(saved.id, to), `Sending a test to ${to}…`);
+  if (report) status(report.failed.length ? `Test failed: ${report.failed[0].error}` : `Test copy sent to ${to}`, report.failed.length ? "error" : "success");
+});
+
+$("#btn-nl-send").addEventListener("click", async () => {
+  const saved = await guard(nlSaved);
+  if (!saved) return;
+  const dry = await guard(() => api.newsletter.dry(saved.id));
+  if (!dry) return;
+  if (!confirm(`Send "${saved.subject}" to ${dry.wouldSend.length} on ${saved.list} now?${dry.remaining ? ` ${dry.remaining} more go on later runs (daily cap).` : ""}`)) return;
+  const report = await guard(() => api.newsletter.send(saved.id), `Sending ${saved.id}…`);
+  if (report) {
+    nlReport(report);
+    status(`${report.sent.length} sent`, report.failed.length ? "error" : "success");
+  }
+  renderNewsletter();
+});
+
+$("#btn-nl-sub").addEventListener("click", async () => {
+  const list = nl("list").value.trim();
+  const emails = nl("sub-emails").value.split(/[\s,;]+/).filter(Boolean);
+  if (!list || !emails.length) return status("A list name and at least one email.", "error");
+  const result = await guard(() => api.newsletter.subscribe(list, emails));
+  if (result) {
+    status(`${result.added.length} added to ${list}${result.optedOut.length ? `, ${result.optedOut.length} opted out before and stay out` : ""}${result.invalid.length ? `, ${result.invalid.length} not an address` : ""}.`, "success");
+    nl("sub-emails").value = "";
+  }
+  renderNewsletter();
+});
+
+$("#btn-nl-import").addEventListener("click", async () => {
+  const list = nl("list").value.trim();
+  if (!list) return status("Put the list name in first.", "error");
+  const result = await guard(() => api.newsletter.import(list));
+  if (result) status(`${result.added.length} added to ${list}, ${result.already.length} already on it, ${result.optedOut.length} opted out, ${result.invalid.length} invalid.`, "success");
+  renderNewsletter();
+});
+
+$("#btn-nl-unsub").addEventListener("click", async () => {
+  const who = nl("unsub").value.trim();
+  if (!who) return;
+  const result = await guard(() => api.newsletter.unsubscribe(who));
+  status(result ? `${result.id} is opted out for good.` : `No subscriber ${who}.`, result ? "success" : "error");
+  nl("unsub").value = "";
+  renderNewsletter();
+});
 
 function escapeHtml(value) {
   return String(value ?? "").replace(/[&<>"']/g, (char) =>

@@ -44,6 +44,21 @@ contextBridge.exposeInMainWorld("myna", {
 
   history: () => call("history:list"),
 
+  newsletter: {
+    overview: () => call("newsletter:overview"),
+    create: (issue) => call("newsletter:create", issue),
+    update: (id, patch) => call("newsletter:update", id, patch),
+    remove: (id) => call("newsletter:remove", id),
+    dry: (id) => call("newsletter:dry", id),
+    test: (id, to) => call("newsletter:test", id, to),
+    send: (id) => call("newsletter:send", id),
+    stats: (id) => call("newsletter:stats", id),
+    subscribers: (list) => call("newsletter:subscribers", list),
+    subscribe: (list, emails) => call("newsletter:subscribe", list, emails),
+    unsubscribe: (who, list) => call("newsletter:unsubscribe", who, list),
+    import: (list) => call("newsletter:import", list),
+  },
+
   settings: {
     get: () => call("settings:get"),
     set: (settings) => call("settings:set", settings),
