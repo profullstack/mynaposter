@@ -27,6 +27,12 @@ export interface Topic {
   posts: number;
   /** True for a two-word phrase, which is a far stronger signal than a word. */
   phrase: boolean;
+  /**
+   * True when hitting this term alone is evidence enough: a phrase, or a word
+   * narrow enough that a stranger using it is probably talking about our
+   * subject rather than brushing past it.
+   */
+  strong: boolean;
 }
 
 /** One of our posts, reduced to what a link drop needs. */
@@ -61,12 +67,58 @@ const STOPWORDS = new Set(
     "now of off on once only or other ought our ours ourselves out over own same shan she should shouldn so some such than that " +
     "the their theirs them themselves then there these they this those through to too under until up very was wasn we were weren " +
     "check try via still even back going done say said tell asked ask well right sure maybe thanks please " +
+    "across within without around toward towards along upon per plus versus unless whether though although " +
     "what when where which while who whom why will with won would wouldn you your yours yourself yourselves " +
     "new now out ship shipped ships shipping release released releases version update updated updates post posted posting blog " +
     "read more here link thread today week day time make makes made get gets got use used using one two three next last also " +
     "like want need know think see look going come take way thing things lot bit really much many good great best better"
   ).split(/\s+/),
 );
+
+/**
+ * Ordinary English that cannot be a subject on its own, and cannot make a
+ * phrase into one either.
+ *
+ * This is the second half of the lesson that `topicIndex` documents. Inverse
+ * document frequency correctly demotes a word we use in every post, but it
+ * cannot see that a phrase is meaningless: post the same marketing sentence
+ * twelve times and "costs money", "nothing costs" and "anyone playing" are
+ * rare enough across the whole history to look highly distinctive, while
+ * matching any stranger who ever mentioned the price of anything. On a real
+ * install those three queued posts about the cost of living, satellite
+ * streaks, rural plumbing and a waiter's story.
+ *
+ * So a topic has to contain at least one word from outside this list. "free
+ * browser" survives on "browser"; "costs money" does not survive at all.
+ */
+const COMMON = new Set(
+  (
+    "free cost costs money price paid pay pays cheap expensive worth spend spent buy bought sell sold " +
+    "play playing played game games anyone someone everyone nobody everybody people person folks " +
+    "thing things stuff bit lots plenty part parts side sides place places home house world life lives living " +
+    "week weeks month months year years day days hour hours minute minutes today tomorrow yesterday " +
+    "big small large little long short high low easy hard simple quick fast slow early late " +
+    "full empty half whole every each both few many much more most less least " +
+    "old young real true false right wrong sure certain clear obvious " +
+    "start starts started stop stops stopped keep keeps kept turn turns turned " +
+    "help helps helped need needs needed want wants wanted try tries tried " +
+    "made makes making take takes taken give gives given come comes coming " +
+    "look looks looking feel feels felt seem seems find finds found " +
+    "built build builds open opens opened close closed closes run running " +
+    "work works working done doing goes going gone " +
+    "talk talks said says saying tell tells told ask asks asked " +
+    "call calls called move moves moved change changes changed " +
+    "problem problems question questions answer answers idea ideas reason reasons " +
+    "actually probably maybe perhaps definitely honestly literally basically " +
+    "anything something nothing everything someone anybody " +
+    "better best worse worst great good bad nice cool awesome amazing"
+  ).split(/\s+/),
+);
+
+/** True when a term carries a subject: at least one word that is not ordinary English. */
+export function contentful(term: string): boolean {
+  return term.split(" ").some((word) => word && !COMMON.has(word));
+}
 
 /** Strip the things that are never a topic: URLs, mentions, punctuation, our own UTM tags. */
 function clean(text: string): string {
@@ -141,6 +193,14 @@ export const MAX_DF = 0.12;
 export const MIN_POSTS = 2;
 /** Below this many posts there is no filler to find, so none is filtered. */
 export const SMALL = 10;
+/**
+ * A word in fewer than this fraction of our posts is narrow enough to stand on
+ * its own as evidence. On a real install "desktop" sits at 7% and is about our
+ * subject; "key" at 11% is a word we happen to use. The line is drawn between
+ * them, and well under MAX_DF, so a term can pass the filler test and still
+ * not be evidence on its own.
+ */
+export const STRONG_DF = 0.08;
 
 export function topicIndex(entries: HistoryEntry[], options: TopicOptions = {}): TopicIndex {
   const days = options.days ?? 14;
@@ -188,6 +248,9 @@ export function topicIndex(entries: HistoryEntry[], options: TopicOptions = {}):
   const weights = new Map<string, number>();
   for (const [term, count] of counts) {
     if (count < floor || count > ceiling) continue;
+    // A phrase made only of ordinary words is rare in our corpus and
+    // meaningless outside it, which is the worst possible combination.
+    if (!contentful(term)) continue;
     // Smoothed, so a term in every post of a tiny corpus still has a weight
     // rather than being zeroed out of existence by log(1).
     const idf = Math.log((documents + 1) / count) + 0.25;
@@ -196,8 +259,13 @@ export function topicIndex(entries: HistoryEntry[], options: TopicOptions = {}):
     weights.set(term, idf * phrase * (recencyOf.get(term) ?? 0));
   }
 
+  const strongAt = Math.max(1, documents * STRONG_DF);
   const kept = [...weights.entries()]
-    .map(([term, weight]): Topic => ({ term, weight, posts: counts.get(term) ?? 0, phrase: term.includes(" ") }))
+    .map(([term, weight]): Topic => {
+      const posts = counts.get(term) ?? 0;
+      const phrase = term.includes(" ");
+      return { term, weight, posts, phrase, strong: phrase || posts <= strongAt };
+    })
     .sort((a, b) => b.weight - a.weight || a.term.localeCompare(b.term))
     .slice(0, limit);
 
@@ -252,26 +320,27 @@ export interface Match {
 /**
  * Score somebody else's post against what we are about.
  *
- * Matching several of our words is not enough on its own: a long post will
- * brush against a few of anybody's terms by chance. To count as on-subject a
- * post has to hit either one of our phrases, or at least two distinct words.
- * One word is a coincidence and scores nothing.
+ * Matching one of our words is usually a coincidence: a long post will brush
+ * against somebody's vocabulary by chance. So a post has to hit either one
+ * term narrow enough to be evidence on its own (a phrase, or a word we use in
+ * only a small fraction of our posts) or two distinct terms. Anything less
+ * scores nothing at all, which is the right answer far more often than not.
  */
 export function scoreAgainst(text: string, index: TopicIndex): Match {
   const terms = termSet(text);
   if (!terms.size || !index.topics.length) return { score: 0, matched: [] };
 
   let weight = 0;
-  let phrases = 0;
+  let strong = 0;
   const matched: { term: string; weight: number }[] = [];
   for (const topic of index.topics) {
     if (!terms.has(topic.term)) continue;
     weight += topic.weight;
-    if (topic.phrase) phrases += 1;
+    if (topic.strong) strong += 1;
     matched.push(topic);
   }
 
-  if (!phrases && matched.length < 2) return { score: 0, matched: [] };
+  if (!strong && matched.length < 2) return { score: 0, matched: [] };
   return {
     score: Math.min(1, weight / index.reference),
     matched: matched.sort((a, b) => b.weight - a.weight).map((topic) => topic.term),
