@@ -22,7 +22,7 @@
  * nobody chose is worse than none, so without --announce the send is skipped
  * and the exact command to run is printed instead.
  */
-import { execFileSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync, copyFileSync, readdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 
@@ -46,17 +46,26 @@ interface Options {
 
 let dryRun = false;
 
-/** Run a command and return its output. Throws with the command's own stderr. */
+/**
+ * Run a command and return what it printed. Throws with the command's own
+ * output, so a failure says why rather than only that it happened.
+ *
+ * Both streams are read, never just stdout: bun test writes its counts to
+ * stderr, and a step whose report comes back empty reads exactly like a step
+ * that passed. What proves a command succeeded is its exit status.
+ */
 function run(command: string, args: string[], { cwd = ROOT, quiet = false } = {}): string {
-  try {
-    const out = execFileSync(command, args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
-    return out.trim();
-  } catch (error) {
-    const failure = error as { stderr?: string; stdout?: string; message: string };
-    const detail = (failure.stderr || failure.stdout || failure.message).trim();
-    if (!quiet) throw new Error(`${command} ${args.join(" ")}\n${detail}`);
-    return "";
+  const result = spawnSync(command, args, { cwd, encoding: "utf8" });
+  const output = `${result.stdout ?? ""}${result.stderr ?? ""}`.trim();
+  if (result.error) {
+    if (quiet) return "";
+    throw new Error(`${command} ${args.join(" ")}\n${result.error.message}`);
   }
+  if (result.status !== 0) {
+    if (quiet) return "";
+    throw new Error(`${command} ${args.join(" ")} exited ${result.status}\n${output}`);
+  }
+  return output;
 }
 
 /** A command that changes something outside this process. Skipped on a dry run. */
@@ -182,7 +191,7 @@ function installLocally(): void {
   if (existsSync(BINARY)) {
     const backup = nextBackup(BINARY);
     if (!dryRun) copyFileSync(BINARY, backup);
-    say(`  backup   ${backup}`);
+    say(dryRun ? `would  keep ${backup}` : `  backup   ${backup}`);
   }
   change("build ~/.local/bin/myna", "bun", [
     "build",
@@ -272,7 +281,15 @@ async function main(): Promise<number> {
   say("  typecheck clean");
   const test = workflowTestCommand();
   const result = run(test[0]!, test.slice(1));
-  say(`  ${result.split("\n").filter((line) => /pass|fail/.test(line)).join(" ").trim() || "tests passed"}`);
+  // Report the counts the runner itself printed. A summary this cannot find is
+  // said to be missing rather than reported as a pass: the exit status is what
+  // proved the tests passed, and claiming a count nobody printed hides a
+  // runner whose output moved.
+  const counts = result
+    .split("\n")
+    .map((line) => line.replace(/\[[0-9;]*m/g, "").trim())
+    .filter((line) => /^\d+\s+(pass|fail|skip)/.test(line));
+  say(`  ${counts.length ? counts.join(", ") : "tests exited 0 (no summary line found)"}`);
 
   step("merge");
   const branch = `release-${to}`;
