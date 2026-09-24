@@ -7,6 +7,7 @@
  * renderer, not mockups.
  */
 import { mkdirSync, writeFileSync, copyFileSync, existsSync, readdirSync } from "node:fs";
+import { renderPrivacyPage, renderTermsPage } from "./legal-pages.ts";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { renderToHtml } from "@profullstack/hqtui";
@@ -91,13 +92,14 @@ const page = `<!doctype html>
     <a href="#cli">CLI</a>
     <a href="#writer">Writer</a>
     <a href="https://github.com/profullstack/mynaposter">GitHub</a>
+    <a href="/privacy">Privacy</a>
   </nav>
 </header>
 
 <main>
 
 <section class="hero">
-  <h1>Post to every network<br>from your terminal.</h1>
+  <h1>myna: post to every network<br>from your terminal.</h1>
   <p class="lede">
     myna is a social media manager that lives where you already work. Connect an account,
     write once, and it goes everywhere &mdash; tailored to each network's limits, not truncated
@@ -281,10 +283,29 @@ ${networkRows}
   </div>
 </section>
 
+<section class="purpose" id="about">
+  <h2>What myna does</h2>
+  <p>
+    myna is a social media manager by Profullstack that runs on your own computer. You connect your
+    social accounts once, write a post once, and myna publishes it to the networks you pick, now or on a
+    schedule, each version fitted to that network. Your accounts and access tokens stay in an encrypted
+    vault on your machine.
+  </p>
+  <p>
+    Optionally, myna can connect to <strong>Google Calendar</strong>: it then adds an event for each post you
+    schedule to your calendar, updates it if you move the post and deletes it if you cancel. It asks only
+    for permission to manage those events and to list your calendars so you can choose one. It does not
+    read your other events. See exactly what myna does with Google data in the
+    <a href="/privacy#google">privacy policy</a>.
+  </p>
+</section>
+
 </main>
 
 <footer>
   <p>
+    <a href="/privacy">Privacy Policy</a> &middot;
+    <a href="/terms">Terms of Service</a> &middot;
     <a href="https://github.com/profullstack/mynaposter">Source</a> &middot;
     <a href="https://hqtui.com">Built with HQTUI</a> &middot;
     MIT &middot; <a href="https://profullstack.com">Profullstack</a>
@@ -297,6 +318,9 @@ ${networkRows}
 `;
 
 writeFileSync(join(out, "index.html"), page);
+// Required by Google's OAuth verification (and by everyone else): linked from the home page.
+writeFileSync(join(out, "privacy.html"), renderPrivacyPage());
+writeFileSync(join(out, "terms.html"), renderTermsPage());
 
 writeFileSync(
   join(out, "404.html"),
