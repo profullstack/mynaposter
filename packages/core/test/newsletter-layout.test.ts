@@ -50,7 +50,7 @@ test("a brand wraps the issue in the full layout", () => {
   expect(html).toContain("Example Inc., 1 Main St");
   expect(text).not.toContain("<");
   // Preheader carries the first paragraph, without Markdown marks.
-  expect(html).toMatch(/<div style="display:none[^"]*">Hello there, see the site/);
+  expect(html).toMatch(/<div style="display:none[^"]*">Hello there, see the site\./);
 });
 
 test("a bad accent falls back to the default instead of injecting CSS", () => {
@@ -64,4 +64,9 @@ test("styleBody leaves tags that already carry a style alone", () => {
   expect(out).toContain('<p style="');
   expect(out).toContain('style="color:blue"');
   expect(out.match(/style=/g)?.length).toBe(3);
+});
+
+test("the inbox preview skips a short greeting", () => {
+  const html = composeNewsletter({ ...issue, body: "Hi,\n\nThis is the first issue, with **real** news about [our work](https://example.com) this month.\n" }, { ...base, brand }).html ?? "";
+  expect(html).toMatch(/<div style="display:none[^"]*">This is the first issue, with real news about our work this month\./);
 });

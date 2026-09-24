@@ -39,7 +39,7 @@ import { extname } from "node:path";
 import { createHash, createHmac, randomBytes } from "node:crypto";
 import { addressOf, type SmtpMessage, type SmtpOptions, type SmtpServer } from "./smtp.ts";
 import { resolveSender, sendEach, smtpProvider, type MailMessage, type MailSender } from "./mail/index.ts";
-import { escapeHtml, firstParagraph, renderMarkdown } from "../util/markdown.ts";
+import { escapeHtml, renderMarkdown } from "../util/markdown.ts";
 import { hasBrand, layoutNewsletter, safeAccent, type NewsletterBrand } from "./newsletter-layout.ts";
 import { getJson, postJson } from "../util/http.ts";
 import { loadSettings, type NewsletterCta } from "../store/settings.ts";
@@ -270,6 +270,15 @@ export interface NewsletterComposeOptions {
 /** `https://...` in plain text; trailing sentence punctuation is left outside the link. */
 const TEXT_URL = /https?:\/\/[^\s<>()[\]"']+/g;
 
+/** The inbox preview: the first real paragraph, skipping a short greeting like "Hi,". */
+function previewLine(markdown: string): string {
+  const plain = (block: string): string =>
+    block.replace(/\[([^\]]*)\]\([^)]*\)/g, "$1").replace(/[*_`#>]/g, "").replace(/\s+/g, " ").trim();
+  const blocks = markdown.split(/\n\s*\n/).map(plain).filter(Boolean);
+  const pick = blocks.find((b) => b.length > 40) ?? blocks[0] ?? "";
+  return pick.length > 140 ? `${pick.slice(0, 139).replace(/\s+\S*$/, "")}...` : pick;
+}
+
 /** The message for one subscriber: body, footer, and the unsubscribe headers. */
 export function composeNewsletter(
   newsletter: Pick<Newsletter, "subject" | "body" | "list" | "replyTo"> & Partial<Pick<Newsletter, "service">>,
@@ -319,7 +328,7 @@ export function composeNewsletter(
         subject: options.subject ?? newsletter.subject,
         body: rendered,
         footer,
-        preview: firstParagraph(body.split(CTA_MARK).join("")).replace(/[*_`#>[\]]/g, "").slice(0, 140),
+        preview: previewLine(body.split(CTA_MARK).join("")),
         brand: branded,
         pixel,
       })
