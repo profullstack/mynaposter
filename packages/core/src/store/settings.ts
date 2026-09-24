@@ -237,9 +237,47 @@ export interface NewsletterSettings {
    * mynaposter.com, which needs `myna cloud login`.
    */
   unsubscribeUrl: string;
+  /**
+   * The crawlproof.com tracking id (24 hex). Set, every issue gets signed
+   * click links, an open pixel and crawlproof's signed unsubscribe link. Its
+   * secret is in the vault, never here.
+   */
+  trackingId: string;
+  /** Where tracking lives. Only a test or a staging host changes it. */
+  trackingHost: string;
+  /** Milliseconds between two messages of one send. */
+  paceMs: number;
+  /** Named sets of calls to action; an issue with a set rotates through it, one per variant. */
+  ctaSets: Record<string, NewsletterCta[]>;
 }
 
-export const DEFAULT_NEWSLETTER: NewsletterSettings = { address: "", unsubscribeUrl: "" };
+/** A call to action in a newsletter: the button text and where it goes. */
+export interface NewsletterCta {
+  label: string;
+  url: string;
+}
+
+export const DEFAULT_CTAS: NewsletterCta[] = [
+  { label: "Book a demo", url: "https://profullstack.com/book" },
+  { label: "Schedule a call", url: "https://profullstack.com/contact" },
+  { label: "See our plans", url: "https://profullstack.com/plans" },
+  { label: "Support us", url: "https://profullstack.com/support-us" },
+];
+
+export const DEFAULT_NEWSLETTER: NewsletterSettings = {
+  address: "",
+  unsubscribeUrl: "",
+  trackingId: "",
+  trackingHost: "https://crawlproof.com",
+  paceMs: 1000,
+  ctaSets: { default: DEFAULT_CTAS },
+};
+
+/** Stored over the defaults, with the CTA sets copied so an edit never reaches the defaults. */
+function newsletterSettings(stored: Partial<NewsletterSettings> | undefined): NewsletterSettings {
+  const sets = stored?.ctaSets && typeof stored.ctaSets === "object" ? stored.ctaSets : DEFAULT_NEWSLETTER.ctaSets;
+  return { ...DEFAULT_NEWSLETTER, ...stored, ctaSets: structuredClone(sets) };
+}
 
 export interface SynconfigSettings {
   /** Let the daemon pull and push on a schedule. On by default; it only runs once signed in to myna cloud. */
@@ -307,7 +345,7 @@ export const DEFAULT_SETTINGS: Settings = {
   engage: { ...DEFAULT_ENGAGE },
   did: { ...DEFAULT_DID },
   outreach: { ...DEFAULT_OUTREACH },
-  newsletter: { ...DEFAULT_NEWSLETTER },
+  newsletter: newsletterSettings(undefined),
   synconfig: { ...DEFAULT_SYNCONFIG },
   plugins: [],
   directories: [],
@@ -342,7 +380,7 @@ export function loadSettings(): Settings {
     engage: { ...DEFAULT_ENGAGE, ...stored.engage },
     did: { ...DEFAULT_DID, ...stored.did },
     outreach: { ...DEFAULT_OUTREACH, ...stored.outreach },
-    newsletter: { ...DEFAULT_NEWSLETTER, ...stored.newsletter },
+    newsletter: newsletterSettings(stored.newsletter),
     synconfig: { ...DEFAULT_SYNCONFIG, ...stored.synconfig },
     skills: {
       defaults: { ...(stored.skills?.defaults ?? {}) },

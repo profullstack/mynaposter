@@ -869,9 +869,9 @@ myna cloud login                                   # mynaposter.com hosts the un
 myna newsletter import subscribers.csv --list moshcode   # email,name,tags (or .json)
 myna newsletter subscribe ada@example.com --list moshcode --name Ada
 myna newsletter create --subject "Moshcode weekly #1" --list moshcode < issue.md
-myna newsletter send moshcode-weekly-1 --test you@example.com   # one [test] copy
+myna newsletter send moshcode-weekly-1 --to you@example.com     # one [test] copy (--test works too)
 myna newsletter send moshcode-weekly-1 --dry-run
-myna newsletter send moshcode-weekly-1
+myna newsletter send moshcode-weekly-1 --yes                    # without --yes: the numbers, nothing sent
 myna newsletter edit moshcode-weekly-2 --at "friday 9am"          # the daemon sends it
 myna newsletter list | show <id> [--body] | rm <id> [--force]
 myna newsletter subscribers --list moshcode
@@ -905,7 +905,46 @@ it. A refusal is `failed` and is retried only with `--retry-failed`; a send
 that died mid-message leaves `pending`, retried only with `--retry-uncertain`,
 because that person may already have it. An issue sent by hand that stopped
 part way (say with `--limit 5`) waits for a hand; only scheduled issues resume
-on their own.
+on their own. Messages go out one a second (`newsletter.paceMs`), and
+`--max-per-day N` raises the cap for one run.
+
+### Tracking and A/B tests
+
+With [crawlproof.com](https://crawlproof.com) tracking set up, every link in an
+issue goes through a signed click URL, the HTML part carries an open pixel,
+and the unsubscribe link is crawlproof's signed one (one-click too) instead of
+myna cloud's, so no `myna cloud login` is needed.
+
+```bash
+myna newsletter track set <trackingId> --secret <hex>   # from the project's Tracking tab; the secret goes in the vault
+myna newsletter track status --check
+myna newsletter create --id moshcode-001 --list moshcode-users --service moshcode \
+  --subject "What shipped in moshcode" --subject-b "Five new things in moshcode" < issue.md
+myna newsletter send moshcode-001 --dry-run         # the variants and how the list splits
+myna newsletter stats moshcode-001                  # per variant: sent, opens, clicks, CTR, unsubscribes
+myna newsletter sync-optouts                        # unsubscribes from myna cloud and crawlproof
+myna newsletter cta list | add "<label>" <url> | rm "<label>"   [--set name]
+```
+
+- **Variants.** An issue's subjects (one, or A and B with `--subject-b`) crossed
+  with the calls to action in its CTA set: two subjects and the four default
+  CTAs (Book a demo, Schedule a call, See our plans, Support us) make eight
+  variants, A to H. Which one a person gets is a hash of the issue id and their
+  address, so a resumed send gives nobody a different one. `{{cta}}` in the
+  body marks where the button goes; without it the CTA goes last, before the
+  footer. `create` uses the `default` set unless `--cta-set <name>` or
+  `--cta-set none`.
+- **The footer.** `--service moshcode` makes it say "You get this because you
+  have an account at moshcode; our Terms say we may email news and updates."
+  instead of "you subscribed to <list>", for a list of your users.
+- **Unsubscribes.** Before every send, myna pulls unsubscribes from every source
+  that is set up and makes them permanent opt-outs. If crawlproof cannot be
+  read, a tracked send refuses to go.
+- **Stats.** Events are joined to variants through each recipient's msgId in
+  `newsletters.json`. Opens and clicks count unique messages, with machine-flagged
+  ones (mail proxies, scanners, Apple's prefetch) left out; all opens are shown
+  beside them. The leader has the best click-through rate, or the best open rate
+  before anyone has clicked. Test copies (`--to`) are never counted.
 
 ## Your settings on every machine
 

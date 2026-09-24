@@ -13,18 +13,28 @@
  * back and turns each into the permanent opt-out in contacts.json, before
  * every send and on the daemon's turn.
  *
+ * With crawlproof tracking set up (`myna newsletter track set`), every link
+ * goes through a signed click URL, the HTML part carries an open pixel, and
+ * the unsubscribe link is crawlproof's signed one instead; its unsubscribes
+ * are pulled the same way. An issue with a second subject or a CTA set is
+ * an A/B test: its variants are the subjects crossed with the calls to
+ * action, and which one a person gets is a hash of the issue id and their
+ * address, so a resumed send gives nobody a different one.
+ *
  * Pacing is the outreach cap: an issue sends what today's
  * `outreach.maxEmailsPerDay` still allows and leaves the rest for the next
  * run, which picks up from the ledger.
  */
 import { readFileSync } from "node:fs";
 import { extname } from "node:path";
+import { createHash, createHmac, randomBytes } from "node:crypto";
 import { addressOf, sendSmtp, type SmtpMessage, type SmtpOptions, type SmtpServer } from "./smtp.ts";
 import { escapeHtml, renderMarkdown } from "../util/markdown.ts";
 import { getJson, postJson } from "../util/http.ts";
-import { loadSettings } from "../store/settings.ts";
+import { loadSettings, type NewsletterCta } from "../store/settings.ts";
 import { addToList, optIn, optOut, readContacts, recipients, upsertContact, removeFromList, contactId, type Contact } from "../store/contacts.ts";
 import { outreachSentToday, recordSent, smtpServer } from "../store/outreach.ts";
+import { getPluginSecrets } from "../store/accounts.ts";
 import { session, DEFAULT_SERVER } from "../store/cloud.ts";
 import {
   contactForToken,
@@ -33,8 +43,195 @@ import {
   requireNewsletter,
   tokenFor,
   writeNewsletters,
+  type Delivery,
   type Newsletter,
 } from "../store/newsletters.ts";
+
+// ---------------------------------------------------------------- crawlproof tracking
+//
+// The contract (crawlproof.com PR #266):
+//   base         https://crawlproof.com/t/<trackingId>          trackingId is 24 hex
+//   open         <base>/o.png?m=<msgId>&c=<campaign>&v=<variant>
+//   click        <base>/c?u=<url>&m=&c=&v=&s=<sig>              sig over u exactly as sent
+//   unsubscribe  <base>/u?m=&c=&e=<email>&s=<sig>               sig over lowercase(e); GET page, POST one-click
+//   events       GET /api/v1/tracking/<trackingId>/events?since=<iso>&type=   Bearer <secret>
+//                -> {events: [{type, m, c, v, url?, email?, machine?, at}], next}
+//                   oldest first; next is null on the last page, else an absolute URL to GET
+// sig = the first 32 hex characters of HMAC-SHA256(secret, value).
+
+export interface Tracking {
+  id: string;
+  secret: string;
+  /** https://crawlproof.com unless a test says otherwise. */
+  host?: string;
+}
+
+export interface TrackingEvent {
+  type: "open" | "click" | "unsubscribe" | string;
+  m?: string | null;
+  c?: string | null;
+  v?: string | null;
+  url?: string | null;
+  email?: string | null;
+  /** Opens and clicks only: a mail proxy, a scanner, Apple's prefetch. */
+  machine?: boolean | null;
+  at: string;
+}
+
+type Fetch = typeof fetch;
+
+export const TRACKING_SECRETS = "newsletter";
+export const TRACKING_ID = /^[0-9a-f]{24}$/i;
+const DEFAULT_TRACKING_HOST = "https://crawlproof.com";
+const CTA_MARK = "{{cta}}";
+
+/** The tracking set up on this machine: the id from settings, the secret from the vault. */
+export function newsletterTracking(): Tracking | undefined {
+  const settings = loadSettings().newsletter;
+  if (!settings.trackingId) return undefined;
+  const secret = getPluginSecrets(TRACKING_SECRETS).trackingSecret ?? "";
+  if (!secret) return undefined;
+  return { id: settings.trackingId, secret, host: settings.trackingHost };
+}
+
+export function trackingBase(tracking: Pick<Tracking, "id" | "host">): string {
+  return `${(tracking.host || DEFAULT_TRACKING_HOST).replace(/\/+$/, "")}/t/${encodeURIComponent(tracking.id)}`;
+}
+
+/** The first 32 hex characters of HMAC-SHA256(secret, value). */
+export function signTracking(secret: string, value: string): string {
+  return createHmac("sha256", secret).update(value, "utf8").digest("hex").slice(0, 32);
+}
+
+const q = encodeURIComponent;
+
+export interface TrackingIds {
+  m: string;
+  c: string;
+  v: string;
+}
+
+export function openPixelUrl(tracking: Tracking, ids: TrackingIds): string {
+  return `${trackingBase(tracking)}/o.png?m=${q(ids.m)}&c=${q(ids.c)}&v=${q(ids.v)}`;
+}
+
+export function clickUrl(tracking: Tracking, url: string, ids: TrackingIds): string {
+  return `${trackingBase(tracking)}/c?u=${q(url)}&m=${q(ids.m)}&c=${q(ids.c)}&v=${q(ids.v)}&s=${signTracking(tracking.secret, url)}`;
+}
+
+export function trackedUnsubscribeUrl(tracking: Tracking, ids: { m: string; c: string; email: string }): string {
+  const email = ids.email.trim().toLowerCase();
+  return `${trackingBase(tracking)}/u?m=${q(ids.m)}&c=${q(ids.c)}&e=${q(email)}&s=${signTracking(tracking.secret, email)}`;
+}
+
+/** A fresh msgId: what crawlproof ties opens, clicks and unsubscribes to. */
+export function newMsgId(): string {
+  return randomBytes(8).toString("hex");
+}
+
+/** Every event since `since`, following `next` (an absolute URL) until it is null. */
+export async function fetchTrackingEvents(tracking: Tracking, options: { since?: string | null; type?: string; fetcher?: Fetch } = {}): Promise<TrackingEvent[]> {
+  const fetcher = options.fetcher ?? fetch;
+  const host = (tracking.host || DEFAULT_TRACKING_HOST).replace(/\/+$/, "");
+  const since = options.since ?? "1970-01-01T00:00:00.000Z";
+  let url: string | null =
+    `${host}/api/v1/tracking/${q(tracking.id)}/events?since=${q(since)}${options.type ? `&type=${q(options.type)}` : ""}`;
+  const events: TrackingEvent[] = [];
+  const seen = new Set<string>();
+  while (url && !seen.has(url) && seen.size < 1000) {
+    seen.add(url);
+    const response: Response = await fetcher(url, { headers: { authorization: `Bearer ${tracking.secret}`, accept: "application/json" } });
+    if (!response.ok) {
+      const body = (await response.text().catch(() => "")).trim();
+      throw new Error(`crawlproof events: ${response.status}${body && !body.startsWith("<") ? ` ${body.slice(0, 200)}` : ""}`);
+    }
+    const payload = (await response.json()) as { events?: TrackingEvent[]; next?: string | null };
+    events.push(...(Array.isArray(payload.events) ? payload.events : []));
+    url = typeof payload.next === "string" && /^https?:\/\//.test(payload.next) ? payload.next : null;
+  }
+  return events;
+}
+
+export interface TrackingSyncResult {
+  pulled: number;
+  optedOut: string[];
+}
+
+/**
+ * Pull unsubscribes from crawlproof and opt each address out for good. One
+ * that is not a contact yet (a test copy's address, say) is added opted
+ * out, so no later list picks it up.
+ */
+export async function syncTrackingUnsubscribes(tracking: Tracking, options: { fetcher?: Fetch } = {}): Promise<TrackingSyncResult> {
+  const file = readNewsletters();
+  const events = await fetchTrackingEvents(tracking, { since: file.trackingSince, type: "unsubscribe", fetcher: options.fetcher });
+  const byMsg = new Map<string, string>();
+  for (const ledger of Object.values(file.deliveries)) for (const entry of Object.values(ledger)) if (entry.msgId) byMsg.set(entry.msgId, entry.to);
+  const result: TrackingSyncResult = { pulled: 0, optedOut: [] };
+  let newest = file.trackingSince;
+  for (const event of events) {
+    if (event.type !== "unsubscribe") continue;
+    result.pulled++;
+    if (!newest || event.at > newest) newest = event.at;
+    const email = (event.email ?? (event.m ? byMsg.get(event.m) : undefined))?.trim().toLowerCase();
+    if (!email) continue;
+    const contacts = readContacts();
+    const id = contactId({ email }) as string;
+    const contact = contacts.contacts.find((entry) => entry.id === id || entry.email?.toLowerCase() === email);
+    if (contact?.optedOut) continue;
+    if (contact) optOut(contact.id, contacts);
+    else {
+      upsertContact({ name: null, email, phone: null, handles: [], openprofile: null, source: "newsletter-unsubscribe", tags: [] }, contacts);
+      optOut(id, readContacts());
+    }
+    result.optedOut.push(email);
+  }
+  if (newest !== file.trackingSince) {
+    const fresh = readNewsletters();
+    fresh.trackingSince = newest;
+    writeNewsletters(fresh);
+  }
+  return result;
+}
+
+// ---------------------------------------------------------------- variants
+
+export interface Variant {
+  /** "A", "B", ...: what crawlproof records as `v`. */
+  key: string;
+  /** "A" or "B": which subject line. */
+  subjectKey: string;
+  subject: string;
+  cta: NewsletterCta | null;
+}
+
+const letter = (index: number): string => (index < 26 ? String.fromCharCode(65 + index) : `V${index + 1}`);
+
+/** Every subject crossed with every call to action: A is the first subject with the first CTA. */
+export function buildVariants(subjects: string[], ctas: (NewsletterCta | null)[]): Variant[] {
+  if (!subjects.length) throw new Error("A newsletter needs a subject.");
+  const list = ctas.length ? ctas : [null];
+  const variants: Variant[] = [];
+  for (const cta of list) subjects.forEach((subject, s) => variants.push({ key: letter(variants.length), subjectKey: letter(s), subject, cta }));
+  return variants;
+}
+
+/** Deterministic per person: sha256(campaign:email) mod the number of variants. */
+export function variantIndex(campaign: string, email: string, count: number): number {
+  const digest = createHash("sha256").update(`${campaign}:${email.trim().toLowerCase()}`).digest();
+  return digest.readUInt32BE(0) % count;
+}
+
+/** An issue's variants: its subjects crossed with its CTA set. */
+export function variantsFor(newsletter: Pick<Newsletter, "subject" | "subjectB" | "ctaSet">): Variant[] {
+  let ctas: (NewsletterCta | null)[] = [null];
+  if (newsletter.ctaSet) {
+    const set = loadSettings().newsletter.ctaSets[newsletter.ctaSet];
+    if (!set?.length) throw new Error(`No CTA set "${newsletter.ctaSet}", or it is empty. myna newsletter cta list shows them.`);
+    ctas = set;
+  }
+  return buildVariants([newsletter.subject, ...(newsletter.subjectB ? [newsletter.subjectB] : [])], ctas);
+}
 
 // ---------------------------------------------------------------- composing
 
@@ -46,23 +243,60 @@ export interface NewsletterComposeOptions {
   /** The sender, for the mailto fallback and the List-Id domain. */
   from: string;
   token: string;
+  /** The variant's subject, when it is not the issue's own. */
+  subject?: string;
+  /** The call to action for this variant: where `{{cta}}` is, else last before the footer. */
+  cta?: NewsletterCta | null;
+  /** Set, every link goes through a signed click URL and the HTML carries the open pixel. */
+  tracking?: { tracking: Tracking; ids: TrackingIds };
 }
 
+/** `https://...` in plain text; trailing sentence punctuation is left outside the link. */
+const TEXT_URL = /https?:\/\/[^\s<>()[\]"']+/g;
+
 /** The message for one subscriber: body, footer, and the unsubscribe headers. */
-export function composeNewsletter(newsletter: Pick<Newsletter, "subject" | "body" | "list" | "replyTo">, options: NewsletterComposeOptions): Omit<SmtpMessage, "to"> {
+export function composeNewsletter(
+  newsletter: Pick<Newsletter, "subject" | "body" | "list" | "replyTo"> & Partial<Pick<Newsletter, "service">>,
+  options: NewsletterComposeOptions,
+): Omit<SmtpMessage, "to"> {
   const sender = addressOf(options.from);
   const domain = sender.split("@")[1] ?? "myna.local";
   const listToken = newsletter.list.replace(/[^a-z0-9-]/gi, "-").toLowerCase() || "newsletter";
-  const reason = `You are getting this because you subscribed to ${newsletter.list}.`;
-  const text =
-    `${newsletter.body.trimEnd()}\n\n-- \n${reason}\nUnsubscribe with one click: ${options.link}\n\n${options.address.trim()}\n`;
+  const reason = newsletter.service
+    ? `You get this because you have an account at ${newsletter.service}; our Terms say we may email news and updates.`
+    : `You are getting this because you subscribed to ${newsletter.list}.`;
+
+  const tracked = options.tracking;
+  const base = tracked ? trackingBase(tracked.tracking) : "";
+  const wrap = (url: string): string => (tracked && !url.startsWith(base) ? clickUrl(tracked.tracking, url, tracked.ids) : url);
+
+  // Where the call to action goes; no CTA, and a stray marker is simply dropped.
+  let body = newsletter.body;
+  if (options.cta && !body.includes(CTA_MARK)) body = `${body.trimEnd()}\n\n${CTA_MARK}\n`;
+  const cta = options.cta;
+
+  let textBody = body.split(CTA_MARK).join(cta ? `${cta.label}: ${cta.url}` : "");
+  if (tracked)
+    textBody = textBody.replace(TEXT_URL, (match) => {
+      const trimmed = match.replace(/[.,;:!?]+$/, "");
+      return wrap(trimmed) + match.slice(trimmed.length);
+    });
+  const text = `${textBody.trimEnd()}\n\n-- \n${reason}\nUnsubscribe with one click: ${options.link}\n\n${options.address.trim()}\n`;
+
+  const button = cta
+    ? `<p style="margin:28px 0"><a href="${escapeHtml(cta.url)}" style="display:inline-block;padding:12px 22px;background:#111827;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:600">${escapeHtml(cta.label)}</a></p>`
+    : "";
+  let rendered = renderMarkdown(body);
+  rendered = rendered.split(`<p>${CTA_MARK}</p>`).join(button).split(CTA_MARK).join(button);
+  if (tracked) rendered = rendered.replace(/href="(https?:\/\/[^"]+)"/g, (_, href: string) => `href="${escapeHtml(wrap(href.replace(/&amp;/g, "&")))}"`);
   const small = 'style="font-size:12px;color:#666;line-height:1.5"';
+  const pixel = tracked ? `<img src="${escapeHtml(openPixelUrl(tracked.tracking, tracked.ids))}" width="1" height="1" alt="" style="border:0;width:1px;height:1px">\n` : "";
   const html =
-    `${renderMarkdown(newsletter.body)}\n<hr>\n` +
+    `${rendered}\n<hr>\n` +
     `<p ${small}>${escapeHtml(reason)} <a href="${escapeHtml(options.link)}">Unsubscribe</a>.</p>\n` +
-    `<p ${small}>${escapeHtml(options.address.trim()).replace(/\r?\n/g, "<br>")}</p>\n`;
+    `<p ${small}>${escapeHtml(options.address.trim()).replace(/\r?\n/g, "<br>")}</p>\n${pixel}`;
   return {
-    subject: newsletter.subject,
+    subject: options.subject ?? newsletter.subject,
     text,
     html,
     ...(newsletter.replyTo ? { replyTo: newsletter.replyTo } : {}),
@@ -299,14 +533,19 @@ export function readSubscriberFile(path: string): SubscriberInput[] {
   return parseSubscribers(readFileSync(path, "utf8"), format);
 }
 
+
 // ---------------------------------------------------------------- sending
 
 export interface SendNewsletterOptions {
   dryRun?: boolean;
-  /** Send one copy here and nothing else: no ledger, no status change. */
+  /** Send one copy here and nothing else: no ledger, no status change. Variant A. */
   test?: string;
   /** At most this many this run, under the daily cap. */
   limit?: number;
+  /** This run's daily cap instead of outreach.maxEmailsPerDay. */
+  maxPerDay?: number;
+  /** Milliseconds between two messages. The CLI and the daemon pass newsletter.paceMs. */
+  paceMs?: number;
   /** Mail recipients whose last send died mid-message. They may already have it. */
   retryUncertain?: boolean;
   /** Try again the recipients the server refused last time. */
@@ -317,6 +556,10 @@ export interface SendNewsletterOptions {
   smtp?: SmtpOptions;
   link?: (token: string) => string;
   now?: Date;
+  /** crawlproof tracking; undefined reads it from settings and the vault, null turns it off. */
+  tracking?: Tracking | null;
+  fetcher?: Fetch;
+  sleep?: (ms: number) => Promise<void>;
 }
 
 export interface SendNewsletterReport {
@@ -337,6 +580,10 @@ export interface SendNewsletterReport {
   /** Left for a later run by the daily cap or the limit. */
   remaining: number;
   status: Newsletter["status"];
+  /** The variants, and how many of those still due get each. */
+  variants: Variant[];
+  split: Record<string, number>;
+  tracked: boolean;
 }
 
 /** The postal address for an issue, or an error that says where to set it. */
@@ -349,7 +596,10 @@ export function addressFor(newsletter: Newsletter): string {
 export async function sendNewsletter(id: string, options: SendNewsletterOptions = {}): Promise<SendNewsletterReport> {
   const log = options.log ?? (() => undefined);
   const now = options.now ?? new Date();
+  const sleep = options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
   const newsletter = requireNewsletter(id);
+  const tracking = options.tracking === undefined ? newsletterTracking() : (options.tracking ?? undefined);
+  const variants = variantsFor(newsletter);
   const report: SendNewsletterReport = {
     id: newsletter.id,
     subject: newsletter.subject,
@@ -363,27 +613,52 @@ export async function sendNewsletter(id: string, options: SendNewsletterOptions 
     wouldSend: [],
     remaining: 0,
     status: newsletter.status,
+    variants,
+    split: {},
+    tracked: Boolean(tracking),
   };
 
-  // A test copy: one address, a fake token, nothing written but the outreach ledger.
+  /** One person's message: their variant, their msgId, their unsubscribe link. */
+  const messageFor = (to: string, variant: Variant, token: string, link: (token: string) => string, server: SmtpServer, subjectPrefix = "") => {
+    const msgId = newMsgId();
+    const ids = { m: msgId, c: newsletter.id, v: variant.key };
+    const unsubscribeLink = tracking ? trackedUnsubscribeUrl(tracking, { m: msgId, c: newsletter.id, email: to }) : link(token);
+    const message = composeNewsletter(newsletter, {
+      link: unsubscribeLink,
+      address: addressFor(newsletter),
+      from: server.from,
+      token,
+      subject: `${subjectPrefix}${variant.subject}`,
+      cta: variant.cta,
+      ...(tracking ? { tracking: { tracking, ids } } : {}),
+    });
+    return { message, msgId };
+  };
+  // Tracking makes crawlproof the unsubscribe host, so myna cloud is only asked when it is not.
+  const hostedLink = async (): Promise<(token: string) => string> => options.link ?? (tracking ? () => "" : await linkMaker());
+
+  // A test copy: one address, variant A, nothing written but the outreach ledger.
   if (options.test) {
-    const address = addressFor(newsletter);
+    const variant = variants[0] as Variant;
+    log(`Test copy to ${options.test} as variant ${variant.key} (subject ${variant.subjectKey}${variant.cta ? `, CTA "${variant.cta.label}"` : ""}).`);
+    const known = readContacts().contacts.find((c) => c.id === options.test!.trim().toLowerCase());
+    if (known?.optedOut) throw new Error(`${options.test} has opted out. It is never written to again.`);
     const server = options.server ?? smtpServer(newsletter.smtp ?? undefined);
-    let link: string;
+    let link: (token: string) => string;
     try {
-      link = (options.link ?? (await linkMaker()))("test-copy-not-a-subscriber");
+      link = await hostedLink();
     } catch (error) {
-      link = "https://example.invalid/unsubscribe";
+      link = () => "https://example.invalid/unsubscribe";
       log(`warning: ${(error as Error).message} The test copy carries a placeholder link.`);
     }
-    const message = composeNewsletter({ ...newsletter, subject: `[test] ${newsletter.subject}` }, { link, address, from: server.from, token: "test" });
+    const { message, msgId } = messageFor(options.test, variant, "test", link, server, "[test] ");
     if (options.dryRun) {
       report.wouldSend.push(options.test);
       return report;
     }
     try {
-      const result = await sendSmtp(server, { ...message, to: [options.test] }, options.smtp);
-      recordSent([{ at: now.toISOString(), kind: "email", to: options.test, via: server.id, subject: message.subject, ok: true, id: result.messageId }]);
+      await sendSmtp(server, { ...message, to: [options.test] }, options.smtp);
+      recordSent([{ at: now.toISOString(), kind: "email", to: options.test, via: server.id, subject: message.subject, ok: true, id: msgId }]);
       report.sent.push(options.test);
     } catch (error) {
       recordSent([{ at: now.toISOString(), kind: "email", to: options.test, via: server.id, subject: message.subject, ok: false, error: (error as Error).message }]);
@@ -399,6 +674,15 @@ export async function sendNewsletter(id: string, options: SendNewsletterOptions 
     } catch (error) {
       log(`warning: could not read unsubscribes from myna cloud (${(error as Error).message}); sending to the list as it stands.`);
     }
+    if (tracking) {
+      // The tracked link is the one people press, so a send never goes without its unsubscribes.
+      try {
+        const synced = await syncTrackingUnsubscribes(tracking, { fetcher: options.fetcher });
+        if (synced.optedOut.length) log(`${synced.optedOut.length} unsubscribed through crawlproof: ${synced.optedOut.join(", ")}`);
+      } catch (error) {
+        throw new Error(`Could not read unsubscribes from crawlproof (${(error as Error).message}); not sending until they are applied.`);
+      }
+    }
   }
 
   const ledger = readNewsletters().deliveries[newsletter.id] ?? {};
@@ -413,16 +697,22 @@ export async function sendNewsletter(id: string, options: SendNewsletterOptions 
     else if (entry?.state === "failed" && !options.retryFailed) report.previouslyFailed++;
     else due.push(contact);
   }
+  const variantOf = (contact: Contact): Variant => variants[variantIndex(newsletter.id, contact.email as string, variants.length)] as Variant;
+  for (const contact of due) {
+    const key = variantOf(contact).key;
+    report.split[key] = (report.split[key] ?? 0) + 1;
+  }
 
   const settings = loadSettings();
-  const capLeft = Math.max(0, settings.outreach.maxEmailsPerDay - outreachSentToday("email", now.getTime()));
+  const cap = options.maxPerDay ?? settings.outreach.maxEmailsPerDay;
+  const capLeft = Math.max(0, cap - outreachSentToday("email", now.getTime()));
   const room = Math.min(capLeft, options.limit ?? Number.POSITIVE_INFINITY);
   const batch = due.slice(0, room);
   report.remaining = due.length - batch.length;
 
   if (options.dryRun) {
     report.wouldSend = batch.map((contact) => contact.email as string);
-    if (report.remaining) log(`${report.remaining} more wait for a later run (daily cap ${settings.outreach.maxEmailsPerDay}, ${capLeft} left today).`);
+    if (report.remaining) log(`${report.remaining} more wait for a later run (daily cap ${cap}, ${capLeft} left today).`);
     try {
       addressFor(newsletter);
     } catch (error) {
@@ -431,30 +721,38 @@ export async function sendNewsletter(id: string, options: SendNewsletterOptions 
     return report;
   }
 
-  const address = addressFor(newsletter);
+  addressFor(newsletter);
   if (batch.length) {
     const server = options.server ?? smtpServer(newsletter.smtp ?? undefined);
-    const link = options.link ?? (await linkMaker());
-    for (const contact of batch) {
+    const link = await hostedLink();
+    for (const [index, contact] of batch.entries()) {
       const to = contact.email as string;
       const token = tokenFor(contact.id);
-      const message = composeNewsletter(newsletter, { link: link(token), address, from: server.from, token });
-      recordDelivery(newsletter.id, contact.id, { state: "pending", at: new Date().toISOString(), to });
+      const variant = variantOf(contact);
+      const { message, msgId } = messageFor(to, variant, token, link, server);
+      const tag: Pick<Delivery, "msgId" | "variant" | "subjectKey" | "cta"> = {
+        msgId,
+        variant: variant.key,
+        subjectKey: variant.subjectKey,
+        ...(variant.cta ? { cta: variant.cta.label } : {}),
+      };
+      recordDelivery(newsletter.id, contact.id, { state: "pending", at: new Date().toISOString(), to, ...tag });
       try {
         const result = await sendSmtp(server, { ...message, to: [to] }, options.smtp);
         const at = new Date().toISOString();
-        recordDelivery(newsletter.id, contact.id, { state: "sent", at, to, messageId: result.messageId });
-        recordSent([{ at, kind: "email", to, via: server.id, subject: newsletter.subject, ok: true, id: result.messageId }]);
+        recordDelivery(newsletter.id, contact.id, { state: "sent", at, to, messageId: result.messageId, ...tag });
+        recordSent([{ at, kind: "email", to, via: server.id, subject: message.subject, ok: true, id: result.messageId }]);
         report.sent.push(to);
-        log(`sent to ${contact.name ? `${contact.name} ` : ""}<${to}>`);
+        log(`sent ${variants.length > 1 ? `${variant.key} ` : ""}to ${contact.name ? `${contact.name} ` : ""}<${to}>`);
       } catch (error) {
         const at = new Date().toISOString();
-        const message = (error as Error).message;
-        recordDelivery(newsletter.id, contact.id, { state: "failed", at, to, error: message });
-        recordSent([{ at, kind: "email", to, via: server.id, subject: newsletter.subject, ok: false, error: message }]);
-        report.failed.push({ to, error: message });
-        log(`could not send to <${to}>: ${message}`);
+        const reason = (error as Error).message;
+        recordDelivery(newsletter.id, contact.id, { state: "failed", at, to, error: reason, ...tag });
+        recordSent([{ at, kind: "email", to, via: server.id, subject: message.subject, ok: false, error: reason }]);
+        report.failed.push({ to, error: reason });
+        log(`could not send to <${to}>: ${reason}`);
       }
+      if (options.paceMs && index < batch.length - 1) await sleep(options.paceMs);
     }
   }
 
@@ -472,6 +770,95 @@ export async function sendNewsletter(id: string, options: SendNewsletterOptions 
     report.status = current.status;
   }
   return report;
+}
+
+// ---------------------------------------------------------------- stats
+
+export interface VariantStats {
+  variant: string;
+  subjectKey: string;
+  cta: string;
+  sent: number;
+  /** Unique messages opened by a person (machine-flagged opens left out). */
+  opens: number;
+  /** Unique messages with any open, machines included. */
+  opensTotal: number;
+  /** Unique messages clicked by a person (machine-flagged clicks left out, so a link scanner cannot pick the leader). */
+  clicks: number;
+  ctr: number;
+  unsubscribes: number;
+}
+
+export interface NewsletterStats {
+  id: string;
+  rows: VariantStats[];
+  leader: string | null;
+  /** What the leader leads on. */
+  basis: "clicks" | "opens" | null;
+}
+
+/** Join crawlproof's events to the ledger by msgId, and count per variant. Test copies are not in the ledger. */
+export function newsletterStats(id: string, events: TrackingEvent[], deliveries: Record<string, Delivery> = readNewsletters().deliveries[id] ?? {}): NewsletterStats {
+  const rows = new Map<string, VariantStats>();
+  const variantOf = new Map<string, string>();
+  for (const entry of Object.values(deliveries)) {
+    if (entry.state !== "sent") continue;
+    const variant = entry.variant ?? "A";
+    if (entry.msgId) variantOf.set(entry.msgId, variant);
+    const row = rows.get(variant) ?? { variant, subjectKey: entry.subjectKey ?? "A", cta: entry.cta ?? "", sent: 0, opens: 0, opensTotal: 0, clicks: 0, ctr: 0, unsubscribes: 0 };
+    row.sent++;
+    rows.set(variant, row);
+  }
+  const sets = new Map<string, { open: Set<string>; all: Set<string>; click: Set<string>; unsub: Set<string> }>();
+  for (const event of events) {
+    const variant = event.m ? variantOf.get(event.m) : undefined;
+    if (!variant || !event.m) continue;
+    const bucket = sets.get(variant) ?? { open: new Set(), all: new Set(), click: new Set(), unsub: new Set() };
+    sets.set(variant, bucket);
+    if (event.type === "open") {
+      bucket.all.add(event.m);
+      if (!event.machine) bucket.open.add(event.m);
+    } else if (event.type === "click") {
+      if (!event.machine) bucket.click.add(event.m);
+    } else if (event.type === "unsubscribe") bucket.unsub.add(event.m);
+  }
+  for (const [variant, row] of rows) {
+    const bucket = sets.get(variant);
+    row.opens = bucket?.open.size ?? 0;
+    row.opensTotal = bucket?.all.size ?? 0;
+    row.clicks = bucket?.click.size ?? 0;
+    row.unsubscribes = bucket?.unsub.size ?? 0;
+    row.ctr = row.sent ? row.clicks / row.sent : 0;
+  }
+  const list = [...rows.values()].sort((a, b) => a.variant.localeCompare(b.variant, undefined, { numeric: true }));
+  const openRate = (row: VariantStats): number => (row.sent ? row.opens / row.sent : 0);
+  let leader: string | null = null;
+  let basis: NewsletterStats["basis"] = null;
+  if (list.some((row) => row.clicks > 0)) {
+    leader = [...list].sort((a, b) => b.ctr - a.ctr || openRate(b) - openRate(a))[0]?.variant ?? null;
+    basis = "clicks";
+  } else if (list.some((row) => row.opens > 0)) {
+    leader = [...list].sort((a, b) => openRate(b) - openRate(a))[0]?.variant ?? null;
+    basis = "opens";
+  }
+  return { id, rows: list, leader, basis };
+}
+
+/** Pull the issue's events from crawlproof, from its first send on, and count them. */
+export async function fetchNewsletterStats(id: string, tracking: Tracking, options: { fetcher?: Fetch } = {}): Promise<NewsletterStats> {
+  const newsletter = requireNewsletter(id);
+  const deliveries = readNewsletters().deliveries[newsletter.id] ?? {};
+  const since = Object.values(deliveries).map((entry) => entry.at).sort()[0];
+  const events = since ? await fetchTrackingEvents(tracking, { since: new Date(Date.parse(since) - 60_000).toISOString(), fetcher: options.fetcher }) : [];
+  return newsletterStats(newsletter.id, events.filter((event) => !event.c || event.c === newsletter.id), deliveries);
+}
+
+/** Every unsubscribe source that is set up: myna cloud's hosted link, and crawlproof tracking. */
+export async function syncAllUnsubscribes(options: { tracking?: Tracking | null; fetcher?: Fetch } = {}): Promise<{ cloud: SyncResult; tracking: TrackingSyncResult | null }> {
+  const tracking = options.tracking === undefined ? newsletterTracking() : (options.tracking ?? undefined);
+  const cloud = await syncUnsubscribes();
+  const tracked = tracking ? await syncTrackingUnsubscribes(tracking, { fetcher: options.fetcher }) : null;
+  return { cloud, tracking: tracked };
 }
 
 /**
