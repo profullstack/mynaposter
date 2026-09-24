@@ -12,10 +12,12 @@
  *   /newsletter schedule <id> <when>     the daemon sends it
  *   /newsletter stats <id>               per variant, from crawlproof
  *   /newsletter subscribe <list> <email...> | unsubscribe <email> | import <list> <file>
+ *   /newsletter track <site>             CrawlProof tracking, from your project
  *   /newsletter rm <id>
  */
 import type { Container, Theme } from "@profullstack/hqtui";
 import {
+  connectTracking,
   createNewsletter,
   editNewsletter,
   fetchNewsletterStats,
@@ -225,6 +227,19 @@ export async function runNewsletterCommand(state: State, args: string, redraw: (
       say([result ? (result.permanent ? `${result.id} is opted out for good.` : `${result.id} is off ${list}.`) : `No subscriber ${who}.`]);
       return;
     }
+    case "track": {
+      const [site] = rest;
+      if (!site) throw new Error("Usage: /newsletter track <site>   (a CrawlProof project; needs myna crawlproof login)");
+      state.busy = `Connecting CrawlProof tracking for ${site}…`;
+      try {
+        const connected = await connectTracking(site);
+        say([`Tracking through CrawlProof ${connected.trackingId} for ${connected.site}${connected.enabled ? " (switched on)" : ""}.`]);
+        toast(state, `Tracking on for ${connected.site}`, "success");
+      } finally {
+        state.busy = "";
+      }
+      return;
+    }
     case "rm": {
       const id = requireId(rest);
       state.confirm = {
@@ -244,7 +259,7 @@ export async function runNewsletterCommand(state: State, args: string, redraw: (
       return;
     }
     default:
-      throw new Error(`Unknown: /newsletter ${sub}. Try new, dry, test, send, schedule, stats, subscribe, import, unsubscribe or rm.`);
+      throw new Error(`Unknown: /newsletter ${sub}. Try new, dry, test, send, schedule, stats, subscribe, import, unsubscribe, track or rm.`);
   }
 }
 

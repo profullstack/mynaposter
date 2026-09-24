@@ -57,6 +57,7 @@ contextBridge.exposeInMainWorld("myna", {
     subscribe: (list, emails) => call("newsletter:subscribe", list, emails),
     unsubscribe: (who, list) => call("newsletter:unsubscribe", who, list),
     import: (list) => call("newsletter:import", list),
+    track: (site) => call("newsletter:track", site),
   },
 
   settings: {

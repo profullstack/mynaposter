@@ -980,7 +980,8 @@ and the unsubscribe link is crawlproof's signed one (one-click too) instead of
 myna cloud's, so no `myna cloud login` is needed.
 
 ```bash
-myna newsletter track set <trackingId> --secret <hex>   # from the project's Tracking tab; the secret goes in the vault
+myna newsletter track connect moshcode.sh           # from your CrawlProof project: switched on, id and secret kept
+myna newsletter track set <trackingId> --secret <hex>   # or by hand, from the project's Tracking tab
 myna newsletter track status --check
 myna newsletter create --id moshcode-001 --list moshcode-users --service moshcode \
   --subject "What shipped in moshcode" --subject-b "Five new things in moshcode" < issue.md
@@ -1125,7 +1126,7 @@ bun run db:migrate
 { "mcpServers": { "myna": { "command": "bunx", "args": ["@profullstack/myna-mcp"] } } }
 ```
 
-Twenty-seven tools: `myna_accounts`, `myna_networks`, `myna_skills`,
+Twenty-eight tools: `myna_accounts`, `myna_networks`, `myna_skills`,
 `myna_skill`, `myna_preview`, `myna_post`, `myna_update`, `myna_schedule`, `myna_queue`,
 `myna_cancel`, `myna_history`, `myna_draft`, `myna_timeline`, `myna_search`,
 and for [directories](#directories) `myna_directories`,
@@ -1134,7 +1135,7 @@ and for [directories](#directories) `myna_directories`,
 `myna_newsletters`, `myna_newsletter`, `myna_newsletter_create`,
 `myna_newsletter_edit`, `myna_newsletter_delete`, `myna_newsletter_send`
 (a dry run unless `dry_run` is false), `myna_newsletter_subscribe`,
-`myna_newsletter_unsubscribe` and `myna_newsletter_subscribers`. An agent should call `myna_skill` for an account
+`myna_newsletter_unsubscribe`, `myna_newsletter_subscribers` and `myna_newsletter_track_connect`. An agent should call `myna_skill` for an account
 before `myna_post` to it: the [skill](#skills-the-rules-per-network-and-per-account)
 says what belongs there and how often.
 

@@ -30,6 +30,7 @@
  */
 import { readFileSync } from "node:fs";
 import {
+  connectTracking,
   TRACKING_ID,
   TRACKING_SECRETS,
   createNewsletter,
@@ -119,6 +120,13 @@ async function runTrack(rest: string[], flags: Flags): Promise<number> {
     out("Every issue's links, open pixel and unsubscribe link now go through it.");
     return 0;
   }
+  if (sub === "connect") {
+    if (!id) throw new Error("Usage: myna newsletter track connect <site>   (a CrawlProof project, e.g. moshcode.sh; needs myna crawlproof login)");
+    const connected = await connectTracking(id);
+    out(`Tracking through ${trackingBase({ id: connected.trackingId, host: connected.host })} for ${connected.site}${connected.enabled ? " (switched on just now)" : ""}. The secret is in the vault.`);
+    out("Every issue's links, open pixel and unsubscribe link now go through it.");
+    return 0;
+  }
   if (sub === "off") {
     settings.newsletter.trackingId = "";
     saveSettings(settings);
@@ -144,7 +152,7 @@ async function runTrack(rest: string[], flags: Flags): Promise<number> {
     }
     return 0;
   }
-  throw new Error(`Unknown: myna newsletter track ${sub}. Try set, status or off.`);
+  throw new Error(`Unknown: myna newsletter track ${sub}. Try connect, set, status or off.`);
 }
 
 function runCta(rest: string[], flags: Flags): number {

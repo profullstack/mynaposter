@@ -878,6 +878,14 @@ $("#btn-nl-import").addEventListener("click", async () => {
   renderNewsletter();
 });
 
+$("#btn-nl-track").addEventListener("click", async () => {
+  const site = nl("track-site").value.trim();
+  if (!site) return status("Name the CrawlProof project, e.g. moshcode.sh.", "error");
+  const connected = await guard(() => api.newsletter.track(site), `Connecting ${site}…`);
+  if (connected) status(`Tracking on for ${connected.site} (${connected.trackingId}).`, "success");
+  renderNewsletter();
+});
+
 $("#btn-nl-unsub").addEventListener("click", async () => {
   const who = nl("unsub").value.trim();
   if (!who) return;

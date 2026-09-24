@@ -166,6 +166,8 @@ address on every one, paced by outreach.maxEmailsPerDay):
   newsletter unsubscribe <email|token> [--list L]   Without --list: opted out for good
   newsletter subscribers --list <L> | import <file.csv|.json> --list <L>
   newsletter sync | sync-optouts    Pull unsubscribes from myna cloud and crawlproof
+  newsletter track connect <site>   Tracking from your CrawlProof project, on and saved
+                                    in one step (needs myna crawlproof login)
   newsletter track set <id> [--secret hex] | track status [--check] | track off
                                     crawlproof tracking: signed links, open pixel,
                                     its unsubscribe link; the secret goes in the vault
