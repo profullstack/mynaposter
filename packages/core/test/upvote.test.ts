@@ -22,6 +22,8 @@ import { listUpvotes, readUpvotes, updateUpvote } from "../src/store/upvote.ts";
 import { recordHistory, listHistory } from "../src/store/history.ts";
 import { resetAccountCache, saveAccount } from "../src/store/accounts.ts";
 import { registerNetwork, unregisterNetwork } from "../src/net/registry.ts";
+import { registerPlugin, resetPlugins } from "../src/plugins/loader.ts";
+import type { DiscoveredEvent } from "../src/plugins/types.ts";
 import { DEFAULT_UPVOTE } from "../src/store/settings.ts";
 import type { Account, Network, TimelineItem } from "../src/net/types.ts";
 import type { LinkDropRequest } from "../src/ai/writer.ts";
@@ -583,4 +585,85 @@ test("editing a queued action into a reply cannot publish a new thread", async (
   expect(posted.length).toBe(0);
   const after = listUpvotes()[0];
   expect(after?.error).toContain("cannot reply");
+});
+
+test("everybody found is handed to the plugins that collect people", async () => {
+  const seen: DiscoveredEvent[] = [];
+  registerPlugin(
+    {
+      id: "collector",
+      name: "collector",
+      description: "",
+      async afterDiscover(event: DiscoveredEvent) {
+        seen.push(event);
+        return `took ${event.handle}`;
+      },
+    } as never,
+    "bundled",
+  );
+  useNetwork("fake");
+  saveAccount(account("fake:me", "fake", "me"));
+  ourHistory();
+  results = [found({ id: "a1", handle: "ada", text: "rust ropes in a terminal editor, gap buffer benchmarks" })];
+
+  await scanUpvotes({ settings, now: T0, drafter, writerReady: true });
+
+  expect(seen.length).toBe(1);
+  expect(seen[0]?.handle).toBe("ada");
+  expect(seen[0]?.network).toBe("fake");
+  expect(seen[0]?.action).toBe("vote");
+  // The reason they are a lead travels with them.
+  expect(seen[0]?.score).toBeGreaterThan(0);
+  expect(seen[0]?.matched.length).toBeGreaterThan(0);
+  expect(seen[0]?.postText).toContain("rust ropes");
+  resetPlugins();
+});
+
+test("a plugin that throws does not cost the queue entry", async () => {
+  registerPlugin(
+    {
+      id: "broken",
+      name: "broken",
+      description: "",
+      async afterDiscover() {
+        throw new Error("CRM is down");
+      },
+    } as never,
+    "bundled",
+  );
+  useNetwork("fake");
+  saveAccount(account("fake:me", "fake", "me"));
+  ourHistory();
+  results = [found({ id: "a1", handle: "ada", text: "rust ropes in a terminal editor" })];
+
+  const result = await scanUpvotes({ settings, now: T0, drafter, writerReady: true });
+
+  // The action is queued regardless, and the failure is reported not swallowed.
+  expect(result.queued.length).toBe(1);
+  expect(listUpvotes().length).toBe(1);
+  expect(result.skipped.join(" ")).toContain("CRM is down");
+  resetPlugins();
+});
+
+test("handOff false keeps a scan local", async () => {
+  const seen: DiscoveredEvent[] = [];
+  registerPlugin(
+    {
+      id: "collector2",
+      name: "collector2",
+      description: "",
+      async afterDiscover(event: DiscoveredEvent) {
+        seen.push(event);
+      },
+    } as never,
+    "bundled",
+  );
+  useNetwork("fake");
+  saveAccount(account("fake:me", "fake", "me"));
+  ourHistory();
+  results = [found({ id: "a1", handle: "ada", text: "rust ropes in a terminal editor" })];
+
+  await scanUpvotes({ settings, now: T0, drafter, writerReady: true, handOff: false });
+  expect(seen.length).toBe(0);
+  resetPlugins();
 });

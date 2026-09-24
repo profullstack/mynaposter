@@ -266,6 +266,12 @@ export interface UpvoteSettings {
   linkMinScore: number;
   /** Replies carrying a link, per account, in a rolling day. The hard cap under `linkRatio`. */
   linkPerDay: number;
+  /**
+   * Hand everybody the upvoter finds to the plugins that collect people, as
+   * leads. The upvoter does not know what a lead is: it fires `afterDiscover`
+   * and whatever is installed decides. OutreachGraph reads this one.
+   */
+  leads: boolean;
 }
 
 export interface DidSettings {
@@ -405,6 +411,7 @@ export const DEFAULT_UPVOTE: UpvoteSettings = {
   linkRatio: 0.06,
   linkMinScore: 0.5,
   linkPerDay: 2,
+  leads: true,
 };
 
 export const DEFAULT_SETTINGS: Settings = {

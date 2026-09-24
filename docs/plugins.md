@@ -208,3 +208,21 @@ none, which is what a setting is for. `ctx.graph.following` and
 that wants to hand over more than the one person just followed. As with
 `afterPost`, a line back is shown to the person and a throw never undoes the
 follow.
+
+## `afterDiscover`
+
+Called for each person the upvoter finds worth amplifying, once their action is
+queued and before anything is cast. The event carries who they are, the post
+that matched, the score, and which of your topics they hit.
+
+```ts
+async afterDiscover(event, ctx) {
+  if (!ctx.settings().upvote.leads) return;
+  return `took ${event.handle} (${event.score}: ${event.matched.join(", ")})`;
+}
+```
+
+For a plugin that collects people: a CRM, a lead list, a follow graph. The
+upvoter does not know what any of those are. Throwing is reported through the
+plugin's log and never costs the queue entry, because by the time this runs the
+finding is already recorded. See [the upvoter](upvote.md).

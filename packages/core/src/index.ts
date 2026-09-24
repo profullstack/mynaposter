@@ -245,7 +245,7 @@ export {
   type RecapPrev,
   type SendRecapResult,
 } from "./core/recap.ts";
-export { runAfterPost, runAfterSchedule, runAfterCancel, postedEvent, scheduledEvent, type HookOutcome } from "./plugins/hooks.ts";
+export { runAfterPost, runAfterSchedule, runAfterCancel, runAfterDiscover, postedEvent, scheduledEvent, type HookOutcome } from "./plugins/hooks.ts";
 export { renderMarkdown, renderInline, firstParagraph, slugify, escapeHtml } from "./util/markdown.ts";
 export { loadMedia, loadAllMedia } from "./core/media.ts";
 export { runDuePosts, startScheduler } from "./core/scheduler.ts";
@@ -308,6 +308,7 @@ export type {
   LoadedPlugin,
   PostedEvent,
   FollowedEvent,
+  DiscoveredEvent,
   PostedTarget,
   ScheduledEvent,
   CancelledEvent,

@@ -85,6 +85,42 @@ reddit`. Any network can be put in or taken out of that list.
 Every reply it sends lands in `myna history` as type `reply`, so the rest of
 myna counts it like any other post.
 
+## The people it finds are leads
+
+Somebody posting publicly about the thing you sell, recently enough to still be
+in a search result, matching it well enough to clear the bar, is a better lead
+than anyone you followed on a hunch. So the upvoter hands every person it finds
+to whatever is installed that collects people, through a plugin hook:
+
+```ts
+async afterDiscover(event: DiscoveredEvent, ctx: PluginContext) {
+  // event: account, network, handle, displayName, postText, postUrl,
+  //        score, matched (the topics they hit), action
+}
+```
+
+The upvoter does not know what a lead is, and nothing in core mentions a CRM.
+It fires the hook once per person per scan, as soon as the action is queued
+and before anything is cast, because the finding is worth something even if
+the vote is later skipped. A hook that throws is reported and never costs the
+queue entry.
+
+**OutreachGraph is the one that ships.** It is already a myna plugin with its
+own sign-in, so there is nothing new to connect:
+
+```sh
+myna outreachgraph login          # email and password, kept in the vault
+myna config upvote.leads true     # on by default
+```
+
+Each person goes over with `via` set to `upvote:<the topics they matched>`, so
+OutreachGraph knows what to reach them about rather than inferring it, and the
+post myna actually read travels as their bio. Networks OutreachGraph does not
+know are skipped with a line saying so.
+
+Anything else can collect them instead, or as well: implement `afterDiscover`
+in your own plugin and it gets the same events, in load order, one at a time.
+
 ## Settings
 
 `myna upvote set <key> <value>`:
@@ -105,6 +141,7 @@ myna counts it like any other post.
 | `searchLimit` | 25 | results asked of each network per query |
 | `networks` | `all` | which networks to amplify on |
 | `manualOnly` | `reddit` | queued, but never cast without a person |
+| `leads` | `true` | hand everybody found to the plugins that collect people |
 
 ## Everywhere else
 
