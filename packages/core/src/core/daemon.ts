@@ -70,7 +70,7 @@ export function builtinJobs(log: (line: string) => void, tickMs: number): Daemon
     async run() {
       if (!readNewsletters().newsletters.some((entry) => entry.scheduledFor && entry.status !== "sent")) {
         const synced = await syncUnsubscribes();
-        if (synced.optedOut.length) return `${synced.optedOut.length} unsubscribed`;
+        if (synced.optedOut.length || synced.resubscribed.length) return `${synced.optedOut.length} unsubscribed, ${synced.resubscribed.length} re-subscribed`;
         return;
       }
       const reports = await runDueNewsletters(new Date(), { log });

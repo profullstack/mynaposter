@@ -4,18 +4,25 @@
  * A signed-in myna cloud user gets one inbox, a random public id their
  * unsubscribe links carry. The link is /v1/newsletter/u/<inbox>/<token>,
  * where the token was made on the sender's machine and means nothing here:
- * this side never learns an address. A POST to the link (the mail client's
- * one-click, RFC 8058, or the button on the page a GET shows) records the
- * token; the sender's myna pulls the tokens back and opts those people out.
+ * this side never learns an address.
  *
- * A GET never unsubscribes. Link scanners and preview panes fetch every URL
- * in a message, and a reader should not lose a subscription to one.
+ * Two doors, one outcome:
+ *   - the List-Unsubscribe-Post header (RFC 8058, what Gmail and Yahoo require
+ *     of bulk senders): the mail client POSTs the link and nobody sees a page;
+ *   - the footer link: one click unsubscribes and shows "you're unsubscribed"
+ *     with a Re-subscribe button, so a click nobody meant is one press to undo.
+ *
+ * Each token has one row holding its latest state, `unsubscribed` or
+ * `resubscribed`, stamped when it last changed. The sender's myna pulls the
+ * rows changed since its last pull and opts people out, or back in.
  */
 import { randomBytes } from "node:crypto";
 import { db } from "./db/index.ts";
 
 /** Inbox ids and tokens are base64url, 16 to 64 characters. */
 export const PART_SHAPE = /^[A-Za-z0-9_-]{16,64}$/;
+
+export type SubscriptionState = "unsubscribed" | "resubscribed";
 
 export async function ensureInbox(userId: string): Promise<string> {
   const existing = (await db()`select id from newsletter_inboxes where user_id = ${userId}`) as unknown as { id: string }[];
@@ -35,39 +42,47 @@ export async function inboxExists(inbox: string): Promise<boolean> {
   return rows.length > 0;
 }
 
-/** Record one unsubscribe. Idempotent: pressing twice keeps the first time. */
-export async function recordUnsubscribe(inbox: string, token: string): Promise<boolean> {
+/**
+ * Set a token's state. Idempotent: pressing unsubscribe twice keeps the first
+ * time, so a pull that already saw it is not handed it again.
+ */
+export async function recordState(inbox: string, token: string, state: SubscriptionState): Promise<boolean> {
   if (!PART_SHAPE.test(token) || !(await inboxExists(inbox))) return false;
   await db()`
-    insert into newsletter_unsubscribes (inbox_id, token) values (${inbox}, ${token})
-    on conflict (inbox_id, token) do nothing
+    insert into newsletter_unsubscribes (inbox_id, token, state) values (${inbox}, ${token}, ${state})
+    on conflict (inbox_id, token) do update set state = excluded.state, at = now()
+    where newsletter_unsubscribes.state <> excluded.state
   `;
   return true;
 }
 
-export async function listUnsubscribes(userId: string, since?: string): Promise<{ token: string; at: string }[]> {
+export const recordUnsubscribe = (inbox: string, token: string): Promise<boolean> => recordState(inbox, token, "unsubscribed");
+export const recordResubscribe = (inbox: string, token: string): Promise<boolean> => recordState(inbox, token, "resubscribed");
+
+export async function listUnsubscribes(userId: string, since?: string): Promise<{ token: string; at: string; state: SubscriptionState }[]> {
   const after = since && !Number.isNaN(Date.parse(since)) ? new Date(since) : new Date(0);
   const rows = (await db()`
-    select u.token, u.at from newsletter_unsubscribes u
+    select u.token, u.at, u.state from newsletter_unsubscribes u
     join newsletter_inboxes i on i.id = u.inbox_id
-    where i.user_id = ${userId} and u.at > ${after}
+    where i.user_id = ${userId} and date_trunc('milliseconds', u.at) > ${after}
     order by u.at asc
     limit 5000
-  `) as unknown as { token: string; at: Date }[];
-  return rows.map((row) => ({ token: row.token, at: new Date(row.at).toISOString() }));
+  `) as unknown as { token: string; at: Date; state: SubscriptionState }[];
+  return rows.map((row) => ({ token: row.token, at: new Date(row.at).toISOString(), state: row.state }));
 }
 
-// ---------------------------------------------------------------- the page
+// ---------------------------------------------------------------- the pages
 
-/** The page's own policy: no script at all, inline style, a form that posts to itself. */
+/** The page's own policy: no script at all, inline style, forms that post to this origin. */
 export const PAGE_CSP = "default-src 'none'; style-src 'unsafe-inline'; img-src 'self' data:; form-action 'self'; base-uri 'none'; frame-ancestors 'none'";
 
 const STYLE =
   "body{font:16px/1.5 system-ui,sans-serif;margin:0;background:#fafafa;color:#1a1a1a}" +
   "main{max-width:32rem;margin:12vh auto;padding:0 16px}" +
   "h1{font-size:1.4rem}button{font:inherit;padding:.6rem 1.2rem;border:0;border-radius:6px;background:#1a1a1a;color:#fff;cursor:pointer}" +
+  "button.quiet{background:transparent;color:inherit;border:1px solid currentColor}" +
   "p.small{font-size:.85rem;color:#666}" +
-  "@media (prefers-color-scheme:dark){body{background:#111;color:#eee}button{background:#eee;color:#111}p.small{color:#999}}";
+  "@media (prefers-color-scheme:dark){body{background:#111;color:#eee}button{background:#eee;color:#111}button.quiet{background:transparent;color:#eee}p.small{color:#999}}";
 
 function page(title: string, body: string): string {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8">
@@ -77,18 +92,27 @@ function page(title: string, body: string): string {
 <body><main>${body}</main></body></html>`;
 }
 
-export function confirmPage(): string {
+/** What one click on the footer link shows: done, and the way back. */
+export function unsubscribedPage(resubscribeAction: string): string {
   return page(
-    "Unsubscribe",
-    `<h1>Unsubscribe from this newsletter?</h1>
-<p>You will not get it again. Nothing else is needed.</p>
-<form method="post"><input type="hidden" name="List-Unsubscribe" value="One-Click"><button type="submit">Unsubscribe</button></form>
+    "You're unsubscribed",
+    `<h1>You're unsubscribed.</h1>
+<p>You won't get this newsletter again. There is nothing else to do.</p>
+<p>Clicked by mistake, or changed your mind?</p>
+<form method="post" action="${resubscribeAction}"><button type="submit" class="quiet">Re-subscribe</button></form>
 <p class="small">Sent with myna. The sender never shared your address with this page.</p>`,
   );
 }
 
-export function donePage(): string {
-  return page("Unsubscribed", `<h1>You are unsubscribed.</h1><p>The sender's next send leaves you out, for good.</p><p class="small">Sent with myna.</p>`);
+/** After Re-subscribe: back on, and one press to leave again. */
+export function resubscribedPage(unsubscribeAction: string): string {
+  return page(
+    "You're subscribed again",
+    `<h1>Welcome back. You're subscribed again.</h1>
+<p>The next issue will reach you as before.</p>
+<form method="post" action="${unsubscribeAction}"><button type="submit" class="quiet">Unsubscribe</button></form>
+<p class="small">Sent with myna.</p>`,
+  );
 }
 
 export function unknownPage(): string {

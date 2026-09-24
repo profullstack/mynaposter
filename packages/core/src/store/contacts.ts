@@ -85,6 +85,18 @@ export function optOut(id: string, file = readContacts()): boolean {
   return true;
 }
 
+/**
+ * Lift an opt-out. Only for the person's own say-so: the Re-subscribe button
+ * on the page their unsubscribe link opened. Never from an import or a list.
+ */
+export function optIn(id: string, file = readContacts()): boolean {
+  const contact = file.contacts.find((entry) => entry.id === id);
+  if (!contact?.optedOut) return false;
+  delete contact.optedOut;
+  writeContacts(file);
+  return true;
+}
+
 export function addToList(list: string, ids: string[], file = readContacts()): number {
   const name = list.trim().toLowerCase();
   const known = new Set(file.contacts.map((contact) => contact.id));

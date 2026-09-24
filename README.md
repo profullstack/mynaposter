@@ -885,9 +885,14 @@ Apple Mail show their own unsubscribe button, plus a link and your postal
 address in the footer. A send without `newsletter.address` is refused. The link
 is hosted by myna cloud at `mynaposter.com/api/v1/newsletter/u/<inbox>/<token>`:
 the token is random per subscriber and made on your machine, so the server
-never sees an address. A GET shows a button (link scanners never unsubscribe
-anyone); a POST records the token. `myna newsletter sync`, every send and the
-daemon pull those tokens back and turn each into the permanent opt-out. To host
+never sees an address. It is one click either way: the mail client's
+one-click POST (RFC 8058, what Gmail and Yahoo require of bulk senders) shows
+no page at all, and the footer link unsubscribes on the click and opens a
+"You're unsubscribed" page with a **Re-subscribe** button, so a click nobody
+meant (a link scanner's included) is one press to undo. A HEAD request records
+nothing. `myna newsletter sync`, every send and the daemon pull the changes
+back: an unsubscribe becomes the opt-out, and a Re-subscribe pressed by that
+person on that page lifts it. Nothing else ever lifts an opt-out. To host
 it yourself, `myna config newsletter.unsubscribeUrl "https://you.example/u/{token}"`
 and hand each token you receive to `myna newsletter unsubscribe <token>`.
 

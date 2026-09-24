@@ -414,7 +414,7 @@ export { normaliseHandoff, type Handoff, type HandoffInput, type CloudHandoff } 
 // Outreach: SMTP servers, texts through Telnyx, contacts and lists.
 export { sendSmtp, buildMime, dotStuff, addressOf, SmtpError, type SmtpServer, type SmtpMessage, type SmtpResult, type SmtpOptions, type SmtpSecurity } from "./core/smtp.ts";
 export { sendSms, e164, TELNYX_MESSAGES_URL, type SmsConfig, type SmsResult } from "./core/sms.ts";
-export { readContacts, writeContacts, upsertContact, removeContact, optOut, addToList, removeFromList, recipients, contactId, type Contact, type ContactsFile } from "./store/contacts.ts";
+export { readContacts, writeContacts, upsertContact, removeContact, optOut, optIn, addToList, removeFromList, recipients, contactId, type Contact, type ContactsFile } from "./store/contacts.ts";
 export { readOutreach, writeOutreach, saveSmtpServer, removeSmtpServer, smtpServer, saveSms, smsConfig, recordSent, outreachSentToday, type SmsSetup, type SentRecord, type OutreachFile } from "./store/outreach.ts";
 export { importFromAgenticjobs, type ImportOptions, type ImportResult } from "./core/contacts-import.ts";
 export { DEFAULT_OUTREACH, type OutreachSettings, DEFAULT_NEWSLETTER, type NewsletterSettings } from "./store/settings.ts";

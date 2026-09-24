@@ -304,3 +304,7 @@ create table if not exists newsletter_unsubscribes (
 );
 
 create index if not exists newsletter_unsubscribes_at_idx on newsletter_unsubscribes(inbox_id, at);
+
+-- A token's latest state: the footer page offers Re-subscribe, and the
+-- sender's myna needs to hear about that as well as the unsubscribe.
+alter table newsletter_unsubscribes add column if not exists state text not null default 'unsubscribed';

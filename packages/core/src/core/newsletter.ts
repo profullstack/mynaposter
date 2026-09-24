@@ -23,7 +23,7 @@ import { addressOf, sendSmtp, type SmtpMessage, type SmtpOptions, type SmtpServe
 import { escapeHtml, renderMarkdown } from "../util/markdown.ts";
 import { getJson, postJson } from "../util/http.ts";
 import { loadSettings } from "../store/settings.ts";
-import { addToList, optOut, readContacts, recipients, upsertContact, removeFromList, contactId, type Contact } from "../store/contacts.ts";
+import { addToList, optIn, optOut, readContacts, recipients, upsertContact, removeFromList, contactId, type Contact } from "../store/contacts.ts";
 import { outreachSentToday, recordSent, smtpServer } from "../store/outreach.ts";
 import { session, DEFAULT_SERVER } from "../store/cloud.ts";
 import {
@@ -115,19 +115,22 @@ export async function linkMaker(): Promise<(token: string) => string> {
 export interface SyncResult {
   pulled: number;
   optedOut: string[];
+  /** Pressed Re-subscribe on the page their unsubscribe link opened. */
+  resubscribed: string[];
   unknown: number;
 }
 
 /**
- * Pull the one-click unsubscribes myna cloud recorded, and opt each one out
- * for good. Quiet when this install does not use the hosted link.
+ * Pull what the hosted unsubscribe page recorded since the last pull: an
+ * unsubscribe opts the person out; a Re-subscribe, pressed by that person on
+ * that page, lifts it. Quiet when this install does not use the hosted link.
  */
 export async function syncUnsubscribes(): Promise<SyncResult> {
   const file = readNewsletters();
-  const result: SyncResult = { pulled: 0, optedOut: [], unknown: 0 };
+  const result: SyncResult = { pulled: 0, optedOut: [], resubscribed: [], unknown: 0 };
   if (!file.inbox || !session()?.token) return result;
   const since = file.unsubscribesSince ? `?since=${encodeURIComponent(file.unsubscribesSince)}` : "";
-  const reply = await getJson<Reply<{ unsubscribes: { token: string; at: string }[] }>>(`${file.inbox.server}/v1/newsletter/unsubscribes${since}`, { headers: cloudAuth() });
+  const reply = await getJson<Reply<{ unsubscribes: { token: string; at: string; state?: "unsubscribed" | "resubscribed" }[] }>>(`${file.inbox.server}/v1/newsletter/unsubscribes${since}`, { headers: cloudAuth() });
   if (!reply.ok) throw new Error(reply.error ?? "Could not read unsubscribes from myna cloud.");
   const contacts = readContacts();
   let newest = file.unsubscribesSince;
@@ -140,7 +143,10 @@ export async function syncUnsubscribes(): Promise<SyncResult> {
       continue;
     }
     const contact = contacts.contacts.find((c) => c.id === id);
-    if (contact && !contact.optedOut && optOut(id, contacts)) result.optedOut.push(id);
+    if (!contact) continue;
+    if (entry.state === "resubscribed") {
+      if (optIn(id, contacts)) result.resubscribed.push(id);
+    } else if (!contact.optedOut && optOut(id, contacts)) result.optedOut.push(id);
   }
   const fresh = readNewsletters();
   fresh.unsubscribesSince = newest;
