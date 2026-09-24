@@ -7,6 +7,10 @@
  *   myna newsletter list | show <id> [--body] | rm <id> [--force]
  *   myna newsletter edit <id> [--subject] [--subject-b] [--list] [--cta-set] [--service] [--at when | --draft] [--via] [--reply-to] [< issue.md]
  *   myna newsletter send <id> [--dry-run] [--to addr] [--yes] [--via provider] [--limit N] [--max-per-day N] [--pace-ms N] [--retry-failed] [--retry-uncertain]
+ *   myna newsletter send <id> --yes --background     the list send, detached (same as blast --go)
+ *   myna newsletter blast <issue.md> --csv F --list L --id slug --subject "A" [...]   import, create, one test copy, then stop
+ *   myna newsletter blast --go <id> [--max-per-day N]   the list send, detached, logged under the state dir
+ *   myna newsletter status <id> [--watch]            sent, failed, remaining, rate, ETA, per variant
  *
  * --via names a mail provider (`myna mail provider list`): an SMTP server, an
  * HTTP API such as Resend or Postmark, or myna cloud. --smtp is its old name.
@@ -55,23 +59,11 @@ import {
   tally,
   trackingBase,
   unsubscribe,
-  type SendNewsletterReport,
-  type SubscribeResult,
 } from "@profullstack/myna-core";
 import { out, table } from "./io.ts";
+import { ctaSetFlag, list, num, printVariants, reportSubscribe, str, type Flags } from "./newsletter-flags.ts";
+import { runBlast, runGo, runSendWorker, runStatus } from "./newsletter-blast.ts";
 import { askSecret } from "./prompt.ts";
-
-type Flags = Record<string, unknown>;
-
-const str = (flags: Flags, key: string): string | undefined => (typeof flags[key] === "string" ? (flags[key] as string) : undefined);
-const list = (value: string | undefined): string[] => (value ? value.split(",").map((s) => s.trim()).filter(Boolean) : []);
-const num = (flags: Flags, key: string): number | undefined => {
-  const value = str(flags, key);
-  if (value === undefined) return undefined;
-  const parsed = Number(value);
-  if (!Number.isFinite(parsed) || parsed < 0) throw new Error(`--${key.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)} takes a number.`);
-  return parsed;
-};
 
 /** The body from stdin, or undefined when nothing is piped. */
 function pipedBody(): string | undefined {
@@ -81,29 +73,6 @@ function pipedBody(): string | undefined {
 }
 
 const when = (value: string | undefined): string | undefined => (value ? parseWhen(value).at.toISOString() : undefined);
-
-/** --cta-set: a set name, or "none". Absent, `fallback`. */
-function ctaSetFlag(flags: Flags, fallback: string | null | undefined): string | null | undefined {
-  const value = str(flags, "ctaSet");
-  if (value === undefined) return fallback;
-  if (value === "none") return null;
-  if (!loadSettings().newsletter.ctaSets[value]?.length) throw new Error(`No CTA set "${value}", or it is empty. myna newsletter cta list shows them.`);
-  return value;
-}
-
-function reportSubscribe(result: SubscribeResult, listName: string): void {
-  out(`${result.added.length} added to ${listName}${result.already.length ? `, ${result.already.length} already on it` : ""}.`);
-  if (result.optedOut.length) out(`${result.optedOut.length} opted out before and stay out: ${result.optedOut.slice(0, 10).join(", ")}`);
-  if (result.invalid.length) out(`${result.invalid.length} not an email address: ${result.invalid.slice(0, 10).join(", ")}`);
-}
-
-function printVariants(report: SendNewsletterReport): void {
-  if (report.variants.length < 2) return;
-  out(`${report.variants.length} variants, split over the ${Object.values(report.split).reduce((a, b) => a + b, 0)} still due:`);
-  for (const variant of report.variants) {
-    out(`  ${variant.key}  ${String(report.split[variant.key] ?? 0).padStart(6)}  subject ${variant.subjectKey}: ${variant.subject}${variant.cta ? `  |  CTA: ${variant.cta.label}` : ""}`);
-  }
-}
 
 async function runTrack(rest: string[], flags: Flags): Promise<number> {
   const [sub, id] = rest;
@@ -361,6 +330,11 @@ export async function runNewsletter(positional: string[], flags: Flags): Promise
       if (!rest[0]) throw new Error("Usage: myna newsletter send <id> [--dry-run] [--to addr] [--yes] [--via provider] [--limit N] [--max-per-day N] [--retry-failed] [--retry-uncertain]");
       const test = str(flags, "to") ?? str(flags, "test");
       const dryRun = Boolean(flags.dryRun);
+      if (flags.background) {
+        if (test || dryRun) throw new Error("--background is for the list send; a test copy or a dry run is quick enough to run here.");
+        if (!flags.yes) throw new Error(`--background sends to the whole list, so it needs --yes too: myna newsletter send ${rest[0]} --yes --background`);
+        return await runGo(rest[0], flags);
+      }
       const common = {
         limit: num(flags, "limit"),
         maxPerDay: num(flags, "maxPerDay"),
@@ -403,6 +377,16 @@ export async function runNewsletter(positional: string[], flags: Flags): Promise
       if (!dryRun) out(`Status: ${report.status}.${report.remaining ? " Run the same command again to carry on." : ""}`);
       return report.failed.length ? 1 : 0;
     }
+
+    case "blast":
+      return await runBlast(rest, flags);
+
+    case "status":
+      return await runStatus(rest[0], flags);
+
+    // The detached child `blast --go` and `send --background` start. Not in the help.
+    case "_run":
+      return await runSendWorker(rest[0], flags);
 
     case "stats":
       return await runStats(rest[0] ?? str(flags, "campaign"), flags);
@@ -491,6 +475,6 @@ export async function runNewsletter(positional: string[], flags: Flags): Promise
     }
 
     default:
-      throw new Error(`Unknown: myna newsletter ${sub}. Try create, list, show, edit, rm, send, stats, subscribe, unsubscribe, subscribers, import, sync, track or cta.`);
+      throw new Error(`Unknown: myna newsletter ${sub}. Try blast, status, create, list, show, edit, rm, send, stats, subscribe, unsubscribe, subscribers, import, sync, track or cta.`);
   }
 }

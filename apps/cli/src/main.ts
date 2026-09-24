@@ -161,6 +161,21 @@ address on every one, paced by outreach.maxEmailsPerDay):
   newsletter send <id> [--dry-run] [--to addr] [--yes] [--via id] [--limit N] [--max-per-day N]
        [--retry-failed] [--retry-uncertain]   --yes sends the list; --to one test copy (variant A)
                                     Resumes from its ledger; nobody gets it twice
+       [--background]               with --yes: detached, like blast --go
+  newsletter blast <issue.md> --list <L> --id <slug> --subject "..." [--csv users.csv]
+       [--subject-b "..."] [--service s] [--cta-set name] [--via id] [--reply-to r]
+       [--tags a,b] [--test-to addr] [--max-per-day N] [--clean]
+                                    One command for step one: imports the CSV (--clean
+                                    runs it through email-cleaner first), creates the
+                                    issue or updates its draft, sends ONE test copy
+                                    (to --test-to, else the reply-to, else the From),
+                                    prints who gets it and the variant split, and stops
+  newsletter blast --go <id> [--max-per-day N]
+                                    Step two: the list send in the background, so the
+                                    terminal comes back at once. Logs under
+                                    ~/.local/state/myna; one send per issue at a time
+  newsletter status <id> [--watch]  Sent, failed, remaining, rate a minute, ETA, per
+                                    variant, and whether a background send is running
   newsletter stats <id>             Per variant: sent, opens, clicks, CTR, unsubscribes
   newsletter subscribe <email...> --list <L> [--name] [--tags]
   newsletter unsubscribe <email|token> [--list L]   Without --list: opted out for good
