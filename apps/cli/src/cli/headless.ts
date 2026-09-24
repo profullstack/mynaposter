@@ -160,6 +160,8 @@ export function parseFlags(argv: string[]): { positional: string[]; flags: Flags
       "noProfile",
       // newsletter show --body, edit --draft, send --retry-failed / --retry-uncertain
       "body", "draft", "retryFailed", "retryUncertain",
+      // newsletter blast --go / --clean, send --background, status --watch
+      "go", "clean", "background", "watch",
     ]);
     if (BOOLS.has(name)) {
       flags[name === "noThread" ? "thread" : name] = name !== "noThread";

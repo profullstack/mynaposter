@@ -43,6 +43,7 @@ export {
   resolveTargets,
   unlock,
   needsPassphrase,
+  activePassphrase,
   resetAccountCache,
   getPluginSecrets,
   setPluginSecrets,
@@ -292,7 +293,7 @@ export type {
 } from "./plugins/types.ts";
 
 export { countChars, splitThread, appendHashtags, toHashtag, extractHashtags, truncateTo, deriveTitle, bodyUnderTitle } from "./util/text.ts";
-export { configDir, configPath } from "./util/paths.ts";
+export { configDir, configPath, stateDir, ensureStateDir } from "./util/paths.ts";
 export { HttpError, request, getJson, postJson, postForm } from "./util/http.ts";
 export { parseWhen, describeWhen, parseDuration } from "./util/when.ts";
 
@@ -511,3 +512,28 @@ export {
   type VariantStats,
   type NewsletterStats,
 } from "./core/newsletter.ts";
+// One send per issue at a time, and how far a send is (myna newsletter blast / status).
+export {
+  acquireSendLock,
+  releaseSendLock,
+  updateSendLock,
+  readSendLock,
+  liveSendLock,
+  lockIsLive,
+  pidAlive,
+  sendLockPath,
+  sendLogPath,
+  SendLockedError,
+  type SendLock,
+} from "./core/newsletter-lock.ts";
+export {
+  sendProgress,
+  sendRate,
+  formatDuration,
+  tailLines,
+  cleanSubscriberCsv,
+  RATE_WINDOW_MS,
+  type SendProgress,
+  type VariantProgress,
+  type CleanResult,
+} from "./core/newsletter-blast.ts";

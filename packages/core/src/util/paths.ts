@@ -14,6 +14,24 @@ export function configPath(...parts: string[]): string {
   return join(configDir(), ...parts);
 }
 
+/**
+ * Where myna keeps run state that is not configuration: background send logs
+ * and their lock files. $MYNA_STATE_DIR when set; under $MYNA_HOME/state when
+ * that is set (so a test or a second install keeps its own); otherwise
+ * $XDG_STATE_HOME/myna, which is ~/.local/state/myna, beside daemon.log.
+ */
+export function stateDir(): string {
+  if (process.env.MYNA_STATE_DIR) return process.env.MYNA_STATE_DIR;
+  if (process.env.MYNA_HOME) return join(process.env.MYNA_HOME, "state");
+  return join(process.env.XDG_STATE_HOME || join(homedir(), ".local", "state"), "myna");
+}
+
+export function ensureStateDir(): string {
+  const dir = stateDir();
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  return dir;
+}
+
 export function ensureConfigDir(): string {
   const dir = configDir();
   mkdirSync(dir, { recursive: true, mode: 0o700 });

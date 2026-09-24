@@ -965,6 +965,44 @@ myna config newsletter.brand.accent "#e5383b"
 myna config newsletter.brand.tagline "Agentic engineering"
 ```
 
+### One command: `myna newsletter blast`
+
+The import, create, test copy and list send above, as two short commands. The
+issue is a file argument, not stdin, so nothing breaks when the command is pasted.
+
+```bash
+# Step one: import, create (or update the draft), ONE test copy, then stop.
+myna newsletter blast issue.md --csv users.csv --list profullstack-users --tags profullstack \
+  --id profullstack-001 --subject "..." --subject-b "..." \
+  --service "a Profullstack, Inc. product" --cta-set default --via resend \
+  --reply-to anthony@profullstack.com --max-per-day 6000
+# It prints who gets it, how the variants split, and the command for step two.
+
+# Step two, after checking the test copy: the list send, in the background.
+myna newsletter blast --go profullstack-001 --max-per-day 6000
+myna newsletter status profullstack-001 --watch    # sent, failed, remaining, rate, ETA, per variant
+```
+
+- `--clean` runs the CSV through `email-cleaner - --format json` (from
+  profullstack/cli-tools, which must be on PATH) and imports only the rows it
+  keeps, printing how many were rejected and why.
+- The test copy goes to `--test-to`, else the `--reply-to`, else the From
+  address of the provider. It is variant A, with `[test]` in the subject.
+- Running step one again with the same `--id` updates the draft. Once any of
+  the list has it, the body, subjects and list are fixed: the same file and
+  subjects resume it, anything else is refused.
+- Without `--csv`, the list must already have people on it.
+- `--go` (or `myna newsletter send <id> --yes --background`) starts a detached
+  process and returns at once. It logs to
+  `~/.local/state/myna/newsletter-<id>.log` (`$XDG_STATE_HOME/myna`, or
+  `$MYNA_HOME/state`) and holds `newsletter-<id>.lock` there with its pid.
+  Every list send of that issue (another `--go`, `send --yes`, the daemon, the
+  TUI) is refused while that pid is alive; a lock left by a dead process is
+  cleared on its own. `kill <pid>` stops it, and the same `--go` carries on
+  from the ledger, so nobody gets it twice.
+- When the daily cap stops a run, the log says how many are left; `--go` again
+  the next day sends the rest.
+
 **Pacing and resuming.** A send goes out under `outreach.maxEmailsPerDay`
 (shared with `myna email`) and stops when today's cap is spent; run it again
 tomorrow, or schedule the issue with `--at` and `myna run` carries on each

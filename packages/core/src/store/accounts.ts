@@ -38,6 +38,11 @@ export function unlock(value: string): void {
   load();
 }
 
+/** The passphrase this process unlocked the vault with, if any: a background child needs it handed over. */
+export function activePassphrase(): string | undefined {
+  return passphrase || process.env.MYNA_PASSPHRASE || undefined;
+}
+
 export function needsPassphrase(): boolean {
   return vaultExists() && vaultMode() === "passphrase" && !passphrase && !process.env.MYNA_PASSPHRASE;
 }
