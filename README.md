@@ -955,6 +955,16 @@ person on that page lifts it. Nothing else ever lifts an opt-out. To host
 it yourself, `myna config newsletter.unsubscribeUrl "https://you.example/u/{token}"`
 and hand each token you receive to `myna newsletter unsubscribe <token>`.
 
+**Branded layout.** Set a name or a logo and every issue goes out as a full HTML email: a dark header with the logo and name, the issue on a white card with inline styles on every heading, list and link (mail clients strip `<style>`), the call to action as a button in your accent colour, and the footer below. The plain text part is unchanged. The logo must be an https PNG or JPEG, since most mail clients will not show an SVG.
+
+```
+myna config newsletter.brand.name "Profullstack"
+myna config newsletter.brand.logoUrl https://profullstack.com/icons/favicon-196x196.png
+myna config newsletter.brand.url https://profullstack.com
+myna config newsletter.brand.accent "#e5383b"
+myna config newsletter.brand.tagline "Agentic engineering"
+```
+
 **Pacing and resuming.** A send goes out under `outreach.maxEmailsPerDay`
 (shared with `myna email`) and stops when today's cap is spent; run it again
 tomorrow, or schedule the issue with `--at` and `myna run` carries on each

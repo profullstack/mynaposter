@@ -172,6 +172,7 @@ address on every one, paced by outreach.maxEmailsPerDay):
   newsletter cta list | add "<label>" <url> | rm "<label>"   [--set default]
        myna config newsletter.address "..."        required (CAN-SPAM)
        myna config newsletter.unsubscribeUrl https://you/u/{token}   else myna cloud hosts it
+       myna config newsletter.brand.name|logoUrl|url|accent|tagline  a name or logo (https PNG) turns on the branded layout
 AT Protocol (the network behind Bluesky; a directory of its servers):
   atproto [q] [--kind pds|relay|feed|labeler] [--online]
                                     The directory at mynaposter.com/listing/atproto
