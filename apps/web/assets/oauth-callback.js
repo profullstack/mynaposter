@@ -3,6 +3,23 @@
 // anywhere, because the token exchange belongs on the machine holding the
 // client secret, not on this one.
 const params = new URLSearchParams(location.search);
+
+// Relay: a myna on this same machine started the sign-in and is listening on
+// loopback. It put its port in the state ("lb8765.<random>") because the
+// provider only redirects to URLs registered on the app, and this page is the
+// registered one. Hand the whole query (code, state, or error) straight back,
+// so nothing has to be copied. Only ever to 127.0.0.1, only to a port.
+const relay = /^lb(\d{4,5})\./.exec(params.get("state") || "");
+const relayPort = relay ? Number(relay[1]) : 0;
+if (relayPort >= 1024 && relayPort <= 65535) {
+  document.getElementById("heading").textContent = "Handing back to myna…";
+  document.getElementById("lede").textContent =
+    "If this page stays, myna is no longer waiting: start the sign-in again in your terminal.";
+  document.getElementById("code").textContent = "…";
+  location.replace(`http://127.0.0.1:${relayPort}/callback${location.search}`);
+  throw new Error("relayed"); // stop here; the page is being replaced
+}
+
 const code = params.get("code");
 const error = params.get("error_description") || params.get("error");
 

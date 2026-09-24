@@ -288,8 +288,9 @@ const gcal: Network = {
     note:
       "Create a project at console.cloud.google.com, enable the Google Calendar API, and add an OAuth client id of " +
       "type 'Web application'. While the app's consent screen is still in testing, Google expires the sign-in after " +
-      `seven days; publishing it makes the sign-in permanent. Add ${GOOGLE_LOCAL_REDIRECT} as an authorized redirect ` +
-      `URI, and ${GOOGLE_HOSTED_REDIRECT} too if you will authorize from a browser on another machine (answer "yes" to pasting a code). ` +
+      `seven days; publishing it makes the sign-in permanent. Add ${GOOGLE_HOSTED_REDIRECT} as the authorized redirect ` +
+      `URI; that page hands the sign-in back to myna on this machine, so nothing is copied (answer "yes" to pasting a code ` +
+      `only when the browser is on another machine). ` +
       "A second `myna login gcal` keeps the client id and secret already stored, so renewing an expired sign-in is one browser click.",
     docsUrl: "https://console.cloud.google.com/apis/credentials",
     fields: [
@@ -315,9 +316,12 @@ const gcal: Network = {
     const tokens = await authorize(
       {
         ...config(input.clientId.trim(), input.clientSecret.trim()),
-        ...callback,
-        // Google's redirect list is per client, so the hosted page is the one named for it.
-        ...(callback.mode === "paste" ? { redirectUri: GOOGLE_HOSTED_REDIRECT } : {}),
+        // Google's redirect list is per client, so the hosted page (the one registered)
+        // is always the redirect. On this machine it relays the code straight back to
+        // the loopback listener, so neither the loopback URL nor pasting is needed;
+        // "yes" to pasting still covers a browser on another machine.
+        ...(callback.mode === "paste" ? callback : { mode: "relay" as const }),
+        redirectUri: GOOGLE_HOSTED_REDIRECT,
       },
       ctx,
     );

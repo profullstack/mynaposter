@@ -40,7 +40,14 @@ export type CallbackMode =
   /** Listen on 127.0.0.1 and catch the redirect. Needs a local browser. */
   | "loopback"
   /** Redirect to mynaposter.com, which shows the code to paste back. */
-  | "paste";
+  | "paste"
+  /**
+   * Redirect to a registered HTTPS page (config.redirectUri) that hands the
+   * code straight back to the loopback listener. For providers whose app only
+   * accepts listed URLs (a Google "Web application" client): the loopback URL
+   * need not be registered, and nothing is pasted.
+   */
+  | "relay";
 
 export interface OAuth2Config {
   authorizeUrl: string;
@@ -166,11 +173,13 @@ function awaitCallback(expectedState: string, timeoutMs: number): Promise<{ code
 }
 
 export async function authorize(config: OAuth2Config, ctx: LoginContext, timeoutMs = 180_000): Promise<TokenSet> {
-  const state = base64url(randomBytes(16));
+  const mode: CallbackMode = config.mode ?? "loopback";
+  if (mode === "relay" && !config.redirectUri) throw new Error("Relay mode needs the registered redirect page.");
+  // In relay mode the hosted page reads the port from the state to find us.
+  const state = `${mode === "relay" ? `lb${CALLBACK_PORT}.` : ""}${base64url(randomBytes(16))}`;
   const verifier = base64url(randomBytes(32));
   const challenge = base64url(createHash("sha256").update(verifier).digest());
 
-  const mode: CallbackMode = config.mode ?? "loopback";
   const redirectUri = config.redirectUri ?? (mode === "paste" ? HOSTED_REDIRECT_URI : REDIRECT_URI);
 
   const authorizeUrl = new URL(config.authorizeUrl);
