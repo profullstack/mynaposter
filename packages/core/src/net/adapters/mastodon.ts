@@ -7,7 +7,7 @@
  * grant. Instances with 2FA enabled reject that grant, so pasting an access
  * token stays available as the other path.
  */
-import type { Account, Network, PostInput, PostResult, Profile, TimelineItem } from "../types.ts";
+import type { Account, Network, PostInput, PostResult, Profile, TimelineItem, UpvoteResult } from "../types.ts";
 import { getJson, normalizeInstance, postJson, request } from "../../util/http.ts";
 import { authorize, callbackFrom, PASTE_FIELD, REDIRECT_URI } from "../oauth2.ts";
 
@@ -45,6 +45,8 @@ interface Status {
   favourites_count?: number;
   reblogs_count?: number;
   replies_count?: number;
+  /** Whether this account has already favourited it. */
+  favourited?: boolean;
 }
 
 /** Strip the HTML the API returns so timelines read correctly in a terminal. */
@@ -100,7 +102,9 @@ function make(id: string, name: string, blurb: string, charLimit: number): Netwo
       notifications: true,
       stats: true,
       repost: true,
+      search: true,
       follow: true,
+      upvote: true,
     },
 
     async login(input, ctx) {
@@ -247,6 +251,84 @@ function make(id: string, name: string, blurb: string, charLimit: number): Netwo
       }
       const boost = await postJson<Status & { reblog?: Status }>(`${base(account)}/api/v1/statuses/${id}/reblog`, {}, { headers: auth(account) });
       return { id: boost.id, url: boost.reblog?.url ?? boost.url };
+    },
+
+    async search(account, query, limit) {
+      const size = Math.min(40, Math.max(1, limit));
+      const asItem = (status: Status): TimelineItem => ({
+        id: status.id,
+        author: status.account.display_name || status.account.username,
+        handle: status.account.acct,
+        text: plain(status.content),
+        createdAt: status.created_at,
+        url: status.url,
+        likes: status.favourites_count,
+        reposts: status.reblogs_count,
+        replies: status.replies_count,
+      });
+
+      // Full-text status search is an opt-in on Mastodon: an instance without
+      // it returns only what this account has already touched, which is
+      // exactly the wrong set for finding somebody new. So the hashtag
+      // timeline is not a fallback for an error, it is a fallback for a thin
+      // result — and on most instances it is the one that actually works.
+      const statuses: Status[] = [];
+      try {
+        const found = await getJson<{ statuses: Status[] }>(
+          `${base(account)}/api/v2/search?type=statuses&limit=${size}&q=${encodeURIComponent(query)}`,
+          { headers: auth(account) },
+        );
+        statuses.push(...(found.statuses ?? []));
+      } catch {
+        // An instance that refuses the search endpoint still has hashtags.
+      }
+
+      if (statuses.length < size) {
+        const tag = query.replace(/[^a-z0-9]+/gi, "");
+        if (tag) {
+          try {
+            const tagged = await getJson<Status[]>(
+              `${base(account)}/api/v1/timelines/tag/${encodeURIComponent(tag)}?limit=${size}`,
+              { headers: auth(account) },
+            );
+            const known = new Set(statuses.map((status) => status.id));
+            for (const status of tagged) if (!known.has(status.id)) statuses.push(status);
+          } catch {
+            // No such tag here, which is not an error worth failing a scan for.
+          }
+        }
+      }
+
+      return statuses.slice(0, size).map(asItem);
+    },
+
+    async upvote(account, ref, direction = 1): Promise<UpvoteResult> {
+      const target = mastodonStatusRef(ref, base(account));
+      let id: string;
+      if ("id" in target) {
+        id = target.id;
+      } else {
+        // A post on another instance has no local id until this one has
+        // fetched it; searching with resolve is what fetches it.
+        const found = await getJson<{ statuses: Status[] }>(
+          `${base(account)}/api/v2/search?type=statuses&resolve=true&limit=1&q=${encodeURIComponent(target.url)}`,
+          { headers: auth(account) },
+        );
+        const status = found.statuses[0];
+        if (!status) throw new Error(`${name} could not find that post: ${ref}`);
+        id = status.id;
+      }
+
+      if (direction === 0) {
+        const undone = await postJson<Status>(`${base(account)}/api/v1/statuses/${id}/unfavourite`, {}, { headers: auth(account) });
+        return { id: undone.id, url: undone.url };
+      }
+
+      const current = await getJson<Status>(`${base(account)}/api/v1/statuses/${id}`, { headers: auth(account) });
+      if (current.favourited) return { already: true, id: current.id, url: current.url };
+
+      const liked = await postJson<Status>(`${base(account)}/api/v1/statuses/${id}/favourite`, {}, { headers: auth(account) });
+      return { id: liked.id, url: liked.url };
     },
 
     async following(account, handle, limit) {

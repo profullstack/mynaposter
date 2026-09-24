@@ -16,6 +16,7 @@
     <button class="nav" data-view="queue">Queue</button>
     <button class="nav" data-view="history">History</button>
     <button class="nav" data-view="newsletter">Newsletter</button>
+    <button class="nav" data-view="upvote">Upvoter</button>
     <button class="nav" data-view="settings">Settings</button>
     <div class="grow"></div>
     <div class="status" id="status"></div>
@@ -91,6 +92,17 @@
     <section class="view" data-view="history" hidden>
       <header><h1>History</h1></header>
       <div id="history-list" class="rows"></div>
+    </section>
+
+    <!-- Upvoter: other people's posts myna found worth amplifying -->
+    <section class="view" data-view="upvote" hidden>
+      <header><h1>Upvoter</h1><div class="spacer"></div>
+        <button id="btn-up-scan" class="ghost">Search now</button>
+        <button id="btn-up-dry" class="ghost">Rehearse</button>
+        <button id="btn-up-send" class="primary">Cast what is due</button>
+      </header>
+      <div class="note" id="upvote-note"></div>
+      <div id="upvote-list" class="cards"></div>
     </section>
 
     <!-- Newsletter: issues to a contacts list, one-click unsubscribe on each -->

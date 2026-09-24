@@ -53,6 +53,11 @@ machine and nothing is sent anywhere except the posts you make.
   quotes and new followers into a queue of follow-ups: a reply the writer
   drafts from what they said, and a follow-back, sent on a pace. See
   [Follow-ups](#follow-ups).
+- **Find the people worth being seen by.** `myna upvote` reads what you have
+  been posting about, searches every network for other people on the same
+  subject, and amplifies them: a vote on what is genuinely on topic, a share of
+  some of it, and once in a while a reply carrying one of your links. See
+  [The upvoter](#the-upvoter).
 - **Run a newsletter.** `myna newsletter` writes issues in Markdown, keeps
   subscribers on a contacts list, sends through your own SMTP server or a mail
   API (Resend, Postmark, SES and others), or through myna cloud, under the
@@ -799,6 +804,31 @@ as context, in your voice, and goes under their post; a repost gets a thank-you
 under the post they shared; everyone gets a follow-back. One per person per
 week, at most `maxPerDay` an account, `gapMinutes` apart, likes ignored unless
 asked. Off by default. The whole thing is in [docs/engage.md](docs/engage.md).
+
+## The upvoter
+
+Posting into a feed nobody reads is the slow way to be ignored. `myna upvote`
+finds the people already writing about what you write about, and amplifies
+them, from a queue you can read first.
+
+```bash
+myna upvote on        # the daemon searches every 30 minutes, casts what is due
+myna upvote           # whose post, why it matched, and what myna will do
+myna upvote topics    # what myna thinks you are about, from your own posts
+myna upvote send      # cast what is due (--dry-run to rehearse)
+```
+
+The subject is not configured: it is read off your own send history, so it
+follows what you post. What clears the bar gets a vote; a sixth of that is also
+shared; a small fraction gets a reply carrying one of your links, and only when
+the post is a strong match, one of your posts genuinely overlaps with it, and
+the writer agrees it would help rather than advertise. At most two of those a
+day an account.
+
+Nothing is cast in the same breath it is found, one author gets one action per
+cooldown, and Reddit ships as manual only because its API terms forbid
+automated voting. Off by default. The whole thing is in
+[docs/upvote.md](docs/upvote.md).
 
 ## Hand-offs
 

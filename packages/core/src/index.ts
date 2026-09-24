@@ -411,6 +411,55 @@ export { engagePlugin, ENGAGE_SCAN_EVERY_MS, ENGAGE_SEND_EVERY_MS } from "./plug
 export { replyDraft, type ReplyRequest } from "./ai/writer.ts";
 export { DEFAULT_ENGAGE, type EngageSettings } from "./store/settings.ts";
 
+// The upvoter: finding other people posting about what we post about, and
+// voting on it, sharing some of it, and once in a while replying with a link.
+export {
+  scanUpvotes,
+  runUpvotes,
+  actedToday,
+  manualOnly,
+  ourHandles,
+  share,
+  willing,
+  type LinkDrafter,
+  type UpvoteScanOptions,
+  type UpvoteScanResult,
+  type UpvoteRunOptions,
+  type UpvoteRunResult,
+} from "./core/upvote.ts";
+export {
+  topicIndex,
+  queriesFor,
+  scoreAgainst,
+  bestLink,
+  termsOf,
+  termSet,
+  type Topic,
+  type TopicIndex,
+  type TopicOptions,
+  type OurPost,
+  type Match,
+} from "./core/topics.ts";
+export {
+  readUpvotes,
+  writeUpvotes,
+  listUpvotes,
+  updateUpvote,
+  clearUpvotes,
+  recentlyActed,
+  noteAuthor,
+  authorKey,
+  hasSeenPost,
+  markSeenPost,
+  type UpvoteItem,
+  type UpvoteAction,
+  type UpvoteStatus,
+  type UpvoteFile,
+} from "./store/upvote.ts";
+export { upvotePlugin, UPVOTE_SCAN_EVERY_MS, UPVOTE_RUN_EVERY_MS } from "./plugins/upvote-plugin.ts";
+export { linkDropDraft, type LinkDropRequest } from "./ai/writer.ts";
+export { DEFAULT_UPVOTE, type UpvoteSettings } from "./store/settings.ts";
+
 // DIDs: proved at CoinPay, attached to accounts as owner or operator.
 export { loginWithCoinPay, loginWithCoinPayCli, assignDid, unassignDid, didStatus, resolveDidTargets, didFromUserInfo, coinpayCliSessionPath, DEFAULT_DID_SERVER, type DidRole, type DidStatus, type DidLoginOptions } from "./core/did.ts";
 export { didSession, saveDidSession, clearDidSession, requireDidSession, isDid, type DidSession } from "./store/did.ts";

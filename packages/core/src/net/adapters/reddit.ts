@@ -5,7 +5,7 @@
  * a genuine username + password login — you just have to register the script
  * app first to get a client id and secret.
  */
-import type { Network, TimelineItem } from "../types.ts";
+import type { Network, TimelineItem, UpvoteResult } from "../types.ts";
 import { getJson, postForm, request, USER_AGENT } from "../../util/http.ts";
 
 const TOKEN_URL = "https://www.reddit.com/api/v1/access_token";
@@ -50,7 +50,7 @@ export const reddit: Network = {
       { key: "subreddit", label: "Default subreddit", optional: true, placeholder: "test" },
     ],
   },
-  caps: { charLimit: 40000, mediaLimit: 0, threads: false, delete: true, timeline: true, notifications: true, stats: true, needsTitle: true },
+  caps: { charLimit: 40000, mediaLimit: 0, threads: false, delete: true, timeline: true, notifications: true, stats: true, needsTitle: true, search: true, upvote: true },
 
   async login(input) {
     const creds = {
@@ -144,5 +144,58 @@ export const reddit: Network = {
     );
     const data = result.data.children[0]?.data ?? {};
     return { likes: data.score, replies: data.num_comments, views: data.view_count ?? undefined };
+  },
+
+  async search(account, query, limit) {
+    const accessToken = await token(account);
+    const result = await getJson<{ data: { children: { data: Record<string, any> }[] } }>(
+      `${API}/search?type=link&sort=new&limit=${Math.min(100, Math.max(1, limit))}&q=${encodeURIComponent(query)}`,
+      { headers: auth(accessToken) },
+    );
+    return result.data.children.map(({ data }): TimelineItem => ({
+      id: data.name,
+      author: data.author,
+      handle: `u/${data.author}`,
+      text: `${data.title}${data.selftext ? `\n${String(data.selftext).slice(0, 500)}` : ""}`,
+      createdAt: new Date(data.created_utc * 1000).toISOString(),
+      url: `https://reddit.com${data.permalink}`,
+      likes: data.score,
+      replies: data.num_comments,
+    }));
+  },
+
+  /**
+   * Cast a vote.
+   *
+   * Reddit's API terms forbid voting programmatically: "don't use the API to
+   * cast votes on behalf of a user without their explicit action". This
+   * exists so a person can act on a queue myna built for them, and that is
+   * why reddit ships in `settings.upvote.manualOnly` — the upvoter finds and
+   * queues, and somebody has to say so before any of it is cast.
+   */
+  async upvote(account, ref, direction = 1): Promise<UpvoteResult> {
+    const accessToken = await token(account);
+    // A vote is by fullname (t3_abc123). A permalink has to be looked up.
+    let fullname = ref.trim();
+    if (!/^t[1-6]_[a-z0-9]+$/i.test(fullname)) {
+      const url = fullname.startsWith("http") ? fullname : `https://reddit.com${fullname}`;
+      const found = await getJson<{ data: { children: { data: Record<string, any> }[] } }>(
+        `${API}/api/info?url=${encodeURIComponent(url)}`,
+        { headers: auth(accessToken) },
+      );
+      const data = found.data.children[0]?.data;
+      if (!data?.name) throw new Error(`Reddit could not find that post: ${ref}`);
+      fullname = String(data.name);
+      if (direction === 1 && data.likes === true) {
+        return { already: true, id: fullname, url: `https://reddit.com${data.permalink}` };
+      }
+    }
+
+    await postForm(
+      `${API}/api/vote`,
+      { id: fullname, dir: String(direction === 0 ? 0 : 1), rank: "2" },
+      { headers: auth(accessToken) },
+    );
+    return { id: fullname, ...(ref.startsWith("http") ? { url: ref } : {}) };
   },
 };

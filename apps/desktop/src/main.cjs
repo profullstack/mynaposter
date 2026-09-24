@@ -238,6 +238,59 @@ handle("post:preview", ({ text, targets }) => {
   });
 });
 
+/**
+ * The upvoter.
+ *
+ * `upvote:send` is the only one that touches somebody else's post; it goes
+ * through the same engine as the daemon and honours every cap, so the desktop
+ * cannot cast more than the terminal would.
+ */
+handle("upvote:overview", () => {
+  const settings = core.loadSettings().upvote;
+  const items = core.listUpvotes();
+  const index = core.topicIndex(core.listHistory(), { days: settings.topicDays });
+  const accounts = [...new Set(items.map((item) => item.accountId))];
+  return {
+    settings,
+    manualOnly: [...core.manualOnly(settings)],
+    topics: index.topics.slice(0, 10).map((topic) => topic.term),
+    castToday: accounts.reduce((sum, id) => sum + core.actedToday(items, id), 0),
+    linksToday: accounts.reduce((sum, id) => sum + core.actedToday(items, id, Date.now(), "reply"), 0),
+    items: items
+      .filter((item) => item.status === "pending")
+      .sort((a, b) => a.dueAt.localeCompare(b.dueAt))
+      .map((item) => ({
+        id: item.id,
+        account: item.accountId,
+        network: item.network,
+        action: item.action,
+        handle: item.handle,
+        score: item.score,
+        matched: item.matched,
+        text: item.postText,
+        url: item.postUrl,
+        reply: item.reply,
+        dueAt: item.dueAt,
+      })),
+  };
+});
+handle("upvote:enabled", (enabled) => {
+  const settings = core.loadSettings();
+  settings.upvote.enabled = Boolean(enabled);
+  core.saveSettings(settings);
+  return settings.upvote.enabled;
+});
+handle("upvote:scan", async () => {
+  const result = await core.scanUpvotes();
+  return { read: result.read, queued: result.queued.length, queries: result.queries, skipped: result.skipped };
+});
+handle("upvote:send", async (options) => {
+  const result = await core.runUpvotes(options ?? {});
+  return { cast: result.done.length, held: [...new Set(result.held)] };
+});
+handle("upvote:skip", (id) => Boolean(core.updateUpvote(id, { status: "skipped", reason: "skipped in the desktop app" })));
+handle("upvote:edit", (id, reply) => Boolean(core.updateUpvote(id, { reply, drafted: "template", action: "reply" })));
+
 handle("queue:list", () => core.listQueue());
 handle("queue:add", ({ text, title, targets, at, mediaPaths }) =>
   core.enqueue({

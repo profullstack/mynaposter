@@ -1,5 +1,5 @@
 /** Misskey, Sharkey, Firefish and Calckey. Token auth; every call is a POST. */
-import type { Account, Network, Profile, TimelineItem } from "../types.ts";
+import type { Account, Network, Profile, TimelineItem, UpvoteResult } from "../types.ts";
 import { normalizeInstance, postJson } from "../../util/http.ts";
 
 interface MisskeyUser {
@@ -39,6 +39,8 @@ interface Note {
   user: { username: string; name: string | null; host: string | null };
   renoteCount?: number;
   repliesCount?: number;
+  /** The reaction this account has already left, when it has left one. */
+  myReaction?: string | null;
 }
 
 export const misskey: Network = {
@@ -55,7 +57,7 @@ export const misskey: Network = {
       { key: "token", label: "Access token", secret: true },
     ],
   },
-  caps: { charLimit: 3000, mediaLimit: 16, threads: true, delete: true, timeline: true, notifications: true, stats: true, follow: true },
+  caps: { charLimit: 3000, mediaLimit: 16, threads: true, delete: true, timeline: true, notifications: true, stats: true, search: true, follow: true, upvote: true },
 
   async login(input) {
     const instance = normalizeInstance(input.instance);
@@ -198,5 +200,47 @@ export const misskey: Network = {
     if (who.isFollowing || who.hasPendingFollowRequestFromYou) return { already: true, id: who.id, url };
     await postJson(`${account.meta.instance}/api/following/create`, { i: account.creds.token, userId: who.id });
     return { id: who.id, url };
+  },
+
+  async search(account, query, limit) {
+    const notes = await postJson<Note[]>(`${account.meta.instance}/api/notes/search`, {
+      i: account.creds.token,
+      query,
+      limit: Math.min(100, Math.max(1, limit)),
+    });
+    return (notes ?? []).map((note): TimelineItem => ({
+      id: note.id,
+      author: note.user.name || note.user.username,
+      handle: `@${note.user.username}${note.user.host ? `@${note.user.host}` : ""}`,
+      text: note.text ?? "",
+      createdAt: note.createdAt,
+      url: `${account.meta.instance}/notes/${note.id}`,
+      reposts: note.renoteCount,
+      replies: note.repliesCount,
+    }));
+  },
+
+  async upvote(account, ref, direction = 1): Promise<UpvoteResult> {
+    // A Misskey vote is a reaction. The instance's default is whatever the
+    // admin picked, and passing it explicitly keeps every account consistent.
+    const noteId = ref.includes("/notes/") ? (ref.split("/notes/").pop() ?? "").split(/[?#]/)[0] : ref.trim();
+    if (!noteId) throw new Error(`Not a Misskey note: ${ref}`);
+    const url = `${account.meta.instance}/notes/${noteId}`;
+
+    const note = await postJson<Note>(`${account.meta.instance}/api/notes/show`, { i: account.creds.token, noteId });
+
+    if (direction === 0) {
+      if (!note.myReaction) return { already: true, id: noteId, url };
+      await postJson(`${account.meta.instance}/api/notes/reactions/delete`, { i: account.creds.token, noteId });
+      return { id: noteId, url };
+    }
+
+    if (note.myReaction) return { already: true, id: noteId, url };
+    await postJson(`${account.meta.instance}/api/notes/reactions/create`, {
+      i: account.creds.token,
+      noteId,
+      reaction: "\u2b50",
+    });
+    return { id: noteId, url };
   },
 };

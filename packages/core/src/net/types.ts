@@ -69,6 +69,12 @@ export interface NetworkCapabilities {
   /** Can follow an account, and list who a given account follows. */
   follow?: boolean;
   /**
+   * Can cast a vote on somebody else's post: a like, a favourite, a boost of
+   * the score. What the network calls it varies; what matters here is that it
+   * is a one-click signal that costs nothing and can be taken back.
+   */
+  upvote?: boolean;
+  /**
    * Posts only when named in `--to`, never as part of `all`. For targets
    * where a post is a publication — a page on a blog, a commit to a
    * repository — that a stray fan-out must not be able to create.
@@ -163,6 +169,15 @@ export interface FollowResult {
   url?: string;
 }
 
+export interface UpvoteResult {
+  /** True when this account had already voted and nothing was sent. */
+  already?: boolean;
+  /** The network's id for the vote itself, where one exists — what an undo needs. */
+  id?: string;
+  /** The post that was voted on, for a log a person can click. */
+  url?: string;
+}
+
 /** Passed to `login` so an adapter can talk to the user mid-flow. */
 export interface LoginContext {
   /** Show a line of progress ("waiting for the browser…"). */
@@ -235,6 +250,15 @@ export interface Network {
   followers?(account: Account, handle: string, limit: number): Promise<Profile[]>;
   /** Follow `handle` from this account. Following twice is not an error. */
   follow?(account: Account, handle: string): Promise<FollowResult>;
+  /**
+   * Vote on somebody else's post. `ref` is whatever a person has to hand: the
+   * post's URL as copied from the network, or its native id, the same as
+   * `repost` takes. `direction` is 1 to vote and 0 to take it back.
+   *
+   * Voting twice is not an error: an adapter that can tell it has already
+   * voted returns `already` rather than throwing.
+   */
+  upvote?(account: Account, ref: string, direction?: 0 | 1): Promise<UpvoteResult>;
 }
 
 export const NO_CAPS: NetworkCapabilities = {

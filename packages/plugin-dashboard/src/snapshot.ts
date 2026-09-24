@@ -162,6 +162,46 @@ export interface Snapshot {
   horizonMs: number;
   /** Newsletter issues and the lists they go to. Empty when the reader was not supplied. */
   newsletter: NewsletterSummary;
+  /** The upvoter and what it is about to do. Empty when the reader was not supplied. */
+  upvote: UpvoteSummary;
+}
+
+/**
+ * The upvoter panel: what myna is about to do with other people's posts.
+ *
+ * The dashboard's question is "am I about to get an account banned", and the
+ * upvoter is the part of myna that acts on strangers, so this panel leads
+ * with the caps and what is queued against them rather than a running total.
+ */
+export interface UpvoteSummary {
+  enabled: boolean;
+  /** Queued, and of those the ones that carry a link. */
+  pending: number;
+  pendingLinks: number;
+  /** Cast in the last rolling day, and how many of those were link drops. */
+  castToday: number;
+  linksToday: number;
+  /** The brakes, so the numbers above can be read against something. */
+  perDay: number;
+  linksPerDay: number;
+  gapMinutes: number;
+  /** Networks that are queued but never cast without a person. */
+  manualOnly: string[];
+  /** What myna currently thinks we are about, strongest first. */
+  topics: string[];
+  /** The next few queued actions. */
+  items: Array<{
+    id: string;
+    account: string;
+    network: string;
+    action: string;
+    handle: string;
+    score: number;
+    text: string;
+    url?: string;
+    reply?: string;
+    dueAt: string;
+  }>;
 }
 
 export interface NewsletterSummary {
@@ -198,6 +238,7 @@ export interface SnapshotInput {
    */
   skills?: Array<Omit<SkillSummary, "sentToday" | "slot">>;
   newsletter?: NewsletterSummary;
+  upvote?: UpvoteSummary;
 }
 
 const DAY = 86_400_000;
@@ -317,6 +358,19 @@ export function buildSnapshot(input: SnapshotInput): Snapshot {
     })),
     horizonMs: horizonFor(rules.dripMs),
     newsletter: input.newsletter ?? { issues: [], lists: [], address: false, tracking: null },
+    upvote: input.upvote ?? {
+      enabled: false,
+      pending: 0,
+      pendingLinks: 0,
+      castToday: 0,
+      linksToday: 0,
+      perDay: 0,
+      linksPerDay: 0,
+      gapMinutes: 0,
+      manualOnly: [],
+      topics: [],
+      items: [],
+    },
   };
 }
 
@@ -329,6 +383,7 @@ export function readSnapshot(deps: {
   settings: () => Settings;
   skills?: (accounts: Account[], settings: Settings) => SnapshotInput["skills"];
   newsletter?: () => NewsletterSummary;
+  upvote?: () => UpvoteSummary;
   now?: number;
 }): Snapshot {
   const queue = deps.queue();
@@ -344,5 +399,6 @@ export function readSnapshot(deps: {
     evergreenLast: lastEvergreen(queue),
     skills: deps.skills?.(accounts, settings),
     newsletter: deps.newsletter?.(),
+    upvote: deps.upvote?.(),
   });
 }
