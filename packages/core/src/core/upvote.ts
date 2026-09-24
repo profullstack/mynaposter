@@ -42,6 +42,7 @@ import {
 } from "../store/upvote.ts";
 import { bestLink, queriesFor, scoreAgainst, topicIndex, type TopicIndex } from "./topics.ts";
 import { linkDropDraft, writerAvailable, type LinkDropRequest } from "../ai/writer.ts";
+import { runAfterDiscover } from "../plugins/hooks.ts";
 import type { Account, TimelineItem } from "../net/types.ts";
 
 const DAY_MS = 86_400_000;
@@ -119,6 +120,11 @@ export interface UpvoteScanOptions {
   drafter?: LinkDrafter;
   /** Whether the writer can run at all. When it cannot, no link is ever dropped. */
   writerReady?: boolean;
+  /**
+   * Hand each person found to the plugins that collect people (`afterDiscover`).
+   * On by default; a test or a rehearsal passes false to keep the scan local.
+   */
+  handOff?: boolean;
   now?: number;
 }
 
@@ -355,6 +361,39 @@ export async function scanUpvotes(options: UpvoteScanOptions = {}): Promise<Upvo
   file.items.push(...queued);
   result.queued = queued;
   writeUpvotes(file);
+
+  // The finding is the valuable part, so it is handed over once it is safely
+  // recorded and before anything is cast. A plugin that throws is logged and
+  // never costs us the queue entry.
+  if (options.handOff !== false) {
+    for (const item of queued) {
+      const account = accounts.find((entry) => entry.id === item.accountId);
+      if (!account) continue;
+      try {
+        const outcomes = await runAfterDiscover(
+          {
+            account,
+            network: item.network,
+            handle: item.handle,
+            ...(item.author ? { displayName: item.author } : {}),
+            postText: item.postText,
+            ...(item.postUrl ? { postUrl: item.postUrl } : {}),
+            score: item.score,
+            matched: item.matched,
+            action: item.action,
+          },
+          log,
+        );
+        for (const outcome of outcomes) {
+          if (outcome.error) result.skipped.push(`${outcome.plugin}: ${outcome.error}`);
+          else if (outcome.line) log(`${outcome.plugin}  ${outcome.line}`);
+        }
+      } catch (error) {
+        result.skipped.push(`handing ${item.handle} over: ${(error as Error).message}`);
+      }
+    }
+  }
+
   return result;
 }
 

@@ -12,7 +12,7 @@ import type { TargetResult } from "../core/poster.ts";
 import { listPlugins } from "./loader.ts";
 import { pluginContext } from "./context.ts";
 import type { QueuedPost } from "../store/queue.ts";
-import type { CancelledEvent, FollowedEvent, MynaPlugin, PostedEvent, ScheduledEvent } from "./types.ts";
+import type { CancelledEvent, DiscoveredEvent, FollowedEvent, MynaPlugin, PostedEvent, ScheduledEvent } from "./types.ts";
 
 export interface HookOutcome {
   plugin: string;
@@ -37,7 +37,7 @@ export function postedEvent(results: TargetResult[], options: { text: string; ti
   };
 }
 
-type Hook = "afterPost" | "afterSchedule" | "afterCancel" | "afterFollow";
+type Hook = "afterPost" | "afterSchedule" | "afterCancel" | "afterFollow" | "afterDiscover";
 
 /** Run one hook on every plugin that has it, in load order, one at a time. */
 async function runHook<E>(hook: Hook, event: E, log?: (line: string) => void, flags?: Record<string, unknown>): Promise<HookOutcome[]> {
@@ -81,3 +81,13 @@ export const runAfterFollow = (event: FollowedEvent, options: { log?: (line: str
 /** Run every plugin's `afterCancel` for a queue entry that was just removed. */
 export const runAfterCancel = (id: string, log?: (line: string) => void): Promise<HookOutcome[]> =>
   runHook("afterCancel", { id } satisfies CancelledEvent, log);
+
+/**
+ * Run every plugin's `afterDiscover` for somebody the upvoter just found.
+ *
+ * Fired per person, at the pace of a scan rather than of a send, so a plugin
+ * that talks to a network over HTTP should expect a handful of these in a
+ * burst and batch accordingly.
+ */
+export const runAfterDiscover = (event: DiscoveredEvent, log?: (line: string) => void): Promise<HookOutcome[]> =>
+  runHook("afterDiscover", event, log);

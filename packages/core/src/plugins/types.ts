@@ -123,6 +123,35 @@ export interface FollowedEvent {
   via?: string;
 }
 
+/**
+ * Somebody the upvoter found: a person posting about what this install posts
+ * about, worth amplifying and therefore worth knowing.
+ *
+ * Fired once per person per scan, when the action is queued and before it is
+ * cast, because the finding is the valuable part and it is worth something
+ * even if the vote is later skipped. What a plugin does with them is its own
+ * business: OutreachGraph turns them into leads, and anything else that
+ * collects people can do the same without the upvoter knowing it exists.
+ */
+export interface DiscoveredEvent {
+  /** The account that found them, and the network they were found on. */
+  account: Account;
+  network: string;
+  /** Who, as the network names them. */
+  handle: string;
+  displayName?: string;
+  /** Their post: what it said and where it is. The bio a plugin wants is not
+   * available here, so the post text is the best evidence of who they are. */
+  postText: string;
+  postUrl?: string;
+  /** 0-1, how well their post matched what we post about. */
+  score: number;
+  /** Which of our topics they matched on, strongest first. */
+  matched: string[];
+  /** What myna intends to do about it: vote, repost or reply. */
+  action: string;
+}
+
 /** A source of seeds. The daemon calls it on its own schedule and feeds the result to the graph. */
 export interface SeedProvider {
   id: string;
@@ -165,6 +194,13 @@ export interface MynaPlugin {
   afterSchedule?(event: ScheduledEvent, ctx: PluginContext): Promise<string | void>;
   /** Called once a queued post has been cancelled, so whatever `afterSchedule` made can be undone. */
   afterCancel?(event: CancelledEvent, ctx: PluginContext): Promise<string | void>;
+  /**
+   * Called for each person the upvoter finds worth amplifying, once their
+   * action is queued. For a plugin that collects people: a CRM, a lead list,
+   * a follow graph. Same rules as the other hooks — a line back, and throwing
+   * never affects the queue, because by then the finding is already recorded.
+   */
+  afterDiscover?(event: DiscoveredEvent, ctx: PluginContext): Promise<string | void>;
 }
 
 /** What the loader knows about one plugin, including one that failed to load. */

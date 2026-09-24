@@ -20,13 +20,14 @@
  *   myna outreachgraph push <acct>    hand who you follow (or --followers) over
  *   myna follow ... --outreachgraph   hand each person followed over, as you go
  *   myna config graph.outreachgraph true   ...and from the graph and the daemon
+ *   myna config upvote.leads true     ...and everybody the upvoter finds
  *   myna run                          the daemon does the sync every 6 hours
  *
  * This is also the reference for a third-party plugin: it only imports types
  * from @profullstack/myna-core, and everything it needs at runtime arrives
  * through the PluginContext.
  */
-import type { Account, FollowedEvent, MynaPlugin, PluginContext, Profile, SeedInput } from "@profullstack/myna-core";
+import type { Account, DiscoveredEvent, FollowedEvent, MynaPlugin, PluginContext, Profile, SeedInput } from "@profullstack/myna-core";
 
 export const DEFAULT_URL = "https://outreachgraph.com";
 const SESSION_COOKIE = "og_session";
@@ -440,6 +441,42 @@ const plugin: MynaPlugin = {
     const rejected = result.rejected[0];
     if (rejected) return `OutreachGraph rejected ${event.handle}: ${rejected.reason}`;
     return `handed ${event.handle} to OutreachGraph (${result.created ? "new" : "known"}${result.queued ? ", OpenProfile queued" : ""})`;
+  },
+
+  /**
+   * Somebody the upvoter found, handed over as a lead.
+   *
+   * These are better leads than a follow is. A follow says myna decided to
+   * watch them; a discovery says they were publicly posting about the thing
+   * we sell, recently enough to still be in a search result, and matched it
+   * well enough to clear the bar. That is intent, and it travels with them:
+   * `via` carries the topics they matched on, so OutreachGraph knows which
+   * offer to reach them with rather than having to work it out from a bio.
+   */
+  async afterDiscover(event: DiscoveredEvent, ctx: PluginContext) {
+    if (!ctx.settings().upvote.leads) return;
+    if (!secretsOf(ctx)) return "not signed in to OutreachGraph; run: myna outreachgraph login";
+
+    // The topics they matched on are the reason they are a lead, so they are
+    // what `via` records. The post itself stands in for a bio: it is the only
+    // thing we have actually read of theirs, and it is what they chose to say.
+    const via = `upvote:${event.matched.slice(0, 3).join(",") || "topic"}`;
+    const person = personFrom(
+      {
+        handle: event.handle,
+        ...(event.displayName ? { displayName: event.displayName } : {}),
+        ...(event.postUrl ? { url: event.postUrl } : {}),
+        ...(event.postText ? { bio: event.postText.slice(0, 280) } : {}),
+      },
+      event.network,
+      via,
+    );
+    if (!person) return `${event.network} is not a network OutreachGraph knows; ${event.handle} not handed over`;
+
+    const result = await pushPeople(ctx, [person]);
+    const rejected = result.rejected[0];
+    if (rejected) return `OutreachGraph rejected ${event.handle}: ${rejected.reason}`;
+    return `lead ${event.handle} (${event.score}, ${event.matched.slice(0, 2).join(", ")}) to OutreachGraph (${result.created ? "new" : "known"})`;
   },
 };
 
