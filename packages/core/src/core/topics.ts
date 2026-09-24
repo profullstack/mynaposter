@@ -17,10 +17,16 @@ import type { HistoryEntry } from "../store/history.ts";
 export interface Topic {
   /** The word or two-word phrase, lowercased. */
   term: string;
-  /** Relative importance, highest first. Frequency times recency. */
+  /**
+   * Relative importance, highest first. Distinctiveness times recency, not
+   * frequency: see `topicIndex` for why the most frequent word we use is the
+   * least useful thing about us.
+   */
   weight: number;
   /** How many of our posts it appeared in. */
   posts: number;
+  /** True for a two-word phrase, which is a far stronger signal than a word. */
+  phrase: boolean;
 }
 
 /** One of our posts, reduced to what a link drop needs. */
@@ -104,10 +110,38 @@ export interface TopicOptions {
 /**
  * Read our history into a topic index.
  *
- * Only successful posts count, and only their text: a failed send says
- * nothing about what we are about. Recency is a halving every `days/2`, so a
- * campaign from last week outranks one from a month ago without erasing it.
+ * Only successful posts count, and only their text: a failed send says nothing
+ * about what we are about.
+ *
+ * The scoring is deliberately not frequency. An install that posts about a
+ * dozen different products says "every", "page", "first" and "live" in most of
+ * them, and those are the *least* distinctive things it says — rank by raw
+ * count and the engine goes looking for strangers who used the word "first".
+ * So a term is weighted by how concentrated it is: inverse document frequency
+ * against our own corpus, which pushes filler down and a real subject up.
+ *
+ * Three rules fall out of that:
+ *
+ *   - A term in more than `MAX_DF` of our posts is our own filler, whatever it
+ *     is, and is dropped outright.
+ *   - A term in only one post is a coincidence, so two is the floor.
+ *   - A two-word phrase beats either of its words, because "rope data" is a
+ *     subject and "data" is not.
+ *
+ * Recency still applies, as a halving every `days/2`, so this month's campaign
+ * outranks last month's without erasing it.
  */
+/**
+ * A term in more than this fraction of our own posts is filler, not a subject.
+ * At 1000 posts about a dozen products, anything above roughly one post in ten
+ * is vocabulary rather than topic.
+ */
+export const MAX_DF = 0.12;
+/** A term in fewer posts than this is a coincidence, not a subject. */
+export const MIN_POSTS = 2;
+/** Below this many posts there is no filler to find, so none is filtered. */
+export const SMALL = 10;
+
 export function topicIndex(entries: HistoryEntry[], options: TopicOptions = {}): TopicIndex {
   const days = options.days ?? 14;
   const now = options.now ?? Date.now();
@@ -115,9 +149,10 @@ export function topicIndex(entries: HistoryEntry[], options: TopicOptions = {}):
   const cutoff = now - days * DAY_MS;
   const halfLife = Math.max(1, days / 2) * DAY_MS;
 
-  const weights = new Map<string, number>();
+  const recencyOf = new Map<string, number>();
   const counts = new Map<string, number>();
   const posts: OurPost[] = [];
+  let documents = 0;
 
   for (const entry of entries) {
     if (!entry.ok) continue;
@@ -126,27 +161,45 @@ export function topicIndex(entries: HistoryEntry[], options: TopicOptions = {}):
     const text = `${entry.title ? `${entry.title} ` : ""}${entry.text}`;
     const terms = termSet(text);
     if (!terms.size) continue;
+    documents += 1;
 
-    // Halve the weight for every half-life of age.
+    // Halve the contribution for every half-life of age. Recency is summed
+    // separately from the count, because the count is what decides whether a
+    // term is a subject at all and must not be skewed by when it was said.
     const recency = Math.pow(0.5, (now - at) / halfLife);
     for (const term of terms) {
-      // A two-word phrase is a stronger signal than either word alone.
-      const bonus = term.includes(" ") ? 1.6 : 1;
-      weights.set(term, (weights.get(term) ?? 0) + recency * bonus);
+      recencyOf.set(term, (recencyOf.get(term) ?? 0) + recency);
       counts.set(term, (counts.get(term) ?? 0) + 1);
     }
     if (entry.url) posts.push({ id: entry.postId, url: entry.url, text, at: entry.at, terms });
   }
 
-  const topics = [...weights.entries()]
-    .map(([term, weight]): Topic => ({ term, weight, posts: counts.get(term) ?? 0 }))
-    // A term from a single post is a coincidence; two is a subject. Single-post
-    // terms are kept only when nothing else cleared the bar.
+  // Distinctiveness: how much this term narrows down which of our posts it is.
+  // A term spread across most of them narrows nothing.
+  //
+  // None of that applies to an install that has barely posted. With five posts
+  // there is no such thing as filler, every term is rare, and a document
+  // frequency ceiling would throw away the only subject there is, so below
+  // `SMALL` the corpus is taken as it comes.
+  const small = documents < SMALL;
+  const floor = small ? 1 : MIN_POSTS;
+  const ceiling = small ? documents : Math.max(MIN_POSTS, Math.floor(documents * MAX_DF));
+
+  const weights = new Map<string, number>();
+  for (const [term, count] of counts) {
+    if (count < floor || count > ceiling) continue;
+    // Smoothed, so a term in every post of a tiny corpus still has a weight
+    // rather than being zeroed out of existence by log(1).
+    const idf = Math.log((documents + 1) / count) + 0.25;
+    // A phrase is worth more than either of its words on its own.
+    const phrase = term.includes(" ") ? 2.2 : 1;
+    weights.set(term, idf * phrase * (recencyOf.get(term) ?? 0));
+  }
+
+  const kept = [...weights.entries()]
+    .map(([term, weight]): Topic => ({ term, weight, posts: counts.get(term) ?? 0, phrase: term.includes(" ") }))
     .sort((a, b) => b.weight - a.weight || a.term.localeCompare(b.term))
     .slice(0, limit);
-
-  const repeated = topics.filter((topic) => topic.posts > 1);
-  const kept = repeated.length >= 3 ? repeated : topics;
 
   // A candidate that hits our three strongest topics is as on-subject as we
   // can ask for, so that is what a score of 1 means.
@@ -171,14 +224,21 @@ export function queriesFor(index: TopicIndex, limit: number): string[] {
     queries.push(key);
   };
 
+  // Phrases first: they are already good queries.
   for (const topic of index.topics) {
     if (queries.length >= limit) break;
-    if (topic.term.includes(" ")) add(topic.term);
+    if (topic.phrase) add(topic.term);
   }
-  for (const topic of index.topics) {
-    if (queries.length >= limit) break;
-    if (!topic.term.includes(" ")) add(topic.term);
+
+  // A single word is a bad search on its own however distinctive it looks, so
+  // the strongest words are paired with each other rather than sent bare. Two
+  // narrow words find people talking about both; one finds the whole network.
+  const words = index.topics.filter((topic) => !topic.phrase).map((topic) => topic.term);
+  for (let i = 0; i + 1 < words.length && queries.length < limit; i += 2) {
+    add(`${words[i]} ${words[i + 1]}`);
   }
+  // Only if there was nothing else at all.
+  if (!queries.length && words[0]) add(words[0]);
   return queries.slice(0, limit);
 }
 
@@ -189,18 +249,29 @@ export interface Match {
   matched: string[];
 }
 
-/** Score somebody else's post against what we are about. */
+/**
+ * Score somebody else's post against what we are about.
+ *
+ * Matching several of our words is not enough on its own: a long post will
+ * brush against a few of anybody's terms by chance. To count as on-subject a
+ * post has to hit either one of our phrases, or at least two distinct words.
+ * One word is a coincidence and scores nothing.
+ */
 export function scoreAgainst(text: string, index: TopicIndex): Match {
   const terms = termSet(text);
   if (!terms.size || !index.topics.length) return { score: 0, matched: [] };
 
   let weight = 0;
+  let phrases = 0;
   const matched: { term: string; weight: number }[] = [];
   for (const topic of index.topics) {
     if (!terms.has(topic.term)) continue;
     weight += topic.weight;
+    if (topic.phrase) phrases += 1;
     matched.push(topic);
   }
+
+  if (!phrases && matched.length < 2) return { score: 0, matched: [] };
   return {
     score: Math.min(1, weight / index.reference),
     matched: matched.sort((a, b) => b.weight - a.weight).map((topic) => topic.term),

@@ -27,10 +27,24 @@ about rope data structures.
 follow from it. If that list is wrong, what it finds will be wrong, and the fix
 is to look at what you have been posting rather than to tune a knob.
 
+It is ranked by **distinctiveness, not frequency**, and that distinction is the
+whole thing. An install that posts about a dozen products says "every", "page",
+"first" and "live" in most of them, so ranking by count puts its own filler on
+top and sends the engine looking for strangers who used the word "first". So a
+term is scored by inverse document frequency against your own history: anything
+appearing in more than about one post in eight is your vocabulary rather than
+your subject, and is dropped outright. A term in only one post is a
+coincidence, so two is the floor. An install that has barely posted skips all
+of that, because with five posts there is no filler to find.
+
 Two-word phrases outrank single words, both as topics and as queries, because
-"open source" finds the right people and "open" does not. Stopwords and the
-vocabulary of posting itself ("shipped", "check out", "read more") are never
-topics — every announcement contains them.
+"open source" finds the right people and "open" does not. A single word is
+never sent as a query on its own when anything else exists: two narrow words
+find people talking about both, one finds the whole network.
+
+Scoring a stranger's post follows from the same idea. Brushing against one of
+your terms is a coincidence and scores zero; it takes a phrase, or two distinct
+terms, to count as on-subject at all.
 
 ## What it does about it
 
