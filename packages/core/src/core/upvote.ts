@@ -277,8 +277,11 @@ export async function scanUpvotes(options: UpvoteScanOptions = {}): Promise<Upvo
     let ourPostId: string | undefined;
     let drafted: "writer" | "template" | undefined;
 
+    // A link drop is a comment under their post. On a network whose `post`
+    // cannot reply — Lemmy and Reddit submit a new thread instead — that
+    // would publish a standalone advert, so those never carry a link.
     const wantsReply =
-      replies < replyCount && candidate.score >= settings.linkMinScore && writerOk && Boolean(network?.caps.threads !== false);
+      replies < replyCount && candidate.score >= settings.linkMinScore && writerOk && Boolean(network?.caps.threads);
     if (wantsReply) {
       const ours = bestLink(item.text, index);
       if (ours) {
@@ -320,6 +323,7 @@ export async function scanUpvotes(options: UpvoteScanOptions = {}): Promise<Upvo
       handle: item.handle,
       author: item.author,
       postId: item.id,
+      ...(item.postId && item.postId !== item.id ? { replyTo: item.postId } : {}),
       ...(item.url ? { postUrl: item.url } : {}),
       postText: item.text.slice(0, 600),
       ...(item.createdAt ? { postedAt: item.createdAt } : {}),
@@ -491,25 +495,33 @@ export async function runUpvotes(options: UpvoteRunOptions = {}): Promise<Upvote
     }
 
     if (item.action === "reply" && item.reply) {
-      try {
-        const posted = await network.post(account, { text: item.reply, replyTo: ref });
-        item.result.url = posted.url ?? item.result.url;
-        anything = true;
-        recordHistory([
-          {
-            at: new Date(now).toISOString(),
-            accountId: account.id,
-            network: account.network,
-            handle: account.handle,
-            text: item.reply,
-            ok: true,
-            type: "reply",
-            postId: posted.id,
-            ...(posted.url ? { url: posted.url } : {}),
-          },
-        ]);
-      } catch (error) {
-        errors.push(`reply: ${(error as Error).message}`);
+      // `myna upvote edit` can turn any queued action into a reply, so the
+      // network is re-checked here and not only at scan time: on one whose
+      // `post` cannot reply, this would publish a new thread carrying a link
+      // rather than a comment, which is the one thing this must never do.
+      if (!network.caps.threads) {
+        errors.push(`reply: ${item.network} cannot reply to a post, so no link was dropped`);
+      } else {
+        try {
+          const posted = await network.post(account, { text: item.reply, replyTo: item.replyTo || ref });
+          item.result.url = posted.url ?? item.result.url;
+          anything = true;
+          recordHistory([
+            {
+              at: new Date(now).toISOString(),
+              accountId: account.id,
+              network: account.network,
+              handle: account.handle,
+              text: item.reply,
+              ok: true,
+              type: "reply",
+              postId: posted.id,
+              ...(posted.url ? { url: posted.url } : {}),
+            },
+          ]);
+        } catch (error) {
+          errors.push(`reply: ${(error as Error).message}`);
+        }
       }
     }
 

@@ -249,19 +249,26 @@ export const bluesky: Network = {
       `${base}/xrpc/app.bsky.feed.searchPosts?q=${encodeURIComponent(query)}&limit=${Math.min(100, Math.max(1, limit))}`,
       { headers: auth(accessJwt) },
     );
-    return (found.posts ?? []).map((post): TimelineItem => ({
-      // The composite the like and repost records need, so acting on a search
-      // result costs no second lookup.
-      id: `${post.uri}|${post.cid}`,
-      author: post.author?.displayName || post.author?.handle || "",
-      handle: post.author?.handle ?? "",
-      text: post.record?.text ?? "",
-      createdAt: post.record?.createdAt ?? post.indexedAt ?? "",
-      url: `https://bsky.app/profile/${post.author?.handle}/post/${String(post.uri).split("/").pop()}`,
-      likes: post.likeCount,
-      reposts: post.repostCount,
-      replies: post.replyCount,
-    }));
+    return (found.posts ?? []).map((post): TimelineItem => {
+      // A reply carries the thread root as well as the post itself, and the
+      // root is the post's own when it is not a reply. `id` stays the plain
+      // subject a like or a repost record points at; `postId` is the longer
+      // form `post` needs to put a reply in the right thread rather than
+      // starting a new one off the middle of someone else's.
+      const root = post.record?.reply?.root ?? { uri: post.uri, cid: post.cid };
+      return {
+        id: `${post.uri}|${post.cid}`,
+        postId: `${root.uri}|${root.cid}|${post.uri}|${post.cid}`,
+        author: post.author?.displayName || post.author?.handle || "",
+        handle: post.author?.handle ?? "",
+        text: post.record?.text ?? "",
+        createdAt: post.record?.createdAt ?? post.indexedAt ?? "",
+        url: `https://bsky.app/profile/${post.author?.handle}/post/${String(post.uri).split("/").pop()}`,
+        likes: post.likeCount,
+        reposts: post.repostCount,
+        replies: post.replyCount,
+      };
+    });
   },
 
   async upvote(account, ref, direction = 1): Promise<UpvoteResult> {

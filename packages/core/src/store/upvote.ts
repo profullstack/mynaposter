@@ -43,6 +43,12 @@ export interface UpvoteItem {
   author: string;
   /** The post: the network's id, the URL, and enough text to judge it by. */
   postId: string;
+  /**
+   * What `PostInput.replyTo` needs to land a reply under it, where that is not
+   * the same string as `postId` — Bluesky wants the thread root alongside the
+   * post. Absent when the network's own id is enough.
+   */
+  replyTo?: string;
   postUrl?: string;
   postText: string;
   postedAt?: string;

@@ -18,7 +18,7 @@ import { join } from "node:path";
 
 import { scanUpvotes, runUpvotes, share, ourHandles, actedToday } from "../src/core/upvote.ts";
 import { topicIndex, queriesFor, scoreAgainst, bestLink, termSet } from "../src/core/topics.ts";
-import { listUpvotes, readUpvotes } from "../src/store/upvote.ts";
+import { listUpvotes, readUpvotes, updateUpvote } from "../src/store/upvote.ts";
 import { recordHistory, listHistory } from "../src/store/history.ts";
 import { resetAccountCache, saveAccount } from "../src/store/accounts.ts";
 import { registerNetwork, unregisterNetwork } from "../src/net/registry.ts";
@@ -452,4 +452,135 @@ test("actedToday counts only the last rolling day, and only that kind when asked
   ];
   expect(actedToday(items, "a", T0)).toBe(2);
   expect(actedToday(items, "a", T0, "reply")).toBe(1);
+});
+
+test("a reply uses the network's reply ref, not the vote ref, when they differ", async () => {
+  useNetwork("fake");
+  saveAccount(account("fake:me", "fake", "me"));
+  ourHistory();
+  // What Bluesky's search does: `id` is the subject a like points at, `postId`
+  // is the longer form a reply needs so it lands in the right thread.
+  results = [
+    found({
+      id: "at://ada/post/1|cid1",
+      postId: "at://root/post/0|cid0|at://ada/post/1|cid1",
+      handle: "ada",
+      text: "rust ropes in a terminal editor, gap buffer benchmarks?",
+    }),
+  ];
+  const loud = { ...settings, linkRatio: 1, linkMinScore: 0, repostRatio: 0 };
+  await scanUpvotes({ settings: loud, now: T0, drafter, writerReady: true });
+
+  await runUpvotes({ settings: loud, now: T0 });
+  // The vote points at the post itself.
+  expect(voted[0]?.ref).toBe("at://ada/post/1|cid1");
+  // The reply carries the thread root, so it does not detach into its own.
+  expect(posted[0]?.replyTo).toBe("at://root/post/0|cid0|at://ada/post/1|cid1");
+});
+
+test("a network that cannot reply never has a link dropped on it", async () => {
+  // Lemmy and Reddit submit a new thread rather than a comment, so a "reply"
+  // there would publish a standalone advert.
+  useNetwork("linky", { repost: false });
+  const network = { ...settings, linkRatio: 1, linkMinScore: 0, repostRatio: 0 };
+  saveAccount(account("linky:me", "linky", "me"));
+  ourHistory();
+  results = [found({ id: "a1", handle: "ada", text: "rust ropes in a terminal editor" })];
+
+  // Re-register the same id with threads off.
+  unregisterNetwork("linky");
+  registered.pop();
+  registerNetwork({
+    id: "linky",
+    name: "linky",
+    category: "forum",
+    blurb: "",
+    auth: { kind: "password", fields: [] },
+    caps: {
+      charLimit: 0,
+      mediaLimit: 0,
+      threads: false,
+      delete: false,
+      timeline: false,
+      notifications: false,
+      stats: false,
+      search: true,
+      upvote: true,
+    },
+    async login() {
+      throw new Error("not used");
+    },
+    async post(account: Account, input: { text: string; replyTo?: string }) {
+      posted.push({ account: account.id, text: input.text, replyTo: input.replyTo });
+      return { id: "new-thread" };
+    },
+    async search() {
+      return results;
+    },
+    async upvote(account: Account, ref: string) {
+      voted.push({ account: account.id, ref, dir: 1 });
+      return { id: "v" };
+    },
+  } as unknown as Network);
+  registered.push("linky");
+
+  const scan = await scanUpvotes({ settings: network, now: T0, drafter, writerReady: true });
+  // The scan never even drafts one.
+  expect(scan.queued[0]?.action).toBe("vote");
+  expect(drafts.length).toBe(0);
+
+  await runUpvotes({ settings: network, now: T0 });
+  expect(posted.length).toBe(0);
+  expect(voted.length).toBe(1);
+});
+
+test("editing a queued action into a reply cannot publish a new thread", async () => {
+  // `myna upvote edit` forces action: "reply" on whatever it is given, so the
+  // send path has to re-check that the network can actually reply.
+  registerNetwork({
+    id: "nothread",
+    name: "nothread",
+    category: "forum",
+    blurb: "",
+    auth: { kind: "password", fields: [] },
+    caps: {
+      charLimit: 0,
+      mediaLimit: 0,
+      threads: false,
+      delete: false,
+      timeline: false,
+      notifications: false,
+      stats: false,
+      search: true,
+      upvote: true,
+    },
+    async login() {
+      throw new Error("not used");
+    },
+    async post(account: Account, input: { text: string; replyTo?: string }) {
+      posted.push({ account: account.id, text: input.text, replyTo: input.replyTo });
+      return { id: "new-thread" };
+    },
+    async search() {
+      return results;
+    },
+    async upvote(account: Account, ref: string) {
+      voted.push({ account: account.id, ref, dir: 1 });
+      return { id: "v" };
+    },
+  } as unknown as Network);
+  registered.push("nothread");
+  saveAccount(account("nothread:me", "nothread", "me"));
+  ourHistory();
+  results = [found({ id: "a1", handle: "ada", text: "rust ropes in a terminal editor" })];
+  await scanUpvotes({ settings, now: T0, drafter, writerReady: true });
+
+  // A person rewrites it into a link drop by hand.
+  const queued = listUpvotes()[0];
+  updateUpvote(queued.id, { action: "reply", reply: "here you go https://example.com/rust-ropes" });
+
+  await runUpvotes({ settings, now: T0 });
+  expect(posted.length).toBe(0);
+  const after = listUpvotes()[0];
+  expect(after?.error).toContain("cannot reply");
 });
