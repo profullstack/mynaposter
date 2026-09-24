@@ -2,44 +2,72 @@
  * `myna newsletter`: issues to a contacts list, paced by the daily email cap,
  * with one-click unsubscribe and a postal address on every one.
  *
- *   myna newsletter create --subject "..." --list L [--at "tomorrow 9am"] [--smtp id] [--reply-to r] [--id slug] < issue.md
+ *   myna newsletter create --subject "..." [--subject-b "..."] --list L [--cta-set default|none] [--service moshcode]
+ *        [--at "tomorrow 9am"] [--smtp id] [--reply-to r] [--id slug] < issue.md
  *   myna newsletter list | show <id> [--body] | rm <id> [--force]
- *   myna newsletter edit <id> [--subject] [--list] [--at when | --draft] [--smtp] [--reply-to] [< issue.md]
- *   myna newsletter send <id> [--dry-run] [--test addr] [--limit N] [--retry-failed] [--retry-uncertain]
+ *   myna newsletter edit <id> [--subject] [--subject-b] [--list] [--cta-set] [--service] [--at when | --draft] [--smtp] [--reply-to] [< issue.md]
+ *   myna newsletter send <id> [--dry-run] [--to addr] [--yes] [--limit N] [--max-per-day N] [--pace-ms N] [--retry-failed] [--retry-uncertain]
  *   myna newsletter subscribe <email...> --list L [--name] [--tags a,b]
  *   myna newsletter unsubscribe <email|token> [--list L]
  *   myna newsletter subscribers --list L [--json]
  *   myna newsletter import <file.csv|file.json> --list L [--tags a,b]
- *   myna newsletter sync          pull one-click unsubscribes from myna cloud
+ *   myna newsletter sync | sync-optouts     pull unsubscribes from myna cloud and crawlproof
+ *   myna newsletter track set <trackingId> [--secret <hex>] | track status [--check] | track off
+ *   myna newsletter stats <id> [--json]     opens, clicks, CTR, unsubscribes per variant
+ *   myna newsletter cta list | add "<label>" <url> | rm "<label>"   [--set default]
  *
  * Subscribers are contacts on a list, so `myna contacts` sees them too, and
  * `myna email --list` still mails the same list without any of this.
+ *
+ * An issue with --subject-b and/or a CTA set is an A/B test: the variants are
+ * the subjects crossed with the set's calls to action, one per person, fixed
+ * by a hash of the issue id and the address. With tracking set up, links are
+ * signed crawlproof click URLs, the HTML carries an open pixel, and the
+ * unsubscribe link is crawlproof's signed one.
  */
 import { readFileSync } from "node:fs";
 import {
+  TRACKING_ID,
+  TRACKING_SECRETS,
   createNewsletter,
   deliveriesFor,
   editNewsletter,
+  fetchNewsletterStats,
+  fetchTrackingEvents,
+  getPluginSecrets,
   loadSettings,
+  newsletterTracking,
   parseWhen,
   readNewsletters,
   readSubscriberFile,
   removeNewsletter,
   requireNewsletter,
+  saveSettings,
   sendNewsletter,
+  setPluginSecrets,
   subscribe,
   subscribers,
-  syncUnsubscribes,
+  syncAllUnsubscribes,
   tally,
+  trackingBase,
   unsubscribe,
+  type SendNewsletterReport,
   type SubscribeResult,
 } from "@profullstack/myna-core";
 import { out, table } from "./io.ts";
+import { askSecret } from "./prompt.ts";
 
 type Flags = Record<string, unknown>;
 
 const str = (flags: Flags, key: string): string | undefined => (typeof flags[key] === "string" ? (flags[key] as string) : undefined);
 const list = (value: string | undefined): string[] => (value ? value.split(",").map((s) => s.trim()).filter(Boolean) : []);
+const num = (flags: Flags, key: string): number | undefined => {
+  const value = str(flags, key);
+  if (value === undefined) return undefined;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) throw new Error(`--${key.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)} takes a number.`);
+  return parsed;
+};
 
 /** The body from stdin, or undefined when nothing is piped. */
 function pipedBody(): string | undefined {
@@ -50,10 +78,152 @@ function pipedBody(): string | undefined {
 
 const when = (value: string | undefined): string | undefined => (value ? parseWhen(value).at.toISOString() : undefined);
 
+/** --cta-set: a set name, or "none". Absent, `fallback`. */
+function ctaSetFlag(flags: Flags, fallback: string | null | undefined): string | null | undefined {
+  const value = str(flags, "ctaSet");
+  if (value === undefined) return fallback;
+  if (value === "none") return null;
+  if (!loadSettings().newsletter.ctaSets[value]?.length) throw new Error(`No CTA set "${value}", or it is empty. myna newsletter cta list shows them.`);
+  return value;
+}
+
 function reportSubscribe(result: SubscribeResult, listName: string): void {
   out(`${result.added.length} added to ${listName}${result.already.length ? `, ${result.already.length} already on it` : ""}.`);
   if (result.optedOut.length) out(`${result.optedOut.length} opted out before and stay out: ${result.optedOut.slice(0, 10).join(", ")}`);
   if (result.invalid.length) out(`${result.invalid.length} not an email address: ${result.invalid.slice(0, 10).join(", ")}`);
+}
+
+function printVariants(report: SendNewsletterReport): void {
+  if (report.variants.length < 2) return;
+  out(`${report.variants.length} variants, split over the ${Object.values(report.split).reduce((a, b) => a + b, 0)} still due:`);
+  for (const variant of report.variants) {
+    out(`  ${variant.key}  ${String(report.split[variant.key] ?? 0).padStart(6)}  subject ${variant.subjectKey}: ${variant.subject}${variant.cta ? `  |  CTA: ${variant.cta.label}` : ""}`);
+  }
+}
+
+async function runTrack(rest: string[], flags: Flags): Promise<number> {
+  const [sub, id] = rest;
+  const settings = loadSettings();
+  if (sub === "set") {
+    if (!id || !TRACKING_ID.test(id.trim()))
+      throw new Error("Usage: myna newsletter track set <trackingId> [--secret <hex>]   (the id is 24 hex, from the project's Tracking tab on crawlproof.com; pass --secret or pipe the secret in)");
+    const secret = (str(flags, "secret") ?? (process.stdin.isTTY ? await askSecret("Tracking secret") : readFileSync(0, "utf8"))).trim();
+    if (!/^[0-9a-f]{32,}$/i.test(secret)) throw new Error("The tracking secret is hex, from crawlproof.com. Nothing was saved.");
+    settings.newsletter.trackingId = id.trim().toLowerCase();
+    saveSettings(settings);
+    setPluginSecrets(TRACKING_SECRETS, { ...getPluginSecrets(TRACKING_SECRETS), trackingSecret: secret });
+    out(`Tracking through ${trackingBase({ id: settings.newsletter.trackingId, host: settings.newsletter.trackingHost })}. The secret is in the vault.`);
+    out("Every issue's links, open pixel and unsubscribe link now go through it.");
+    return 0;
+  }
+  if (sub === "off") {
+    settings.newsletter.trackingId = "";
+    saveSettings(settings);
+    const secrets = getPluginSecrets(TRACKING_SECRETS);
+    delete secrets.trackingSecret;
+    setPluginSecrets(TRACKING_SECRETS, secrets);
+    out("Tracking is off. Issues use the myna cloud (or newsletter.unsubscribeUrl) unsubscribe link again.");
+    return 0;
+  }
+  if (sub === "status" || sub === undefined) {
+    const n = settings.newsletter;
+    const tracking = newsletterTracking();
+    out(`tracking     ${n.trackingId ? trackingBase({ id: n.trackingId, host: n.trackingHost }) : "off  (myna newsletter track set <trackingId>)"}`);
+    out(`secret       ${getPluginSecrets(TRACKING_SECRETS).trackingSecret ? "in the vault" : "missing"}`);
+    out(`unsubscribe  ${tracking ? "crawlproof's signed link" : n.unsubscribeUrl || "myna cloud (needs myna cloud login)"}`);
+    out(`address      ${n.address || 'not set, nothing is sent  (myna config newsletter.address "Company, street, city, country")'}`);
+    out(`pace         ${n.paceMs} ms between messages`);
+    out(`opt-outs     crawlproof pulled up to ${readNewsletters().trackingSince ?? "never"}`);
+    if (flags.check) {
+      if (!tracking) throw new Error("Nothing to check: tracking is not set.");
+      const events = await fetchTrackingEvents(tracking, { since: new Date(Date.now() - 86_400_000).toISOString() });
+      out(`check        crawlproof answered: ${events.length} event(s) in the last day`);
+    }
+    return 0;
+  }
+  throw new Error(`Unknown: myna newsletter track ${sub}. Try set, status or off.`);
+}
+
+function runCta(rest: string[], flags: Flags): number {
+  const [sub, label, url] = rest;
+  const settings = loadSettings();
+  const setName = str(flags, "set") ?? "default";
+  const sets = settings.newsletter.ctaSets;
+  switch (sub ?? "list") {
+    case "list": {
+      const names = str(flags, "set") ? [setName] : Object.keys(sets);
+      for (const name of names) {
+        out(`${name}:`);
+        const ctas = sets[name] ?? [];
+        if (!ctas.length) out("  (empty)");
+        ctas.forEach((cta, i) => out(`  ${i + 1}. ${cta.label.padEnd(22)} ${cta.url}`));
+      }
+      return 0;
+    }
+    case "add": {
+      if (!label || !url || !/^https?:\/\//.test(url)) throw new Error('Usage: myna newsletter cta add "<label>" <https://url> [--set default]');
+      const ctas = (sets[setName] ?? []).filter((cta) => cta.label.toLowerCase() !== label.toLowerCase());
+      ctas.push({ label, url });
+      sets[setName] = ctas;
+      saveSettings(settings);
+      out(`${setName} now has ${ctas.length} call(s) to action.`);
+      return 0;
+    }
+    case "rm": {
+      if (!label) throw new Error('Usage: myna newsletter cta rm "<label>" [--set default]');
+      const before = sets[setName] ?? [];
+      const after = before.filter((cta, i) => cta.label.toLowerCase() !== label.toLowerCase() && String(i + 1) !== label);
+      if (after.length === before.length) throw new Error(`No "${label}" in ${setName}.`);
+      sets[setName] = after;
+      saveSettings(settings);
+      out(`Removed. ${setName} has ${after.length} left.`);
+      return 0;
+    }
+    default:
+      throw new Error(`Unknown: myna newsletter cta ${sub}. Try list, add or rm.`);
+  }
+}
+
+async function runStats(id: string | undefined, flags: Flags): Promise<number> {
+  if (!id) throw new Error("Usage: myna newsletter stats <id> [--json]");
+  const tracking = newsletterTracking();
+  if (!tracking) throw new Error("Tracking is not set, so there is nothing to count. myna newsletter track set <trackingId>");
+  const stats = await fetchNewsletterStats(id, tracking);
+  if (flags.json) {
+    out(JSON.stringify(stats, null, 2));
+    return 0;
+  }
+  if (!stats.rows.length) {
+    out(`Nothing sent for ${stats.id} yet.`);
+    return 0;
+  }
+  const pct = (value: number): string => `${(value * 100).toFixed(1)}%`;
+  table(
+    stats.rows.map((row) => ({
+      variant: row.variant,
+      subject: row.subjectKey,
+      cta: row.cta,
+      sent: String(row.sent),
+      opens: `${row.opens} (${row.opensTotal})`,
+      clicks: String(row.clicks),
+      ctr: pct(row.ctr),
+      unsub: String(row.unsubscribes),
+    })),
+    [
+      { key: "variant", title: "Variant" },
+      { key: "subject", title: "Subject" },
+      { key: "cta", title: "CTA" },
+      { key: "sent", title: "Sent" },
+      { key: "opens", title: "Opens (all)" },
+      { key: "clicks", title: "Clicks" },
+      { key: "ctr", title: "CTR" },
+      { key: "unsub", title: "Unsubs" },
+    ],
+  );
+  out("");
+  out("Opens and clicks count unique messages, with machine-flagged ones left out; the number in brackets counts every open.");
+  out(stats.leader ? `Leader: ${stats.leader} (by ${stats.basis === "clicks" ? "click-through rate" : "open rate, no clicks yet"}).` : "No leader yet: no opens or clicks.");
+  return 0;
 }
 
 export async function runNewsletter(positional: string[], flags: Flags): Promise<number> {
@@ -99,7 +269,10 @@ export async function runNewsletter(positional: string[], flags: Flags): Promise
       const subject = str(flags, "subject");
       const listName = str(flags, "list");
       const body = pipedBody();
-      if (!subject || !listName || !body) throw new Error('Usage: myna newsletter create --subject "..." --list <list> [--at when] [--smtp id] [--reply-to r] < issue.md');
+      if (!subject || !listName || !body)
+        throw new Error(
+          'Usage: myna newsletter create --subject "..." [--subject-b "..."] --list <list> [--cta-set default|none] [--service moshcode] [--at when] [--smtp id] [--reply-to r] [--id slug] < issue.md',
+        );
       const created = createNewsletter({
         subject,
         body,
@@ -109,9 +282,16 @@ export async function runNewsletter(positional: string[], flags: Flags): Promise
         smtp: str(flags, "smtp") ?? null,
         replyTo: str(flags, "replyTo") ?? null,
         address: str(flags, "address") ?? null,
+        subjectB: str(flags, "subjectB") ?? null,
+        ctaSet: ctaSetFlag(flags, "default") ?? null,
+        service: str(flags, "service") ?? null,
       });
       out(`Created ${created.id} (${created.status}${created.scheduledFor ? ` for ${created.scheduledFor}` : ""}) to ${created.list}.`);
-      out(`Check it:  myna newsletter send ${created.id} --test you@example.com`);
+      if (created.subjectB || created.ctaSet) {
+        const ctas = created.ctaSet ? (loadSettings().newsletter.ctaSets[created.ctaSet]?.length ?? 1) : 1;
+        out(`A/B test: ${(created.subjectB ? 2 : 1) * ctas} variant(s)${created.ctaSet ? `, calls to action from "${created.ctaSet}"` : ""}.`);
+      }
+      out(`Check it:  myna newsletter send ${created.id} --to you@example.com`);
       if (!loadSettings().newsletter.address && !created.address) out('Before it can go out:  myna config newsletter.address "Company, 1 Main St, City, ST 00000, USA"');
       return 0;
     }
@@ -127,7 +307,10 @@ export async function runNewsletter(positional: string[], flags: Flags): Promise
       const t = tally(n.id, file);
       out(`${n.id}  ${n.status}`);
       out(`Subject:   ${n.subject}`);
+      if (n.subjectB) out(`Subject B: ${n.subjectB}`);
       out(`List:      ${n.list} (${subscribers(n.list).filter((s) => s.active).length} can be mailed)`);
+      if (n.ctaSet) out(`CTA set:   ${n.ctaSet}`);
+      if (n.service) out(`Service:   ${n.service} (the footer says they have an account there)`);
       if (n.scheduledFor) out(`Scheduled: ${n.scheduledFor}`);
       if (n.sentAt) out(`Sent:      ${n.sentAt}`);
       out(`Delivered: ${t.sent} sent, ${t.failed} failed, ${t.pending} uncertain`);
@@ -138,7 +321,7 @@ export async function runNewsletter(positional: string[], flags: Flags): Promise
     }
 
     case "edit": {
-      if (!rest[0]) throw new Error('Usage: myna newsletter edit <id> [--subject "..."] [--list L] [--at when | --draft] [< issue.md]');
+      if (!rest[0]) throw new Error('Usage: myna newsletter edit <id> [--subject "..."] [--subject-b "..."] [--list L] [--cta-set name|none] [--service s] [--at when | --draft] [< issue.md]');
       const edited = editNewsletter(rest[0], {
         subject: str(flags, "subject"),
         body: pipedBody(),
@@ -148,6 +331,9 @@ export async function runNewsletter(positional: string[], flags: Flags): Promise
         smtp: str(flags, "smtp"),
         replyTo: str(flags, "replyTo"),
         address: str(flags, "address"),
+        subjectB: str(flags, "subjectB"),
+        ctaSet: ctaSetFlag(flags, undefined),
+        service: str(flags, "service"),
       });
       out(`Saved ${edited.id} (${edited.status}${edited.scheduledFor ? ` for ${edited.scheduledFor}` : ""}).`);
       return 0;
@@ -161,33 +347,58 @@ export async function runNewsletter(positional: string[], flags: Flags): Promise
     }
 
     case "send": {
-      if (!rest[0]) throw new Error("Usage: myna newsletter send <id> [--dry-run] [--test addr] [--limit N] [--retry-failed] [--retry-uncertain]");
-      const report = await sendNewsletter(rest[0], {
-        dryRun: Boolean(flags.dryRun),
-        test: str(flags, "test"),
-        limit: str(flags, "limit") ? Number(str(flags, "limit")) : undefined,
+      if (!rest[0]) throw new Error("Usage: myna newsletter send <id> [--dry-run] [--to addr] [--yes] [--limit N] [--max-per-day N] [--retry-failed] [--retry-uncertain]");
+      const test = str(flags, "to") ?? str(flags, "test");
+      const dryRun = Boolean(flags.dryRun);
+      const common = {
+        limit: num(flags, "limit"),
+        maxPerDay: num(flags, "maxPerDay"),
+        paceMs: num(flags, "paceMs") ?? loadSettings().newsletter.paceMs,
         retryFailed: Boolean(flags.retryFailed),
         retryUncertain: Boolean(flags.retryUncertain),
-        log: (line) => out(line),
-      });
-      if (str(flags, "test")) {
-        if (flags.dryRun) out(`would send a test copy of ${report.id} to ${str(flags, "test")}`);
+        log: (line: string) => out(line),
+      };
+      // A list send needs --yes. Without it: the numbers, and nothing sent.
+      if (!test && !dryRun && !flags.yes) {
+        const preview = await sendNewsletter(rest[0], { ...common, dryRun: true });
+        out(`${preview.id} to ${preview.list}: ${preview.audience} on the list, ${preview.alreadySent} had it already, ${preview.wouldSend.length} would go now, ${preview.remaining} left for a later run.`);
+        printVariants(preview);
+        out(`Tracking: ${preview.tracked ? "on (crawlproof)" : "off"}.`);
+        out(`Not sent. Send yourself a copy with --to you@example.com, then add --yes to send to the list.`);
+        return 1;
+      }
+      const report = await sendNewsletter(rest[0], { ...common, dryRun, test });
+      if (test) {
+        if (dryRun) out(`would send a test copy of ${report.id} to ${test}`);
         else if (report.sent.length) out(`Test copy of ${report.id} sent to ${report.sent[0]}.`);
         else out(`Test copy failed: ${report.failed[0]?.error}`);
         return report.failed.length ? 1 : 0;
       }
-      if (flags.dryRun) {
-        for (const to of report.wouldSend) out(`would email ${to}: ${report.subject}`);
+      if (dryRun) {
+        for (const to of report.wouldSend.slice(0, 20)) out(`would email ${to}`);
+        if (report.wouldSend.length > 20) out(`... and ${report.wouldSend.length - 20} more`);
+        printVariants(report);
+        out(`Tracking: ${report.tracked ? "on (crawlproof)" : "off"}.`);
       }
       out(
         `${report.id} to ${report.list}: ${report.audience} on the list, ${report.alreadySent} had it already, ` +
-          `${flags.dryRun ? `${report.wouldSend.length} would go now` : `${report.sent.length} sent, ${report.failed.length} failed`}, ${report.remaining} left for a later run.`,
+          `${dryRun ? `${report.wouldSend.length} would go now` : `${report.sent.length} sent, ${report.failed.length} failed`}, ${report.remaining} left for a later run.`,
       );
       if (report.uncertain) out(`${report.uncertain} died mid-send last time and may have it; --retry-uncertain mails them again.`);
       if (report.previouslyFailed) out(`${report.previouslyFailed} were refused before; --retry-failed tries them again.`);
-      if (!flags.dryRun) out(`Status: ${report.status}.`);
+      if (!dryRun) out(`Status: ${report.status}.${report.remaining ? " Run the same command again to carry on." : ""}`);
       return report.failed.length ? 1 : 0;
     }
+
+    case "stats":
+      return await runStats(rest[0] ?? str(flags, "campaign"), flags);
+
+    case "track":
+      return await runTrack(rest, flags);
+
+    case "cta":
+    case "ctas":
+      return runCta(rest, flags);
 
     case "subscribe":
     case "sub": {
@@ -243,16 +454,29 @@ export async function runNewsletter(positional: string[], flags: Flags): Promise
       return 0;
     }
 
-    case "sync": {
-      const result = await syncUnsubscribes();
-      out(
-        `${result.pulled} change${result.pulled === 1 ? "" : "s"} read: ${result.optedOut.length} newly unsubscribed, ${result.resubscribed.length} re-subscribed` +
-          `${result.unknown ? `, ${result.unknown} for tokens this install never sent` : ""}.`,
-      );
+    case "sync":
+    case "sync-optouts": {
+      const result = await syncAllUnsubscribes();
+      const cloud = result.cloud;
+      const failed = (source: string): string | undefined => result.errors.find((line) => line.startsWith(source));
+      if (failed("myna cloud")) out(`myna cloud: FAILED, ${failed("myna cloud")}`);
+      else
+        out(
+          `myna cloud: ${cloud.pulled} change${cloud.pulled === 1 ? "" : "s"} read: ${cloud.optedOut.length} newly unsubscribed, ${cloud.resubscribed.length} re-subscribed` +
+            `${cloud.unknown ? `, ${cloud.unknown} for tokens this install never sent` : ""}.`,
+        );
+      if (failed("crawlproof")) out(`crawlproof: FAILED, ${failed("crawlproof")}`);
+      else if (result.tracking)
+        out(`crawlproof: ${result.tracking.pulled} unsubscribe${result.tracking.pulled === 1 ? "" : "s"} read, ${result.tracking.optedOut.length} newly opted out${result.tracking.optedOut.length ? `: ${result.tracking.optedOut.join(", ")}` : ""}.`);
+      else out("crawlproof: tracking is off.");
+      if (result.errors.length) {
+        out(`Could not read unsubscribes from ${result.errors.join(" or ")}. Sends stay stopped until this works.`);
+        return 1;
+      }
       return 0;
     }
 
     default:
-      throw new Error(`Unknown: myna newsletter ${sub}. Try create, list, show, edit, rm, send, subscribe, unsubscribe, subscribers, import or sync.`);
+      throw new Error(`Unknown: myna newsletter ${sub}. Try create, list, show, edit, rm, send, stats, subscribe, unsubscribe, subscribers, import, sync, track or cta.`);
   }
 }

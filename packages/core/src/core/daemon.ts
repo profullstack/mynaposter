@@ -16,7 +16,7 @@ import { pluginContext } from "../plugins/context.ts";
 import { runEvergreen } from "./evergreen.ts";
 import { runRecap } from "./recap.ts";
 import { canSync, syncConfigOnce } from "../store/synconfig.ts";
-import { runDueNewsletters, syncUnsubscribes } from "./newsletter.ts";
+import { runDueNewsletters, syncAllUnsubscribes, unsubscribePullError } from "./newsletter.ts";
 import { readNewsletters } from "../store/newsletters.ts";
 
 export interface DaemonJob {
@@ -69,11 +69,13 @@ export function builtinJobs(log: (line: string) => void, tickMs: number): Daemon
     everyMs: 600_000,
     async run() {
       if (!readNewsletters().newsletters.some((entry) => entry.scheduledFor && entry.status !== "sent")) {
-        const synced = await syncUnsubscribes();
-        if (synced.optedOut.length || synced.resubscribed.length) return `${synced.optedOut.length} unsubscribed, ${synced.resubscribed.length} re-subscribed`;
+        const synced = await syncAllUnsubscribes();
+        if (synced.errors.length) throw unsubscribePullError(synced.errors);
+        const out = synced.cloud.optedOut.length + (synced.tracking?.optedOut.length ?? 0);
+        if (out || synced.cloud.resubscribed.length) return `${out} unsubscribed, ${synced.cloud.resubscribed.length} re-subscribed`;
         return;
       }
-      const reports = await runDueNewsletters(new Date(), { log });
+      const reports = await runDueNewsletters(new Date(), { log, paceMs: loadSettings().newsletter.paceMs });
       const lines = reports
         .filter((report) => report.sent.length || report.failed.length)
         .map((report) => `${report.id}: ${report.sent.length} sent, ${report.failed.length} failed, ${report.remaining} left (${report.status})`);

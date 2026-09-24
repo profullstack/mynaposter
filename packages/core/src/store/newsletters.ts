@@ -37,6 +37,15 @@ export interface Newsletter {
   replyTo: string | null;
   /** Overrides settings.newsletter.address for this issue. */
   address: string | null;
+  /** A second subject line: variants A/B test it against `subject`. */
+  subjectB?: string | null;
+  /** The CTA set (settings.newsletter.ctaSets) each variant takes one call to action from; null is none. */
+  ctaSet?: string | null;
+  /**
+   * The service the list has accounts at. Set, the footer says why they get
+   * mail ("an account at <service>; our Terms say..."), not that they subscribed.
+   */
+  service?: string | null;
   createdAt: string;
   updatedAt: string;
   sentAt: string | null;
@@ -50,6 +59,12 @@ export interface Delivery {
   to: string;
   messageId?: string;
   error?: string;
+  /** The tracking msgId crawlproof reports events against. */
+  msgId?: string;
+  /** Which variant this person got, and what it was. */
+  variant?: string;
+  subjectKey?: string;
+  cta?: string;
 }
 
 export interface NewslettersFile {
@@ -62,6 +77,22 @@ export interface NewslettersFile {
   inbox: { id: string; server: string } | null;
   /** The newest unsubscribe already pulled from myna cloud. */
   unsubscribesSince: string | null;
+  /** The newest unsubscribe already pulled from crawlproof tracking. */
+  trackingSince: string | null;
+  /**
+   * contact id → the newest unsubscribe or re-subscribe applied from either
+   * source, with the time the source recorded it. A pulled event older than
+   * this is stale and skipped, so a myna cloud re-subscribe is never undone by
+   * an older crawlproof unsubscribe that arrives later, or the reverse.
+   */
+  optChanges: Record<string, OptChange>;
+}
+
+export interface OptChange {
+  state: "unsubscribed" | "resubscribed";
+  /** When the source recorded it (its own clock), ISO. */
+  at: string;
+  source: "cloud" | "crawlproof";
 }
 
 export function readNewsletters(): NewslettersFile {
@@ -72,11 +103,27 @@ export function readNewsletters(): NewslettersFile {
     tokens: file.tokens ?? {},
     inbox: file.inbox ?? null,
     unsubscribesSince: file.unsubscribesSince ?? null,
+    trackingSince: file.trackingSince ?? null,
+    optChanges: file.optChanges ?? {},
   };
 }
 
 export function writeNewsletters(file: NewslettersFile): void {
   writeJson(NEWSLETTERS_FILE, file);
+}
+
+/**
+ * Whether an unsubscribe or re-subscribe pulled from a source is newer than
+ * the last one applied for that contact; if so it is recorded, and the caller
+ * applies it. Timestamps compare as instants, not strings.
+ */
+export function claimOptChange(contactId: string, change: OptChange): boolean {
+  const file = readNewsletters();
+  const last = file.optChanges[contactId];
+  if (last && Date.parse(change.at) < Date.parse(last.at)) return false;
+  file.optChanges[contactId] = change;
+  writeNewsletters(file);
+  return true;
 }
 
 /** One line: a subject or an address with a newline in it is a header injection. */
@@ -91,6 +138,9 @@ export interface NewsletterInput {
   smtp?: string | null;
   replyTo?: string | null;
   address?: string | null;
+  subjectB?: string | null;
+  ctaSet?: string | null;
+  service?: string | null;
 }
 
 export function getNewsletter(id: string, file = readNewsletters()): Newsletter | undefined {
@@ -124,6 +174,9 @@ export function createNewsletter(input: NewsletterInput, file = readNewsletters(
     smtp: input.smtp ?? null,
     replyTo: input.replyTo ? oneLine(input.replyTo) : null,
     address: input.address ?? null,
+    subjectB: input.subjectB ? oneLine(input.subjectB) || null : null,
+    ctaSet: input.ctaSet ?? null,
+    service: input.service ? oneLine(input.service) || null : null,
     createdAt: now,
     updatedAt: now,
     sentAt: null,
@@ -154,6 +207,11 @@ export function editNewsletter(id: string, patch: NewsletterPatch, file = readNe
   if (patch.smtp !== undefined) newsletter.smtp = patch.smtp;
   if (patch.replyTo !== undefined) newsletter.replyTo = patch.replyTo ? oneLine(patch.replyTo) : null;
   if (patch.address !== undefined) newsletter.address = patch.address;
+  if ((patch.subjectB !== undefined || patch.ctaSet !== undefined) && newsletter.status === "sending")
+    throw new Error(`${newsletter.id} is part way out; changing its variants now would break the A/B test.`);
+  if (patch.subjectB !== undefined) newsletter.subjectB = patch.subjectB ? oneLine(patch.subjectB) || null : null;
+  if (patch.ctaSet !== undefined) newsletter.ctaSet = patch.ctaSet;
+  if (patch.service !== undefined) newsletter.service = patch.service ? oneLine(patch.service) || null : null;
   if (patch.scheduledFor !== undefined) newsletter.scheduledFor = patch.scheduledFor;
   if (patch.draft) newsletter.scheduledFor = null;
   if (newsletter.status !== "sending") newsletter.status = newsletter.scheduledFor ? "scheduled" : "draft";

@@ -129,25 +129,66 @@ export function buildMime(server: SmtpServer, message: SmtpMessage, messageId: s
     ...Object.entries(message.headers ?? {}).map(([key, value]) => `${key}: ${value}`),
   ];
   if (!message.html) {
-    headers.push("Content-Type: text/plain; charset=utf-8", "Content-Transfer-Encoding: 8bit");
-    return `${headers.join(CRLF)}${CRLF}${CRLF}${dotStuff(message.text)}`;
+    const body = encodeBody(message.text);
+    headers.push("Content-Type: text/plain; charset=utf-8", `Content-Transfer-Encoding: ${body.encoding}`);
+    return `${headers.join(CRLF)}${CRLF}${CRLF}${dotStuff(body.content)}`;
   }
   const boundary = `=_myna_${randomBytes(9).toString("hex")}`;
   headers.push(`Content-Type: multipart/alternative; boundary="${boundary}"`);
+  const text = encodeBody(message.text);
+  const html = encodeBody(message.html);
   const parts = [
     `--${boundary}`,
     "Content-Type: text/plain; charset=utf-8",
-    "Content-Transfer-Encoding: 8bit",
+    `Content-Transfer-Encoding: ${text.encoding}`,
     "",
-    dotStuff(message.text),
+    dotStuff(text.content),
     `--${boundary}`,
     "Content-Type: text/html; charset=utf-8",
-    "Content-Transfer-Encoding: 8bit",
+    `Content-Transfer-Encoding: ${html.encoding}`,
     "",
-    dotStuff(message.html),
+    dotStuff(html.content),
     `--${boundary}--`,
   ];
   return `${headers.join(CRLF)}${CRLF}${CRLF}${parts.join(CRLF)}`;
+}
+
+/**
+ * 8bit while every line fits SMTP's 998 octets, quoted-printable when one
+ * does not. A newsletter paragraph with a few signed links in it is one long
+ * HTML line, and a server may refuse or cut a line past the limit.
+ */
+function encodeBody(body: string): { encoding: "8bit" | "quoted-printable"; content: string } {
+  const long = body
+    .replace(/\r\n?/g, "\n")
+    .split("\n")
+    .some((line) => Buffer.byteLength(line, "utf8") > 998);
+  return long ? { encoding: "quoted-printable", content: quotedPrintable(body) } : { encoding: "8bit", content: body };
+}
+
+/** RFC 2045 quoted-printable: lines of at most 76 characters, newlines kept as hard breaks. */
+export function quotedPrintable(body: string): string {
+  return body
+    .replace(/\r\n?/g, "\n")
+    .split("\n")
+    .map((line) => {
+      const bytes = Buffer.from(line, "utf8");
+      const lines: string[] = [];
+      let current = "";
+      bytes.forEach((byte, index) => {
+        const last = index === bytes.length - 1;
+        const plain = (byte >= 33 && byte <= 126 && byte !== 61) || ((byte === 32 || byte === 9) && !last);
+        const token = plain ? String.fromCharCode(byte) : `=${byte.toString(16).toUpperCase().padStart(2, "0")}`;
+        if (current.length + token.length > 75) {
+          lines.push(`${current}=`);
+          current = "";
+        }
+        current += token;
+      });
+      lines.push(current);
+      return lines.join("\n");
+    })
+    .join("\n");
 }
 
 /** RFC 2047 for a subject with anything outside ASCII. */
