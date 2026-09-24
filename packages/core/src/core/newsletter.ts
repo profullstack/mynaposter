@@ -37,6 +37,7 @@ import { outreachSentToday, recordSent, smtpServer } from "../store/outreach.ts"
 import { getPluginSecrets } from "../store/accounts.ts";
 import { session, DEFAULT_SERVER } from "../store/cloud.ts";
 import {
+  claimOptChange,
   contactForToken,
   readNewsletters,
   recordDelivery,
@@ -178,6 +179,8 @@ export async function syncTrackingUnsubscribes(tracking: Tracking, options: { fe
     const contacts = readContacts();
     const id = contactId({ email }) as string;
     const contact = contacts.contacts.find((entry) => entry.id === id || entry.email?.toLowerCase() === email);
+    // A myna cloud re-subscribe newer than this unsubscribe wins; see claimOptChange.
+    if (!claimOptChange(contact?.id ?? id, { state: "unsubscribed", at: event.at, source: "crawlproof" })) continue;
     if (contact?.optedOut) continue;
     if (contact) optOut(contact.id, contacts);
     else {
@@ -378,6 +381,8 @@ export async function syncUnsubscribes(): Promise<SyncResult> {
     }
     const contact = contacts.contacts.find((c) => c.id === id);
     if (!contact) continue;
+    // An older event than the last one applied for this person, from either source, is stale.
+    if (!claimOptChange(id, { state: entry.state === "resubscribed" ? "resubscribed" : "unsubscribed", at: entry.at, source: "cloud" })) continue;
     if (entry.state === "resubscribed") {
       if (optIn(id, contacts)) result.resubscribed.push(id);
     } else if (!contact.optedOut && optOut(id, contacts)) result.optedOut.push(id);

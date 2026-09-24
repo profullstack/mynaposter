@@ -942,7 +942,9 @@ myna newsletter cta list | add "<label>" <url> | rm "<label>"   [--set name]
   applies them. Both fail closed: if either cannot be read, a list send stops
   before anyone is mailed, the daemon sends nothing that turn, and
   `myna newsletter sync` exits non-zero. A `--to` test copy still goes out,
-  with a warning.
+  with a warning. When one person has both a myna cloud re-subscribe and a
+  crawlproof unsubscribe, the one with the later timestamp wins, whichever
+  arrives first.
 - **Stats.** Events are joined to variants through each recipient's msgId in
   `newsletters.json`. Opens and clicks count unique messages, with machine-flagged
   ones (mail proxies, scanners, Apple's prefetch) left out; all opens are shown

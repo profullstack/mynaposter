@@ -79,6 +79,20 @@ export interface NewslettersFile {
   unsubscribesSince: string | null;
   /** The newest unsubscribe already pulled from crawlproof tracking. */
   trackingSince: string | null;
+  /**
+   * contact id → the newest unsubscribe or re-subscribe applied from either
+   * source, with the time the source recorded it. A pulled event older than
+   * this is stale and skipped, so a myna cloud re-subscribe is never undone by
+   * an older crawlproof unsubscribe that arrives later, or the reverse.
+   */
+  optChanges: Record<string, OptChange>;
+}
+
+export interface OptChange {
+  state: "unsubscribed" | "resubscribed";
+  /** When the source recorded it (its own clock), ISO. */
+  at: string;
+  source: "cloud" | "crawlproof";
 }
 
 export function readNewsletters(): NewslettersFile {
@@ -90,11 +104,26 @@ export function readNewsletters(): NewslettersFile {
     inbox: file.inbox ?? null,
     unsubscribesSince: file.unsubscribesSince ?? null,
     trackingSince: file.trackingSince ?? null,
+    optChanges: file.optChanges ?? {},
   };
 }
 
 export function writeNewsletters(file: NewslettersFile): void {
   writeJson(NEWSLETTERS_FILE, file);
+}
+
+/**
+ * Whether an unsubscribe or re-subscribe pulled from a source is newer than
+ * the last one applied for that contact; if so it is recorded, and the caller
+ * applies it. Timestamps compare as instants, not strings.
+ */
+export function claimOptChange(contactId: string, change: OptChange): boolean {
+  const file = readNewsletters();
+  const last = file.optChanges[contactId];
+  if (last && Date.parse(change.at) < Date.parse(last.at)) return false;
+  file.optChanges[contactId] = change;
+  writeNewsletters(file);
+  return true;
 }
 
 /** One line: a subject or an address with a newline in it is a header injection. */

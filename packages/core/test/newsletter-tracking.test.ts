@@ -448,6 +448,57 @@ test("a --to test copy still goes out when a pull fails, with a warning", async 
   }
 });
 
+test("the newest unsubscribe or re-subscribe wins across myna cloud and crawlproof, whichever arrives first", async () => {
+  const { saveSession } = await import("../src/store/cloud.ts");
+  const { writeNewsletters, tokenFor } = await import("../src/store/newsletters.ts");
+  const { syncAllUnsubscribes } = await import("../src/core/newsletter.ts");
+  saveSession({ server: "https://myna.test/api", email: "me@example.com", token: "tok", since: new Date().toISOString() });
+  const file = readNewsletters();
+  file.inbox = { id: "INBOXINBOXINBOX1", server: "https://myna.test/api" };
+  writeNewsletters(file);
+  subscribe("moshcode-users", ["ada", "bob", "cy", "di"].map((x) => ({ email: `${x}@example.com` })));
+  const token = (who: string): string => tokenFor(`${who}@example.com`);
+  let cloudRows: { token: string; at: string; state: "unsubscribed" | "resubscribed" }[] = [];
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (async () => Response.json({ ok: true, unsubscribes: cloudRows })) as unknown as typeof fetch;
+  const out = (who: string): boolean => Boolean(readContacts().contacts.find((c) => c.id === `${who}@example.com`)?.optedOut);
+  try {
+    // One pull, both sources: ada unsubscribed through crawlproof at 10:00, re-subscribed on the cloud page at 11:00.
+    // bob re-subscribed on the cloud page at 10:00 (after an earlier cloud unsubscribe), then unsubscribed through crawlproof at 11:00.
+    cloudRows = [
+      { token: token("bob"), at: "2026-09-24T09:00:00.000Z", state: "unsubscribed" },
+      { token: token("bob"), at: "2026-09-24T10:00:00.000Z", state: "resubscribed" },
+      { token: token("ada"), at: "2026-09-24T11:00:00.000Z", state: "resubscribed" },
+    ];
+    await syncAllUnsubscribes({
+      tracking,
+      fetcher: fakeCrawlproof([
+        { type: "unsubscribe", email: "ada@example.com", at: "2026-09-24T10:00:00.000Z" },
+        { type: "unsubscribe", email: "bob@example.com", at: "2026-09-24T11:00:00.000Z" },
+      ]).fetcher,
+    });
+    expect(out("ada")).toBe(false);
+    expect(out("bob")).toBe(true);
+
+    // Across pulls: cy re-subscribes on the cloud page at 12:00; crawlproof's older 11:30 unsubscribe arrives a pull later.
+    cloudRows = [{ token: token("cy"), at: "2026-09-24T12:00:00.000Z", state: "resubscribed" }];
+    await syncAllUnsubscribes({ tracking, fetcher: fakeCrawlproof([]).fetcher });
+    await syncAllUnsubscribes({ tracking, fetcher: fakeCrawlproof([{ type: "unsubscribe", email: "cy@example.com", at: "2026-09-24T11:30:00.000Z" }]).fetcher });
+    expect(out("cy")).toBe(false);
+
+    // The reverse: di unsubscribes through crawlproof at 13:00; an older 12:30 cloud re-subscribe arrives later and does not lift it.
+    cloudRows = [];
+    await syncAllUnsubscribes({ tracking, fetcher: fakeCrawlproof([{ type: "unsubscribe", email: "di@example.com", at: "2026-09-24T13:00:00.000Z" }]).fetcher });
+    expect(out("di")).toBe(true);
+    cloudRows = [{ token: token("di"), at: "2026-09-24T12:30:00.000Z", state: "resubscribed" }];
+    await syncAllUnsubscribes({ tracking, fetcher: fakeCrawlproof([]).fetcher });
+    expect(out("di")).toBe(true);
+    expect(readNewsletters().optChanges["di@example.com"]).toEqual({ state: "unsubscribed", at: "2026-09-24T13:00:00.000Z", source: "crawlproof" });
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
 test("syncAllUnsubscribes tries every source and names each that failed", async () => {
   const restore = await cloudDown();
   try {
