@@ -139,18 +139,26 @@ Direct (mail and texts to people, not posts to networks):
        [--tags] [--list] [--limit]  as the account you are logged in to the board with
   contacts lists | list-add <L> <id...> | optout <id> | rm <id> | export
   email --to a@b | --list <L>       Markdown on stdin, sent as text and HTML
-       --subject "..." [--smtp id] [--reply-to r] [--dry-run]
+       --subject "..." [--via id] [--reply-to r] [--dry-run]   (--smtp id still works)
   email log
+  mail provider add <id> --type t   A mail provider; t is resend, mailgun, mandrill,
+       [--from "Name <a@b>"]        sendgrid, postmark, ses, brevo, sparkpost,
+       [--domain d] [--region r]    mailjet, smtp2go, smtp or myna-cloud. The key
+       [--stream s] [--key-id k]    comes from stdin, --key, or a prompt, and goes
+                                    in the vault. myna-cloud sends for you through
+                                    myna cloud (myna cloud login), capped per day
+  mail provider list | rm <id> | test <id> --to addr
+  mail provider default <id|none>   What email and newsletters use without --via
 
 Newsletter (issues to a contacts list; one-click unsubscribe and your postal
 address on every one, paced by outreach.maxEmailsPerDay):
-  newsletter create --subject "..." --list <L> [--at when] [--smtp id] [--reply-to r] < issue.md
+  newsletter create --subject "..." --list <L> [--at when] [--via id] [--reply-to r] < issue.md
        [--subject-b "..."]          A/B: variants are the subjects x the CTA set,
        [--cta-set default|none]     one per person; {{cta}} marks the button
        [--service moshcode] [--id slug]   footer: "an account at moshcode" not "subscribed"
   newsletter list | show <id> [--body] | rm <id> [--force]
-  newsletter edit <id> [--subject] [--subject-b] [--list] [--cta-set] [--at when | --draft] [< issue.md]
-  newsletter send <id> [--dry-run] [--to addr] [--yes] [--limit N] [--max-per-day N]
+  newsletter edit <id> [--subject] [--subject-b] [--list] [--cta-set] [--at when | --draft] [--via id] [< issue.md]
+  newsletter send <id> [--dry-run] [--to addr] [--yes] [--via id] [--limit N] [--max-per-day N]
        [--retry-failed] [--retry-uncertain]   --yes sends the list; --to one test copy (variant A)
                                     Resumes from its ledger; nobody gets it twice
   newsletter stats <id>             Per variant: sent, opens, clicks, CTR, unsubscribes

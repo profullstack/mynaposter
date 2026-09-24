@@ -32,7 +32,11 @@ export interface Newsletter {
   status: NewsletterStatus;
   /** When the daemon sends it. Set means scheduled; a partial send resumes on its own. */
   scheduledFor: string | null;
-  /** An SMTP server id; the first one when null. */
+  /**
+   * The mail provider it goes out through: a `myna mail provider` id or an
+   * SMTP server id (`--via`, or `--smtp` as before). The default when null.
+   * The name is kept from when SMTP was the only door.
+   */
   smtp: string | null;
   replyTo: string | null;
   /** Overrides settings.newsletter.address for this issue. */
@@ -59,6 +63,10 @@ export interface Delivery {
   to: string;
   messageId?: string;
   error?: string;
+  /** A failure the provider said is worth another go (a 429, a 5xx): the next run tries it again on its own. */
+  retryable?: boolean;
+  /** The provider it went out through. */
+  via?: string;
   /** The tracking msgId crawlproof reports events against. */
   msgId?: string;
   /** Which variant this person got, and what it was. */

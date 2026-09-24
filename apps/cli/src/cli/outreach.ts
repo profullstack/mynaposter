@@ -9,8 +9,9 @@
  *   myna contacts [--tag t] [--list L] | add <email|phone|net:handle> [--name] [--tags a,b] [--list L]
  *   myna contacts import agenticjobs [--account id] [--tags a,b] [--list L] [--limit N]
  *   myna contacts lists | list-add <L> <id...> | optout <id> | rm <id> | export
- *   myna email --to a@b [--to ...] | --list L --subject "..." [--smtp id] [--reply-to r] [--dry-run] < body.md
+ *   myna email --to a@b [--to ...] | --list L --subject "..." [--via id] [--reply-to r] [--dry-run] < body.md
  *   myna email log
+ *   myna mail provider add|list|rm|default|test     (cli/mail.ts)
  *
  * Every send is written down; the daily caps count what went out; an
  * opted-out contact is never on a list's recipients.
@@ -29,6 +30,8 @@ import {
   removeContact,
   removeSmtpServer,
   renderMarkdown,
+  resolveSender,
+  sendEach,
   saveSms,
   saveSmtpServer,
   sendSms,
@@ -43,6 +46,7 @@ import {
 } from "@profullstack/myna-core";
 import { out, table } from "./io.ts";
 import { askSecret } from "./prompt.ts";
+import { runMailProvider } from "./mail.ts";
 
 type Flags = Record<string, unknown>;
 
@@ -233,18 +237,19 @@ export async function runContacts(positional: string[], flags: Flags): Promise<n
 }
 
 export async function runEmail(positional: string[], flags: Flags): Promise<number> {
+  if (positional[0] === "provider" || positional[0] === "providers") return runMailProvider(positional.slice(1), flags);
   const settings = loadSettings();
   if (positional[0] === "log") {
     const rows = readOutreach().sent.filter((entry) => entry.kind === "email").slice(-30).reverse();
     if (!rows.length) out("Nothing sent yet.");
-    for (const row of rows) out(`${row.at.slice(0, 16).replace("T", " ")}  ${row.ok ? "ok    " : "failed"}  ${row.to.padEnd(32)}  ${row.subject ?? ""}${row.error ? `  ${row.error}` : ""}`);
+    for (const row of rows) out(`${row.at.slice(0, 16).replace("T", " ")}  ${row.ok ? "ok    " : "failed"}  ${row.to.padEnd(32)}  ${row.via.padEnd(12)}  ${row.subject ?? ""}${row.error ? `  ${row.error}` : ""}`);
     return 0;
   }
   const subject = str(flags, "subject");
   const to = Array.isArray(flags.to) ? (flags.to as string[]) : str(flags, "to") ? [str(flags, "to") as string] : [];
   const listName = str(flags, "list");
   const tag = str(flags, "tag");
-  if (!subject || (!to.length && !listName && !tag)) throw new Error('Usage: myna email --to <addr> [--to ...] | --list <L> --subject "..." [--smtp id] [--reply-to r] [--dry-run] < body.md');
+  if (!subject || (!to.length && !listName && !tag)) throw new Error('Usage: myna email --to <addr> [--to ...] | --list <L> --subject "..." [--via provider] [--reply-to r] [--dry-run] < body.md');
   const body = await readBody();
   const html = renderMarkdown(body);
   const targets: { to: string; who: string }[] = to.map((addr) => ({ to: addr, who: addr }));
@@ -252,24 +257,36 @@ export async function runEmail(positional: string[], flags: Flags): Promise<numb
   if (!targets.length) throw new Error("Nobody on that list has an email address.");
   const cap = settings.outreach.maxEmailsPerDay - outreachSentToday("email");
   if (targets.length > cap) throw new Error(`${targets.length} emails would pass today's cap (${settings.outreach.maxEmailsPerDay}; ${cap} left).`);
+  const via = str(flags, "via") ?? str(flags, "smtp");
   if (flags.dryRun) {
+    if (via) out(`via ${resolveSender(via).id}`);
     for (const target of targets) out(`would email ${target.who} <${target.to}>: ${subject}`);
     out(`--- body (${body.length} chars of Markdown, sent as text and HTML) ---`);
     out(body.slice(0, 400));
     return 0;
   }
-  const server = smtpServer(str(flags, "smtp"));
+  // --via names any mail provider; --smtp is the older name and still works.
+  const sender = resolveSender(via);
   const sent: SentRecord[] = [];
-  for (const target of targets) {
-    try {
-      const result = await sendSmtp(server, { to: [target.to], subject, text: body, html, ...(str(flags, "replyTo") ? { replyTo: str(flags, "replyTo") as string } : {}) });
-      sent.push({ at: new Date().toISOString(), kind: "email", to: target.to, via: server.id, subject, ok: true, id: result.messageId });
-      out(`sent to ${target.who} <${target.to}>`);
-    } catch (error) {
-      sent.push({ at: new Date().toISOString(), kind: "email", to: target.to, via: server.id, subject, ok: false, error: (error as Error).message });
-      out(`could not send to ${target.who}: ${(error as Error).message}`);
-    }
-  }
+  const replyTo = str(flags, "replyTo");
+  await sendEach(
+    sender,
+    targets.map((target) => ({ to: [target.to], subject, text: body, html, ...(replyTo ? { replyTo } : {}) })),
+    {
+      kind: "transactional",
+      after: (index, result) => {
+        const target = targets[index] as { to: string; who: string };
+        const at = new Date().toISOString();
+        if (result.ok) {
+          sent.push({ at, kind: "email", to: target.to, via: sender.id, subject, ok: true, ...(result.id ? { id: result.id } : {}) });
+          out(`sent to ${target.who} <${target.to}>`);
+        } else {
+          sent.push({ at, kind: "email", to: target.to, via: sender.id, subject, ok: false, error: result.error ?? "not sent" });
+          out(`could not send to ${target.who}: ${result.error}${result.retryable ? " (worth trying again later)" : ""}`);
+        }
+      },
+    },
+  );
   recordSent(sent);
   return sent.every((entry) => entry.ok) ? 0 : 1;
 }

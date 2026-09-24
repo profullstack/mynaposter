@@ -308,3 +308,15 @@ create index if not exists newsletter_unsubscribes_at_idx on newsletter_unsubscr
 -- A token's latest state: the footer page offers Re-subscribe, and the
 -- sender's myna needs to hear about that as well as the unsubscribe.
 alter table newsletter_unsubscribes add column if not exists state text not null default 'unsubscribed';
+
+-- Hosted sending (myna cloud sends mail for a user through Profullstack's
+-- Resend account). One row per batch, reserved before it goes; the daily
+-- cap is the sum of count over the last 24 hours. No address is kept.
+create table if not exists cloud_mail_sends (
+  id          bigserial primary key,
+  user_id     uuid not null references users(id) on delete cascade,
+  count       integer not null,
+  at          timestamptz not null default now()
+);
+
+create index if not exists cloud_mail_sends_user_idx on cloud_mail_sends(user_id, at);

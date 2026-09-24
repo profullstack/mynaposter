@@ -10,6 +10,7 @@ import { readJson, writeJson } from "../util/json.ts";
 import { OUTREACH_FILE } from "../util/paths.ts";
 import { getPluginSecrets, setPluginSecrets } from "./accounts.ts";
 import type { SmtpServer } from "../core/smtp.ts";
+import type { MailProviderConfig } from "../core/mail/types.ts";
 
 export interface SmsSetup {
   provider: "telnyx";
@@ -29,6 +30,8 @@ export interface SentRecord {
 
 export interface OutreachFile {
   smtp: SmtpServer[];
+  /** HTTP mail providers (`myna mail provider add`); keys and secrets in the vault under "mail". */
+  mail: MailProviderConfig[];
   sms: SmsSetup | null;
   sent: SentRecord[];
 }
@@ -37,7 +40,7 @@ const LIMIT = 5000;
 
 export function readOutreach(): OutreachFile {
   const file = readJson<Partial<OutreachFile>>(OUTREACH_FILE, {});
-  return { smtp: Array.isArray(file.smtp) ? file.smtp : [], sms: file.sms ?? null, sent: Array.isArray(file.sent) ? file.sent : [] };
+  return { smtp: Array.isArray(file.smtp) ? file.smtp : [], mail: Array.isArray(file.mail) ? file.mail : [], sms: file.sms ?? null, sent: Array.isArray(file.sent) ? file.sent : [] };
 }
 
 export function writeOutreach(file: OutreachFile): void {
@@ -95,4 +98,30 @@ export function recordSent(entries: SentRecord[]): void {
 
 export function outreachSentToday(kind: "email" | "sms", now = Date.now()): number {
   return readOutreach().sent.filter((entry) => entry.kind === kind && entry.ok && now - Date.parse(entry.at) < 86_400_000).length;
+}
+
+/** Save an HTTP mail provider; its secret goes to the vault, never outreach.json. */
+export function saveMailProvider(provider: MailProviderConfig, secret: string): void {
+  const file = readOutreach();
+  file.mail = [...file.mail.filter((entry) => entry.id !== provider.id), provider];
+  writeOutreach(file);
+  const secrets = { ...getPluginSecrets("mail") };
+  if (secret) secrets[provider.id] = secret;
+  else delete secrets[provider.id];
+  setPluginSecrets("mail", secrets);
+}
+
+export function removeMailProvider(id: string): boolean {
+  const file = readOutreach();
+  const before = file.mail.length;
+  file.mail = file.mail.filter((entry) => entry.id !== id);
+  writeOutreach(file);
+  const secrets = { ...getPluginSecrets("mail") };
+  delete secrets[id];
+  setPluginSecrets("mail", secrets);
+  return file.mail.length < before;
+}
+
+export function mailProviderSecret(id: string): string {
+  return getPluginSecrets("mail")[id] ?? "";
 }

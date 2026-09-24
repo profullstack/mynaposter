@@ -221,9 +221,15 @@ export interface DidSettings {
 export interface OutreachSettings {
   maxEmailsPerDay: number;
   maxSmsPerDay: number;
+  /**
+   * The mail provider `myna email` and newsletters use when none is named:
+   * a `myna mail provider` id or an SMTP server id. Empty means the first
+   * SMTP server, then the first mail provider.
+   */
+  mailProvider: string;
 }
 
-export const DEFAULT_OUTREACH: OutreachSettings = { maxEmailsPerDay: 200, maxSmsPerDay: 100 };
+export const DEFAULT_OUTREACH: OutreachSettings = { maxEmailsPerDay: 200, maxSmsPerDay: 100, mailProvider: "" };
 
 export interface NewsletterSettings {
   /**

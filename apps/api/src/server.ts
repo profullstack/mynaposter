@@ -29,6 +29,7 @@ import * as reshare from "./reshare.ts";
 import * as atproto from "./atproto.ts";
 import * as handoff from "./handoff.ts";
 import * as newsletter from "./newsletter.ts";
+import * as hostedMail from "./mail.ts";
 import * as oc from "./openconnection.ts";
 import { store as synconfigStore } from "./synconfig.ts";
 import { handleGet as synconfigGet, handlePut as synconfigPut, handleRevisions as synconfigRevisions } from "@profullstack/synconfig/server";
@@ -58,7 +59,7 @@ app.use("/v1/*", async (context, next) => {
   // this instance, while those belong to an end user with an account. Running
   // both would mean nobody could sign up without the operator's token.
   const path = new URL(context.req.url).pathname;
-  if (path.startsWith("/v1/cloud") || path.startsWith("/v1/reshare") || path.startsWith("/v1/atproto") || path.startsWith("/v1/handoff") || path.startsWith("/v1/newsletter") || path.startsWith("/v1/synconfig") || path.startsWith("/v1/syncfg") || path.startsWith("/v1/openconnection")) return next();
+  if (path.startsWith("/v1/cloud") || path.startsWith("/v1/reshare") || path.startsWith("/v1/atproto") || path.startsWith("/v1/handoff") || path.startsWith("/v1/newsletter") || path.startsWith("/v1/mail") || path.startsWith("/v1/synconfig") || path.startsWith("/v1/syncfg") || path.startsWith("/v1/openconnection")) return next();
 
   const expected = process.env.MYNA_API_TOKEN;
   const isRead = context.req.method === "GET";
@@ -188,6 +189,7 @@ app.get("/", (context) =>
       "GET  /v1/synconfig            (alias /v1/syncfg)",
       "PUT  /v1/synconfig {snapshot, ifRevision}",
       "GET  /v1/synconfig/revisions",
+      "POST /v1/mail/send {kind, messages[]}   hosted sending, myna cloud account, daily cap",
     ],
     mcp: { endpoint: "/api/mcp", transport: "streamable-http", tools: 11 },
   }),
@@ -618,6 +620,25 @@ newsletterRoutes.get("/unsubscribes", async (context) => {
 });
 
 app.route("/v1/newsletter", newsletterRoutes);
+
+/**
+ * Hosted sending: the `myna-cloud` mail provider posts here and the message
+ * goes out through Profullstack's Resend account (RESEND_API_KEY), gated by
+ * the signed-in account, a per-account daily cap and the verified-from rule.
+ * See mail.ts.
+ */
+const mailRoutes = new Hono();
+
+mailRoutes.post("/send", async (context) => {
+  if (!hasDatabase()) return context.json({ ok: false, error: "This instance has no DATABASE_URL, so hosted sending is off.", retryable: false }, 503);
+  const user = await requireUser(context);
+  if (!user) return context.json({ ok: false, error: "Sign in with myna cloud login to send through myna cloud.", retryable: false }, 401);
+  const input = await context.req.json().catch(() => null);
+  const reply = await hostedMail.hostedSend(user, input, { ledger: hostedMail.pgLedger, idempotencyKey: context.req.header("idempotency-key") });
+  return context.json(reply.body, reply.status);
+});
+
+app.route("/v1/mail", mailRoutes);
 
 /**
  * Settings sync: a user's settings.json, OpenProfile and skills as one

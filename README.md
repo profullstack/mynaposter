@@ -54,7 +54,8 @@ machine and nothing is sent anywhere except the posts you make.
   drafts from what they said, and a follow-back, sent on a pace. See
   [Follow-ups](#follow-ups).
 - **Run a newsletter.** `myna newsletter` writes issues in Markdown, keeps
-  subscribers on a contacts list, sends through your own SMTP server under the
+  subscribers on a contacts list, sends through your own SMTP server or a mail
+  API (Resend, Postmark, SES and others), or through myna cloud, under the
   daily email cap, and resumes from a per-recipient ledger so nobody gets an
   issue twice. Every issue carries a one-click unsubscribe and your postal
   address. See [Newsletters](#newsletters).
@@ -857,6 +858,57 @@ setup and every send are in `outreach.json`. An opted-out contact
 candidate's contact block exactly as the board shows it to the account you are
 logged in with, and writes the source on every contact.
 
+### Mail providers
+
+SMTP is one door out; a mail API is another, and myna speaks the well known
+ones over their own HTTP APIs, with nothing extra installed. Add one with its
+key on stdin (or `--key`, or at the prompt); the key goes in the vault, never
+in `outreach.json`.
+
+```bash
+myna mail provider add rs --type resend --from "You <you@example.com>" < resend-key.txt
+myna mail provider add mg --type mailgun --domain mg.example.com --region eu --from "You <you@mg.example.com>"
+myna mail provider add pm --type postmark --from "You <you@example.com>"   # --stream to pick one
+myna mail provider add aws --type ses --region us-east-1 --key-id AKIA... --from you@example.com   # secret key on stdin
+myna mail provider add mj --type mailjet --key-id <api key> --from you@example.com                 # secret key on stdin
+myna mail provider add cloud --type myna-cloud --from "You <you@example.com>"   # myna sends for you
+myna mail provider list                   # * marks the default
+myna mail provider default rs             # what email and newsletters use without --via
+myna mail provider test rs --to you@example.com
+myna email --to ada@example.com --subject "Hi" --via pm < note.md
+myna newsletter send weekly-1 --yes --via rs
+```
+
+| Type | API | Notes |
+| --- | --- | --- |
+| `resend` | Resend | Newsletters go through the batch endpoint, 100 per call |
+| `mailgun` | Mailgun | `--domain` (else the from address's), `--region us` or `eu` |
+| `mandrill` | Mailchimp Transactional | The Mandrill API key |
+| `sendgrid` | SendGrid | `--region eu` for the EU host |
+| `postmark` | Postmark | Server token; stream `outbound` for one email, `broadcast` for a newsletter, or `--stream` |
+| `ses` | Amazon SES v2 | `--key-id` plus the secret access key, `--region`; signed with SigV4 by hand |
+| `brevo` | Brevo | |
+| `sparkpost` | SparkPost | `--region eu` for the EU host; newsletters go as non-transactional |
+| `mailjet` | Mailjet | `--key-id` is the API key, the secret key on stdin; batches of 50 |
+| `smtp2go` | SMTP2GO | `--region us`, `eu` or `au` for a regional host |
+| `smtp` | Your SMTP server | The same as `myna smtp add` (`--host --port --user --secure`) |
+| `myna-cloud` | myna cloud | No key: the account from `myna cloud login` |
+
+Every provider passes the message's own headers through, so a newsletter's
+`List-Unsubscribe` and `List-Unsubscribe-Post` reach the inbox whichever door
+it used. A 429 or a 5xx from any of them is a retryable failure; a refusal is
+final. Every SMTP server is a provider already, under its own id, and `--smtp`
+still works where `--via` does. With no `--via` and no default set, mail goes
+through the first SMTP server, then the first mail provider.
+
+**Sending through myna cloud.** `myna-cloud` needs no key of your own:
+mynaposter.com sends through Profullstack's Resend account for the signed-in
+myna cloud account. It is capped per account per day (100 unless the instance
+sets `MYNA_MAIL_DAILY_CAP`), one recipient per message, and a newsletter must
+carry its unsubscribe header. Resend only sends from domains verified on that
+account, so your mail goes out as `"Your Name via myna" <mail@mynaposter.com>`
+with Reply-To set to your myna cloud email; replies come to you.
+
 ## Newsletters
 
 An issue is a subject and a Markdown body aimed at one contacts list; the
@@ -907,13 +959,18 @@ and hand each token you receive to `myna newsletter unsubscribe <token>`.
 (shared with `myna email`) and stops when today's cap is spent; run it again
 tomorrow, or schedule the issue with `--at` and `myna run` carries on each
 day by itself. `newsletters.json` records each recipient as `pending` before
-the SMTP conversation and `sent` after it, so a rerun skips everyone who has
-it. A refusal is `failed` and is retried only with `--retry-failed`; a send
-that died mid-message leaves `pending`, retried only with `--retry-uncertain`,
-because that person may already have it. An issue sent by hand that stopped
+the provider is asked and `sent` after it answers, so a rerun skips everyone
+who has it. A refusal is `failed` and is retried only with `--retry-failed`; a
+send that died mid-message (or a connection to the API that dropped) leaves
+`pending`, retried only with `--retry-uncertain`, because that person may
+already have it. A failure the provider calls temporary (a 429 rate limit, a
+5xx) stops the run and is tried again on the next one by itself. An issue sent by hand that stopped
 part way (say with `--limit 5`) waits for a hand; only scheduled issues resume
 on their own. Messages go out one a second (`newsletter.paceMs`), and
-`--max-per-day N` raises the cap for one run.
+`--max-per-day N` raises the cap for one run. With a provider that has a batch
+endpoint (Resend, Postmark, Mailjet, myna cloud) the pace is between batch
+calls instead, and each recipient still gets their own message, link and
+ledger row.
 
 ### Tracking and A/B tests
 
