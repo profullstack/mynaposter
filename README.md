@@ -53,6 +53,11 @@ machine and nothing is sent anywhere except the posts you make.
   quotes and new followers into a queue of follow-ups: a reply the writer
   drafts from what they said, and a follow-back, sent on a pace. See
   [Follow-ups](#follow-ups).
+- **Run a newsletter.** `myna newsletter` writes issues in Markdown, keeps
+  subscribers on a contacts list, sends through your own SMTP server under the
+  daily email cap, and resumes from a per-recipient ledger so nobody gets an
+  issue twice. Every issue carries a one-click unsubscribe and your postal
+  address. See [Newsletters](#newsletters).
 - **Plugins.** A plugin can add a network, a command, a daemon task or a source
   of people to follow. The bundled one pulls seeds from
   [OutreachGraph](https://outreachgraph.com). See [Plugins](#plugins).
@@ -852,6 +857,51 @@ setup and every send are in `outreach.json`. An opted-out contact
 candidate's contact block exactly as the board shows it to the account you are
 logged in with, and writes the source on every contact.
 
+## Newsletters
+
+An issue is a subject and a Markdown body aimed at one contacts list; the
+subscribers are that list, so `myna contacts` and `myna email --list` see the
+same people.
+
+```bash
+myna config newsletter.address "Profullstack, Inc., 1 Main St, San Jose, CA 95112, USA"   # required
+myna cloud login                                   # mynaposter.com hosts the unsubscribe links
+myna newsletter import subscribers.csv --list moshcode   # email,name,tags (or .json)
+myna newsletter subscribe ada@example.com --list moshcode --name Ada
+myna newsletter create --subject "Moshcode weekly #1" --list moshcode < issue.md
+myna newsletter send moshcode-weekly-1 --test you@example.com   # one [test] copy
+myna newsletter send moshcode-weekly-1 --dry-run
+myna newsletter send moshcode-weekly-1
+myna newsletter edit moshcode-weekly-2 --at "friday 9am"          # the daemon sends it
+myna newsletter list | show <id> [--body] | rm <id> [--force]
+myna newsletter subscribers --list moshcode
+myna newsletter unsubscribe ada@example.com [--list moshcode]
+myna newsletter sync                                # pull one-click unsubscribes
+```
+
+**The way out.** Every message carries `List-Unsubscribe` (an https link and a
+mailto) with `List-Unsubscribe-Post: List-Unsubscribe=One-Click`, so Gmail and
+Apple Mail show their own unsubscribe button, plus a link and your postal
+address in the footer. A send without `newsletter.address` is refused. The link
+is hosted by myna cloud at `mynaposter.com/api/v1/newsletter/u/<inbox>/<token>`:
+the token is random per subscriber and made on your machine, so the server
+never sees an address. A GET shows a button (link scanners never unsubscribe
+anyone); a POST records the token. `myna newsletter sync`, every send and the
+daemon pull those tokens back and turn each into the permanent opt-out. To host
+it yourself, `myna config newsletter.unsubscribeUrl "https://you.example/u/{token}"`
+and hand each token you receive to `myna newsletter unsubscribe <token>`.
+
+**Pacing and resuming.** A send goes out under `outreach.maxEmailsPerDay`
+(shared with `myna email`) and stops when today's cap is spent; run it again
+tomorrow, or schedule the issue with `--at` and `myna run` carries on each
+day by itself. `newsletters.json` records each recipient as `pending` before
+the SMTP conversation and `sent` after it, so a rerun skips everyone who has
+it. A refusal is `failed` and is retried only with `--retry-failed`; a send
+that died mid-message leaves `pending`, retried only with `--retry-uncertain`,
+because that person may already have it. An issue sent by hand that stopped
+part way (say with `--limit 5`) waits for a hand; only scheduled issues resume
+on their own.
+
 ## Your settings on every machine
 
 `myna config`, the profile, the pacing, the graph limits, and every skill file
@@ -962,12 +1012,16 @@ bun run db:migrate
 { "mcpServers": { "myna": { "command": "bunx", "args": ["@profullstack/myna-mcp"] } } }
 ```
 
-Seventeen tools: `myna_accounts`, `myna_networks`, `myna_skills`,
+Twenty-seven tools: `myna_accounts`, `myna_networks`, `myna_skills`,
 `myna_skill`, `myna_preview`, `myna_post`, `myna_update`, `myna_schedule`, `myna_queue`,
 `myna_cancel`, `myna_history`, `myna_draft`, `myna_timeline`, `myna_search`,
 and for [directories](#directories) `myna_directories`,
 `myna_directory_preview`, `myna_directory_submit` and
-`myna_directory_listings`. An agent should call `myna_skill` for an account
+`myna_directory_listings`, and for [newsletters](#newsletters)
+`myna_newsletters`, `myna_newsletter`, `myna_newsletter_create`,
+`myna_newsletter_edit`, `myna_newsletter_delete`, `myna_newsletter_send`
+(a dry run unless `dry_run` is false), `myna_newsletter_subscribe`,
+`myna_newsletter_unsubscribe` and `myna_newsletter_subscribers`. An agent should call `myna_skill` for an account
 before `myna_post` to it: the [skill](#skills-the-rules-per-network-and-per-account)
 says what belongs there and how often.
 
@@ -995,6 +1049,9 @@ mention. Run `railway config plan` and read the destroy count before applying.
   history.json    what was sent
   graph.json      follow graph: seeds, candidates, and every follow sent
   settings.json   preferences, and which skill each account is on
+  contacts.json   people you may write to, their lists, and who opted out
+  outreach.json   SMTP servers (passwords in the vault) and every mail and text sent
+  newsletters.json  issues, who each one reached, and unsubscribe tokens
   skills/         the rules per network and per account, as skill.md files
   plugins/        plugins installed with `myna plugins add`
 ```

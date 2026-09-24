@@ -106,6 +106,7 @@ import { runSynconfig } from "./synconfig.ts";
 import { runEngage } from "./engage.ts";
 import { runDid } from "./did.ts";
 import { runContacts, runEmail, runSms, runSmtp } from "./outreach.ts";
+import { runNewsletter } from "./newsletter.ts";
 import { parseWhen, describeWhen, parseDuration } from "../tui/when.ts";
 import { keptLoginValues, loginValuesFromArgs } from "../login-args.ts";
 
@@ -157,6 +158,8 @@ export function parseFlags(argv: string[]): { positional: string[]; flags: Flags
       "online",
       // atproto signup
       "noProfile",
+      // newsletter show --body, edit --draft, send --retry-failed / --retry-uncertain
+      "body", "draft", "retryFailed", "retryUncertain",
     ]);
     if (BOOLS.has(name)) {
       flags[name === "noThread" ? "thread" : name] = name !== "noThread";
@@ -598,6 +601,12 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
     case "mail": {
       await ensureUnlocked();
       return await runEmail(positional, flags);
+    }
+
+    case "newsletter":
+    case "newsletters": {
+      await ensureUnlocked();
+      return await runNewsletter(positional, flags);
     }
 
     case "post": {

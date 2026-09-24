@@ -28,6 +28,7 @@ import * as cloud from "./cloud.ts";
 import * as reshare from "./reshare.ts";
 import * as atproto from "./atproto.ts";
 import * as handoff from "./handoff.ts";
+import * as newsletter from "./newsletter.ts";
 import * as oc from "./openconnection.ts";
 import { store as synconfigStore } from "./synconfig.ts";
 import { handleGet as synconfigGet, handlePut as synconfigPut, handleRevisions as synconfigRevisions } from "@profullstack/synconfig/server";
@@ -57,7 +58,7 @@ app.use("/v1/*", async (context, next) => {
   // this instance, while those belong to an end user with an account. Running
   // both would mean nobody could sign up without the operator's token.
   const path = new URL(context.req.url).pathname;
-  if (path.startsWith("/v1/cloud") || path.startsWith("/v1/reshare") || path.startsWith("/v1/atproto") || path.startsWith("/v1/handoff") || path.startsWith("/v1/synconfig") || path.startsWith("/v1/syncfg") || path.startsWith("/v1/openconnection")) return next();
+  if (path.startsWith("/v1/cloud") || path.startsWith("/v1/reshare") || path.startsWith("/v1/atproto") || path.startsWith("/v1/handoff") || path.startsWith("/v1/newsletter") || path.startsWith("/v1/synconfig") || path.startsWith("/v1/syncfg") || path.startsWith("/v1/openconnection")) return next();
 
   const expected = process.env.MYNA_API_TOKEN;
   const isRead = context.req.method === "GET";
@@ -543,6 +544,62 @@ handoffRoutes.delete("/:id", async (context) => {
 });
 
 app.route("/v1/handoff", handoffRoutes);
+
+/**
+ * Newsletter one-click unsubscribe. The link in every issue is
+ * /v1/newsletter/u/<inbox>/<token> (mynaposter.com/api/v1/... on the site):
+ * a GET shows a button, a POST records the token, which is what a mail
+ * client's one-click sends. The sender's myna, signed in, opens its inbox
+ * and pulls the tokens back; the addresses never come here.
+ */
+const newsletterRoutes = new Hono<{ Variables: { user: cloud.CloudUser | null } }>();
+
+const htmlReply = (html: string, status = 200) =>
+  new Response(html, {
+    status,
+    headers: {
+      "content-type": "text/html; charset=utf-8",
+      "content-security-policy": newsletter.PAGE_CSP,
+      "cache-control": "no-store",
+      "x-content-type-options": "nosniff",
+      "referrer-policy": "no-referrer",
+    },
+  });
+
+newsletterRoutes.use("*", async (context, next) => {
+  if (!hasDatabase()) return context.json({ ok: false, error: "This instance has no DATABASE_URL, so newsletter unsubscribes are off." }, 503);
+  const path = new URL(context.req.url).pathname;
+  context.set("user", path.startsWith("/v1/newsletter/u/") ? null : await requireUser(context));
+  return next();
+});
+
+newsletterRoutes.get("/u/:inbox/:token", async (context) => {
+  const known = newsletter.PART_SHAPE.test(context.req.param("token")) && (await newsletter.inboxExists(context.req.param("inbox")));
+  return known ? htmlReply(newsletter.confirmPage()) : htmlReply(newsletter.unknownPage(), 404);
+});
+
+newsletterRoutes.post("/u/:inbox/:token", async (context) => {
+  const recorded = await newsletter.recordUnsubscribe(context.req.param("inbox"), context.req.param("token"));
+  // The page's button posts a form and wants a page back; a mail client's
+  // one-click posts the same form and reads only the status.
+  const wantsHtml = (context.req.header("accept") ?? "").includes("text/html");
+  if (wantsHtml) return recorded ? htmlReply(newsletter.donePage()) : htmlReply(newsletter.unknownPage(), 404);
+  return recorded ? context.json({ ok: true }) : context.json({ ok: false, error: "Unknown link." }, 404);
+});
+
+newsletterRoutes.post("/inbox", async (context) => {
+  const user = context.get("user");
+  if (!user) return context.json({ ok: false, error: "Sign in with myna cloud login to host unsubscribe links." }, 401);
+  return context.json({ ok: true, inbox: await newsletter.ensureInbox(user.id) });
+});
+
+newsletterRoutes.get("/unsubscribes", async (context) => {
+  const user = context.get("user");
+  if (!user) return context.json({ ok: false, error: "Unauthorized" }, 401);
+  return context.json({ ok: true, unsubscribes: await newsletter.listUnsubscribes(user.id, context.req.query("since")) });
+});
+
+app.route("/v1/newsletter", newsletterRoutes);
 
 /**
  * Settings sync: a user's settings.json, OpenProfile and skills as one

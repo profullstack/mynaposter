@@ -414,7 +414,48 @@ export { normaliseHandoff, type Handoff, type HandoffInput, type CloudHandoff } 
 // Outreach: SMTP servers, texts through Telnyx, contacts and lists.
 export { sendSmtp, buildMime, dotStuff, addressOf, SmtpError, type SmtpServer, type SmtpMessage, type SmtpResult, type SmtpOptions, type SmtpSecurity } from "./core/smtp.ts";
 export { sendSms, e164, TELNYX_MESSAGES_URL, type SmsConfig, type SmsResult } from "./core/sms.ts";
-export { readContacts, writeContacts, upsertContact, removeContact, optOut, addToList, recipients, contactId, type Contact, type ContactsFile } from "./store/contacts.ts";
+export { readContacts, writeContacts, upsertContact, removeContact, optOut, addToList, removeFromList, recipients, contactId, type Contact, type ContactsFile } from "./store/contacts.ts";
 export { readOutreach, writeOutreach, saveSmtpServer, removeSmtpServer, smtpServer, saveSms, smsConfig, recordSent, outreachSentToday, type SmsSetup, type SentRecord, type OutreachFile } from "./store/outreach.ts";
 export { importFromAgenticjobs, type ImportOptions, type ImportResult } from "./core/contacts-import.ts";
-export { DEFAULT_OUTREACH, type OutreachSettings } from "./store/settings.ts";
+export { DEFAULT_OUTREACH, type OutreachSettings, DEFAULT_NEWSLETTER, type NewsletterSettings } from "./store/settings.ts";
+// Newsletters: issues to a contacts list, a per-recipient ledger, one-click unsubscribe.
+export {
+  readNewsletters,
+  writeNewsletters,
+  getNewsletter,
+  requireNewsletter,
+  createNewsletter,
+  editNewsletter,
+  removeNewsletter,
+  tokenFor,
+  contactForToken,
+  deliveriesFor,
+  tally,
+  type Newsletter,
+  type NewsletterStatus,
+  type NewsletterInput,
+  type NewsletterPatch,
+  type Delivery,
+  type DeliveryState,
+  type NewslettersFile,
+} from "./store/newsletters.ts";
+export {
+  composeNewsletter,
+  sendNewsletter,
+  runDueNewsletters,
+  syncUnsubscribes,
+  ensureInbox,
+  linkMaker,
+  subscribe,
+  unsubscribe,
+  subscribers,
+  parseSubscribers,
+  readSubscriberFile,
+  addressFor,
+  type NewsletterComposeOptions,
+  type SendNewsletterOptions,
+  type SendNewsletterReport,
+  type SubscriberInput,
+  type SubscribeResult,
+  type SyncResult,
+} from "./core/newsletter.ts";

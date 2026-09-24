@@ -102,6 +102,17 @@ export function addToList(list: string, ids: string[], file = readContacts()): n
   return added;
 }
 
+/** Take ids off one list. The contacts stay, and so does everything else they are on. */
+export function removeFromList(list: string, ids: string[], file = readContacts()): number {
+  const name = list.trim().toLowerCase();
+  const members = file.lists[name] ?? [];
+  const drop = new Set(ids.map((id) => id.trim().toLowerCase()));
+  const kept = members.filter((member) => !drop.has(member));
+  file.lists[name] = kept;
+  writeContacts(file);
+  return members.length - kept.length;
+}
+
 /** Who a send goes to: a list by name, or a tag, never anyone opted out. */
 export function recipients(selector: { list?: string; tag?: string; ids?: string[] }, file = readContacts()): Contact[] {
   const byId = new Map(file.contacts.map((contact) => [contact.id, contact]));

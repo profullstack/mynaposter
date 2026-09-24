@@ -46,6 +46,19 @@ import {
   DEFAULT_BLOG_TYPE,
   DEFAULT_SOCIAL_TYPE,
   type ListingInput,
+  readNewsletters,
+  requireNewsletter,
+  createNewsletter,
+  editNewsletter,
+  removeNewsletter,
+  deliveriesFor,
+  tally,
+  sendNewsletter,
+  subscribe,
+  unsubscribe,
+  subscribers,
+  readSubscriberFile,
+  parseWhen,
 } from "@profullstack/myna-core";
 
 export interface ToolResult {
@@ -332,6 +345,133 @@ export const TOOLS = [
       properties: {
         directory: { type: "string", description: "Directory id. Omit for every connected directory." },
       },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "myna_newsletters",
+    description:
+      "List the newsletters on this machine: id, subject, the contacts list each goes to, status (draft, scheduled, " +
+      "sending, sent) and how many were delivered. Subscribers are a contacts list; sending needs an SMTP server " +
+      "(myna smtp add) and a postal address (myna config newsletter.address), both set by a person.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+  },
+  {
+    name: "myna_newsletter",
+    description: "One newsletter in full: subject, Markdown body, list, status, schedule and the per-recipient ledger.",
+    inputSchema: {
+      type: "object",
+      properties: { id: { type: "string", description: "Newsletter id (a unique prefix is enough)." } },
+      required: ["id"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "myna_newsletter_create",
+    description:
+      "Write a newsletter issue. It is a draft unless `at` schedules it, in which case the myna daemon sends it when due. " +
+      "Every issue goes out with a one-click unsubscribe link and header and the sender's postal address, added by myna; " +
+      "do not write them into the body.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        subject: { type: "string" },
+        body: { type: "string", description: "Markdown. Sent as text and as HTML." },
+        list: { type: "string", description: "The contacts list it goes to." },
+        at: { type: "string", description: 'When to send, e.g. "tomorrow 9am", "in 2h", or an ISO time. Omit for a draft.' },
+        id: { type: "string", description: "A slug to use as the id. Defaults to one from the subject." },
+        reply_to: { type: "string" },
+        smtp: { type: "string", description: "An SMTP server id; the first configured one when omitted." },
+      },
+      required: ["subject", "body", "list"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "myna_newsletter_edit",
+    description: "Change a newsletter that has not been sent: subject, body, list, schedule (or back to a draft).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string" },
+        subject: { type: "string" },
+        body: { type: "string" },
+        list: { type: "string" },
+        at: { type: "string", description: "Schedule it for this time." },
+        draft: { type: "boolean", description: "Unschedule: back to a draft." },
+        reply_to: { type: "string" },
+        smtp: { type: "string" },
+      },
+      required: ["id"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "myna_newsletter_delete",
+    description: "Remove a newsletter. One that already reached anyone needs force, because its ledger goes with it.",
+    inputSchema: {
+      type: "object",
+      properties: { id: { type: "string" }, force: { type: "boolean" } },
+      required: ["id"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "myna_newsletter_send",
+    description:
+      "Send a newsletter to its list. A dry run by default: pass dry_run false to really send. `test` sends one copy " +
+      "to that address and nothing else. A send stops at today's email cap (outreach.maxEmailsPerDay) and the next " +
+      "one resumes from the ledger; nobody is mailed twice. Opted-out contacts are never mailed.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string" },
+        dry_run: { type: "boolean", description: "Defaults to true. Report who would get it and send nothing." },
+        test: { type: "string", description: "Send a single [test] copy to this address." },
+        limit: { type: "number", description: "At most this many this run." },
+        retry_failed: { type: "boolean", description: "Try again the addresses the server refused before." },
+      },
+      required: ["id"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "myna_newsletter_subscribe",
+    description:
+      "Add people to a newsletter's list (as contacts): a list of emails, or a CSV/JSON file on this machine. " +
+      "Only add people who asked to be on it. Anyone who unsubscribed before stays out.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        list: { type: "string" },
+        emails: { type: "array", items: { type: "string" } },
+        file: { type: "string", description: "Path to a .csv (email,name,tags) or .json file of subscribers." },
+        name: { type: "string", description: "The name, when adding one email." },
+        tags: { type: "array", items: { type: "string" } },
+      },
+      required: ["list"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "myna_newsletter_unsubscribe",
+    description:
+      "Take someone off. With `list`, only that list; without it, the permanent opt-out that no list, newsletter " +
+      "or email reaches again. Accepts an email or an unsubscribe token.",
+    inputSchema: {
+      type: "object",
+      properties: { who: { type: "string" }, list: { type: "string" } },
+      required: ["who"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "myna_newsletter_subscribers",
+    description: "Everyone on a list and whether they can be mailed (unsubscribed ones are shown, never mailed).",
+    inputSchema: {
+      type: "object",
+      properties: { list: { type: "string" } },
+      required: ["list"],
       additionalProperties: false,
     },
   },
@@ -685,6 +825,82 @@ export async function callTool(name: string, args_: Record<string, unknown> = {}
         }
         return text(listings);
       }
+
+      case "myna_newsletters": {
+        const file = readNewsletters();
+        return text(file.newsletters.map(({ body, ...rest }) => ({ ...rest, bodyChars: body.length, deliveries: tally(rest.id, file) })));
+      }
+
+      case "myna_newsletter": {
+        const file = readNewsletters();
+        const newsletter = requireNewsletter(args.id, file);
+        return text({ ...newsletter, deliveries: deliveriesFor(newsletter.id, file) });
+      }
+
+      case "myna_newsletter_create": {
+        const at = args.at as string | undefined;
+        return text(
+          createNewsletter({
+            subject: args.subject,
+            body: args.body,
+            list: args.list,
+            id: args.id,
+            scheduledFor: at ? parseWhen(at).at.toISOString() : null,
+            replyTo: args.reply_to ?? null,
+            smtp: args.smtp ?? null,
+          }),
+        );
+      }
+
+      case "myna_newsletter_edit": {
+        const at = args.at as string | undefined;
+        return text(
+          editNewsletter(args.id, {
+            subject: args.subject,
+            body: args.body,
+            list: args.list,
+            scheduledFor: at ? parseWhen(at).at.toISOString() : undefined,
+            draft: Boolean(args.draft),
+            replyTo: args.reply_to,
+            smtp: args.smtp,
+          }),
+        );
+      }
+
+      case "myna_newsletter_delete":
+        return text(removeNewsletter(args.id, { force: Boolean(args.force) }) ? `Removed ${args.id}.` : `No newsletter ${args.id}.`);
+
+      case "myna_newsletter_send": {
+        const lines: string[] = [];
+        const test = args.test as string | undefined;
+        const report = await sendNewsletter(args.id, {
+          dryRun: test ? args.dry_run === true : args.dry_run !== false,
+          test,
+          limit: typeof args.limit === "number" ? args.limit : undefined,
+          retryFailed: Boolean(args.retry_failed),
+          log: (line) => lines.push(line),
+        });
+        return text({ ...report, notes: lines });
+      }
+
+      case "myna_newsletter_subscribe": {
+        const emails = (args.emails as string[] | undefined) ?? [];
+        const tags = (args.tags as string[] | undefined) ?? [];
+        const people = [
+          ...emails.map((email) => ({ email, name: emails.length === 1 ? ((args.name as string | undefined) ?? null) : null, tags })),
+          ...(args.file ? readSubscriberFile(args.file).map((person) => ({ ...person, tags: [...(person.tags ?? []), ...tags] })) : []),
+        ];
+        if (!people.length) throw new Error("Give emails, or a file of subscribers.");
+        return text(subscribe(args.list, people, `newsletter:${args.list}`));
+      }
+
+      case "myna_newsletter_unsubscribe": {
+        const result = unsubscribe(args.who, { list: args.list });
+        return text(result ?? `No subscriber ${args.who}.`);
+      }
+
+      case "myna_newsletter_subscribers":
+        return text(subscribers(args.list).map(({ contact, active }) => ({ id: contact.id, email: contact.email, name: contact.name, addedAt: contact.addedAt, active, optedOut: Boolean(contact.optedOut) })));
 
       default:
         throw new Error(`Unknown tool "${name}"`);
