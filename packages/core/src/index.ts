@@ -482,6 +482,8 @@ export {
   type SyncResult,
   // crawlproof tracking, A/B variants, stats
   newsletterTracking,
+  connectTracking,
+  type TrackingConnection,
   TRACKING_SECRETS,
   TRACKING_ID,
   trackingBase,

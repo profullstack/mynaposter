@@ -42,10 +42,10 @@ import { resolveSender, sendEach, smtpProvider, type MailMessage, type MailSende
 import { escapeHtml, renderMarkdown } from "../util/markdown.ts";
 import { hasBrand, layoutNewsletter, safeAccent, type NewsletterBrand } from "./newsletter-layout.ts";
 import { getJson, postJson } from "../util/http.ts";
-import { loadSettings, type NewsletterCta } from "../store/settings.ts";
+import { loadSettings, saveSettings, type NewsletterCta } from "../store/settings.ts";
 import { addToList, optIn, optOut, readContacts, recipients, upsertContact, removeFromList, contactId, type Contact } from "../store/contacts.ts";
 import { outreachSentToday, recordSent } from "../store/outreach.ts";
-import { getPluginSecrets } from "../store/accounts.ts";
+import { getPluginSecrets, setPluginSecrets } from "../store/accounts.ts";
 import { session, DEFAULT_SERVER } from "../store/cloud.ts";
 import {
   claimOptChange,
@@ -96,6 +96,50 @@ export const TRACKING_SECRETS = "newsletter";
 export const TRACKING_ID = /^[0-9a-f]{24}$/i;
 const DEFAULT_TRACKING_HOST = "https://crawlproof.com";
 const CTA_MARK = "{{cta}}";
+
+export interface TrackingConnection {
+  site: string;
+  trackingId: string;
+  /** True when this call switched tracking on. */
+  enabled: boolean;
+  host: string;
+}
+
+/**
+ * Set tracking up from a site name, with the CrawlProof token myna already
+ * holds (`myna crawlproof login`): read the project's tracking id and secret
+ * from GET /api/v1/email-tracking/<site>?secret=1, switch it on if it is off,
+ * and keep both (the id in settings, the secret in the vault). No copying a
+ * secret out of a dashboard.
+ */
+export async function connectTracking(site: string, options: { fetcher?: Fetch } = {}): Promise<TrackingConnection> {
+  const fetcher = options.fetcher ?? fetch;
+  const creds = getPluginSecrets("crawlproof");
+  if (!creds.token) throw new Error("No CrawlProof token. Run: myna crawlproof login");
+  const host = (creds.url || "https://crawlproof.com").replace(/\/+$/, "");
+  const headers = { authorization: `Bearer ${creds.token}`, accept: "application/json" };
+  const path = `${host}/api/v1/email-tracking/${encodeURIComponent(site.trim())}`;
+  const read = async (response: Response): Promise<Record<string, unknown>> => {
+    const json = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+    if (!response.ok) throw new Error(`CrawlProof: ${response.status} ${String(json.error ?? "")}`.trim());
+    return json;
+  };
+  const row = await read(await fetcher(`${path}?secret=1`, { headers }));
+  const trackingId = String(row.tracking_id ?? "");
+  const secret = String(row.secret ?? "");
+  if (!TRACKING_ID.test(trackingId) || !/^[0-9a-f]{32,}$/i.test(secret)) throw new Error("CrawlProof answered without a tracking id and secret.");
+  let enabled = false;
+  if (!row.enabled) {
+    await read(await fetcher(`${path}/enable`, { method: "POST", headers }));
+    enabled = true;
+  }
+  const settings = loadSettings();
+  settings.newsletter.trackingId = trackingId.toLowerCase();
+  settings.newsletter.trackingHost = host;
+  saveSettings(settings);
+  setPluginSecrets(TRACKING_SECRETS, { ...getPluginSecrets(TRACKING_SECRETS), trackingSecret: secret });
+  return { site: String(row.site ?? site), trackingId, enabled, host };
+}
 
 /** The tracking set up on this machine: the id from settings, the secret from the vault. */
 export function newsletterTracking(): Tracking | undefined {

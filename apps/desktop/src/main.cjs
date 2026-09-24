@@ -296,6 +296,7 @@ handle("newsletter:stats", async (id) => {
   if (!tracking) throw new Error("Tracking is off. Run: myna newsletter track set <id>");
   return core.fetchNewsletterStats(id, tracking);
 });
+handle("newsletter:track", (site) => core.connectTracking(site));
 handle("newsletter:subscribers", (list) =>
   core.subscribers(list).map(({ contact, active }) => ({ id: contact.id, email: contact.email, name: contact.name, active })),
 );

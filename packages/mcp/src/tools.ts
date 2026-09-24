@@ -47,6 +47,7 @@ import {
   DEFAULT_SOCIAL_TYPE,
   type ListingInput,
   readNewsletters,
+  connectTracking,
   requireNewsletter,
   createNewsletter,
   editNewsletter,
@@ -464,6 +465,19 @@ export const TOOLS = [
       type: "object",
       properties: { who: { type: "string" }, list: { type: "string" } },
       required: ["who"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "myna_newsletter_track_connect",
+    description:
+      "Turn on CrawlProof open/click tracking for newsletters from a CrawlProof project (e.g. moshcode.sh), using the " +
+      "CrawlProof token this machine already has (myna crawlproof login). Switches the project's email tracking on if " +
+      "it is off and keeps the tracking id and secret. Every later issue's links, open pixel and unsubscribe link go through it.",
+    inputSchema: {
+      type: "object",
+      properties: { site: { type: "string", description: "The CrawlProof project: hostname or project id." } },
+      required: ["site"],
       additionalProperties: false,
     },
   },
@@ -900,6 +914,9 @@ export async function callTool(name: string, args_: Record<string, unknown> = {}
         const result = unsubscribe(args.who, { list: args.list });
         return text(result ?? `No subscriber ${args.who}.`);
       }
+
+      case "myna_newsletter_track_connect":
+        return text(await connectTracking(args.site));
 
       case "myna_newsletter_subscribers":
         return text(subscribers(args.list).map(({ contact, active }) => ({ id: contact.id, email: contact.email, name: contact.name, addedAt: contact.addedAt, active, optedOut: Boolean(contact.optedOut) })));
