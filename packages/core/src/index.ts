@@ -471,6 +471,8 @@ export {
   fetchTrackingEvents,
   syncTrackingUnsubscribes,
   syncAllUnsubscribes,
+  unsubscribePullError,
+  type AllSyncResult,
   buildVariants,
   variantIndex,
   variantsFor,

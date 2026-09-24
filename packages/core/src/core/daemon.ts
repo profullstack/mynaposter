@@ -16,7 +16,7 @@ import { pluginContext } from "../plugins/context.ts";
 import { runEvergreen } from "./evergreen.ts";
 import { runRecap } from "./recap.ts";
 import { canSync, syncConfigOnce } from "../store/synconfig.ts";
-import { runDueNewsletters, syncAllUnsubscribes } from "./newsletter.ts";
+import { runDueNewsletters, syncAllUnsubscribes, unsubscribePullError } from "./newsletter.ts";
 import { readNewsletters } from "../store/newsletters.ts";
 
 export interface DaemonJob {
@@ -70,6 +70,7 @@ export function builtinJobs(log: (line: string) => void, tickMs: number): Daemon
     async run() {
       if (!readNewsletters().newsletters.some((entry) => entry.scheduledFor && entry.status !== "sent")) {
         const synced = await syncAllUnsubscribes();
+        if (synced.errors.length) throw unsubscribePullError(synced.errors);
         const out = synced.cloud.optedOut.length + (synced.tracking?.optedOut.length ?? 0);
         if (out || synced.cloud.resubscribed.length) return `${out} unsubscribed, ${synced.cloud.resubscribed.length} re-subscribed`;
         return;

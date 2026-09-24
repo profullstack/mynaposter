@@ -938,8 +938,11 @@ myna newsletter cta list | add "<label>" <url> | rm "<label>"   [--set name]
   have an account at moshcode; our Terms say we may email news and updates."
   instead of "you subscribed to <list>", for a list of your users.
 - **Unsubscribes.** Before every send, myna pulls unsubscribes from every source
-  that is set up and makes them permanent opt-outs. If crawlproof cannot be
-  read, a tracked send refuses to go.
+  that is set up (the myna cloud inbox, and crawlproof when tracking is on) and
+  applies them. Both fail closed: if either cannot be read, a list send stops
+  before anyone is mailed, the daemon sends nothing that turn, and
+  `myna newsletter sync` exits non-zero. A `--to` test copy still goes out,
+  with a warning.
 - **Stats.** Events are joined to variants through each recipient's msgId in
   `newsletters.json`. Opens and clicks count unique messages, with machine-flagged
   ones (mail proxies, scanners, Apple's prefetch) left out; all opens are shown

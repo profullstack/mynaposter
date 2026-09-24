@@ -362,3 +362,108 @@ test("settings: tracking off by default, the default CTA set, copied rather than
   settings.newsletter.ctaSets.default!.push({ label: "x", url: "https://x" });
   expect(loadSettings().newsletter.ctaSets.default).toHaveLength(4);
 });
+
+// ---------------------------------------------------------------- fail closed on myna cloud too
+
+/** A signed-in install whose myna cloud unsubscribe inbox answers 503. */
+async function cloudDown(): Promise<() => void> {
+  const { saveSession } = await import("../src/store/cloud.ts");
+  const { writeNewsletters } = await import("../src/store/newsletters.ts");
+  saveSession({ server: "https://myna.test/api", email: "me@example.com", token: "tok", since: new Date().toISOString() });
+  const file = readNewsletters();
+  file.inbox = { id: "INBOXINBOXINBOX1", server: "https://myna.test/api" };
+  writeNewsletters(file);
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = (async () => new Response("unavailable", { status: 503 })) as unknown as typeof fetch;
+  return () => {
+    globalThis.fetch = realFetch;
+  };
+}
+
+test("a failed myna cloud pull stops a list send before anyone is mailed, tracked or not", async () => {
+  const restore = await cloudDown();
+  const fake = fakeSmtp();
+  const port = await fake.listen();
+  try {
+    subscribe("moshcode-users", [{ email: "one@example.com" }, { email: "two@example.com" }]);
+    createNewsletter({ id: "i1", subject: "S", body: "b", list: "moshcode-users" });
+    await expect(sendNewsletter("i1", { server: smtp(port), tracking: null })).rejects.toThrow(/^Could not read unsubscribes from myna cloud \(.*503.*\); not sending until they are applied\.$/);
+    // With crawlproof working, the cloud failure still stops it.
+    await expect(sendNewsletter("i1", { server: smtp(port), tracking, fetcher: fakeCrawlproof([]).fetcher })).rejects.toThrow(/myna cloud/);
+    // Both down: both named.
+    await expect(sendNewsletter("i1", { server: smtp(port), tracking, fetcher: fakeCrawlproof([], { status: 503 }).fetcher })).rejects.toThrow(/myna cloud .* or crawlproof \(crawlproof events: 503\)/);
+    expect(fake.messages).toHaveLength(0);
+    expect(readNewsletters().deliveries.i1).toBeUndefined();
+    expect(requireNewsletter("i1").status).toBe("draft");
+  } finally {
+    restore();
+    await fake.close();
+  }
+});
+
+test("the daemon fails closed too: a due issue is not sent, and the idle pull reports the failure", async () => {
+  const restore = await cloudDown();
+  const fake = fakeSmtp();
+  const port = await fake.listen();
+  try {
+    subscribe("moshcode-users", [{ email: "one@example.com" }]);
+    createNewsletter({ id: "due", subject: "Due", body: "d", list: "moshcode-users", scheduledFor: new Date(Date.now() - 60_000).toISOString() });
+    const { runDueNewsletters } = await import("../src/core/newsletter.ts");
+    await expect(runDueNewsletters(new Date(), { server: smtp(port), tracking: null })).rejects.toThrow(/myna cloud/);
+    expect(fake.messages).toHaveLength(0);
+    expect(requireNewsletter("due").status).toBe("scheduled");
+
+    const { builtinJobs } = await import("../src/core/daemon.ts");
+    const job = builtinJobs(() => undefined, 1000).find((entry) => entry.id === "newsletter")!;
+    await expect(job.run()).rejects.toThrow(/not sending until they are applied/);
+    expect(fake.messages).toHaveLength(0);
+    // With nothing scheduled, the job's own pull still fails loudly rather than quietly.
+    const { writeNewsletters } = await import("../src/store/newsletters.ts");
+    const file = readNewsletters();
+    file.newsletters = [];
+    writeNewsletters(file);
+    await expect(job.run()).rejects.toThrow(/Could not read unsubscribes from myna cloud/);
+  } finally {
+    restore();
+    await fake.close();
+  }
+});
+
+test("a --to test copy still goes out when a pull fails, with a warning", async () => {
+  const restore = await cloudDown();
+  const fake = fakeSmtp();
+  const port = await fake.listen();
+  try {
+    subscribe("moshcode-users", [{ email: "one@example.com" }]);
+    createNewsletter({ id: "i1", subject: "S", body: "b", list: "moshcode-users" });
+    const lines: string[] = [];
+    const copy = await sendNewsletter("i1", { server: smtp(port), tracking, fetcher: fakeCrawlproof([]).fetcher, test: "owner@profullstack.com", log: (line) => lines.push(line) });
+    expect(copy.sent).toEqual(["owner@profullstack.com"]);
+    expect(fake.messages).toHaveLength(1);
+    expect(lines.some((line) => line.startsWith("warning: could not read unsubscribes from myna cloud") && line.includes("a list send would stop here"))).toBe(true);
+    for (const line of lines) expect(line).not.toContain("—");
+  } finally {
+    restore();
+    await fake.close();
+  }
+});
+
+test("syncAllUnsubscribes tries every source and names each that failed", async () => {
+  const restore = await cloudDown();
+  try {
+    const { syncAllUnsubscribes } = await import("../src/core/newsletter.ts");
+    const result = await syncAllUnsubscribes({
+      tracking,
+      fetcher: fakeCrawlproof([{ type: "unsubscribe", email: "x@example.com", at: "2026-09-24T00:00:00.000Z" }]).fetcher,
+    });
+    expect(result.errors).toHaveLength(1);
+    expect(result.errors[0]).toMatch(/^myna cloud \(/);
+    // crawlproof still ran and applied its opt-out.
+    expect(result.tracking?.optedOut).toEqual(["x@example.com"]);
+    const none = await syncAllUnsubscribes({ tracking: null });
+    expect(none.errors).toHaveLength(1);
+    expect(none.tracking).toBeNull();
+  } finally {
+    restore();
+  }
+});

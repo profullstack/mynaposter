@@ -458,13 +458,21 @@ export async function runNewsletter(positional: string[], flags: Flags): Promise
     case "sync-optouts": {
       const result = await syncAllUnsubscribes();
       const cloud = result.cloud;
-      out(
-        `myna cloud: ${cloud.pulled} change${cloud.pulled === 1 ? "" : "s"} read: ${cloud.optedOut.length} newly unsubscribed, ${cloud.resubscribed.length} re-subscribed` +
-          `${cloud.unknown ? `, ${cloud.unknown} for tokens this install never sent` : ""}.`,
-      );
-      if (result.tracking)
+      const failed = (source: string): string | undefined => result.errors.find((line) => line.startsWith(source));
+      if (failed("myna cloud")) out(`myna cloud: FAILED, ${failed("myna cloud")}`);
+      else
+        out(
+          `myna cloud: ${cloud.pulled} change${cloud.pulled === 1 ? "" : "s"} read: ${cloud.optedOut.length} newly unsubscribed, ${cloud.resubscribed.length} re-subscribed` +
+            `${cloud.unknown ? `, ${cloud.unknown} for tokens this install never sent` : ""}.`,
+        );
+      if (failed("crawlproof")) out(`crawlproof: FAILED, ${failed("crawlproof")}`);
+      else if (result.tracking)
         out(`crawlproof: ${result.tracking.pulled} unsubscribe${result.tracking.pulled === 1 ? "" : "s"} read, ${result.tracking.optedOut.length} newly opted out${result.tracking.optedOut.length ? `: ${result.tracking.optedOut.join(", ")}` : ""}.`);
       else out("crawlproof: tracking is off.");
+      if (result.errors.length) {
+        out(`Could not read unsubscribes from ${result.errors.join(" or ")}. Sends stay stopped until this works.`);
+        return 1;
+      }
       return 0;
     }
 

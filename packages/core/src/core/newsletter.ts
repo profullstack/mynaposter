@@ -641,6 +641,12 @@ export async function sendNewsletter(id: string, options: SendNewsletterOptions 
   if (options.test) {
     const variant = variants[0] as Variant;
     log(`Test copy to ${options.test} as variant ${variant.key} (subject ${variant.subjectKey}${variant.cta ? `, CTA "${variant.cta.label}"` : ""}).`);
+    if (!options.dryRun) {
+      // One copy to yourself may go out without the pull; a list send may not.
+      const synced = await syncAllUnsubscribes({ tracking: tracking ?? null, fetcher: options.fetcher });
+      if (synced.errors.length)
+        log(`warning: could not read unsubscribes from ${synced.errors.join(" or ")}. The test copy goes out anyway; a list send would stop here until they are applied.`);
+    }
     const known = readContacts().contacts.find((c) => c.id === options.test!.trim().toLowerCase());
     if (known?.optedOut) throw new Error(`${options.test} has opted out. It is never written to again.`);
     const server = options.server ?? smtpServer(newsletter.smtp ?? undefined);
@@ -667,22 +673,14 @@ export async function sendNewsletter(id: string, options: SendNewsletterOptions 
     return report;
   }
 
+  // Fail closed: a list send never goes out while any unsubscribe source that
+  // is set up could not be read, so nobody who left is written to again.
   if (!options.dryRun) {
-    try {
-      const synced = await syncUnsubscribes();
-      if (synced.optedOut.length) log(`${synced.optedOut.length} unsubscribed since the last send: ${synced.optedOut.join(", ")}`);
-    } catch (error) {
-      log(`warning: could not read unsubscribes from myna cloud (${(error as Error).message}); sending to the list as it stands.`);
-    }
-    if (tracking) {
-      // The tracked link is the one people press, so a send never goes without its unsubscribes.
-      try {
-        const synced = await syncTrackingUnsubscribes(tracking, { fetcher: options.fetcher });
-        if (synced.optedOut.length) log(`${synced.optedOut.length} unsubscribed through crawlproof: ${synced.optedOut.join(", ")}`);
-      } catch (error) {
-        throw new Error(`Could not read unsubscribes from crawlproof (${(error as Error).message}); not sending until they are applied.`);
-      }
-    }
+    const synced = await syncAllUnsubscribes({ tracking: tracking ?? null, fetcher: options.fetcher });
+    if (synced.errors.length) throw unsubscribePullError(synced.errors);
+    if (synced.cloud.optedOut.length) log(`${synced.cloud.optedOut.length} unsubscribed since the last send: ${synced.cloud.optedOut.join(", ")}`);
+    if (synced.cloud.resubscribed.length) log(`${synced.cloud.resubscribed.length} re-subscribed: ${synced.cloud.resubscribed.join(", ")}`);
+    if (synced.tracking?.optedOut.length) log(`${synced.tracking.optedOut.length} unsubscribed through crawlproof: ${synced.tracking.optedOut.join(", ")}`);
   }
 
   const ledger = readNewsletters().deliveries[newsletter.id] ?? {};
@@ -853,12 +851,43 @@ export async function fetchNewsletterStats(id: string, tracking: Tracking, optio
   return newsletterStats(newsletter.id, events.filter((event) => !event.c || event.c === newsletter.id), deliveries);
 }
 
-/** Every unsubscribe source that is set up: myna cloud's hosted link, and crawlproof tracking. */
-export async function syncAllUnsubscribes(options: { tracking?: Tracking | null; fetcher?: Fetch } = {}): Promise<{ cloud: SyncResult; tracking: TrackingSyncResult | null }> {
+/** An error's message as plain text for a refusal: the HTTP helper's dash becomes a colon. */
+const plainError = (error: unknown): string => (error as Error).message.replace(/\s*—\s*/g, ": ");
+
+export interface AllSyncResult {
+  cloud: SyncResult;
+  tracking: TrackingSyncResult | null;
+  /** One line per source that could not be read, e.g. "myna cloud (503)". Empty when every pull worked. */
+  errors: string[];
+}
+
+/**
+ * Every unsubscribe source that is set up: myna cloud's hosted link, and
+ * crawlproof tracking. Both are tried; a source that fails is named in
+ * `errors` rather than thrown, so the caller decides, and every caller that
+ * sends treats any error as a reason not to.
+ */
+export async function syncAllUnsubscribes(options: { tracking?: Tracking | null; fetcher?: Fetch } = {}): Promise<AllSyncResult> {
   const tracking = options.tracking === undefined ? newsletterTracking() : (options.tracking ?? undefined);
-  const cloud = await syncUnsubscribes();
-  const tracked = tracking ? await syncTrackingUnsubscribes(tracking, { fetcher: options.fetcher }) : null;
-  return { cloud, tracking: tracked };
+  const result: AllSyncResult = { cloud: { pulled: 0, optedOut: [], resubscribed: [], unknown: 0 }, tracking: null, errors: [] };
+  try {
+    result.cloud = await syncUnsubscribes();
+  } catch (error) {
+    result.errors.push(`myna cloud (${plainError(error)})`);
+  }
+  if (tracking) {
+    try {
+      result.tracking = await syncTrackingUnsubscribes(tracking, { fetcher: options.fetcher });
+    } catch (error) {
+      result.errors.push(`crawlproof (${plainError(error)})`);
+    }
+  }
+  return result;
+}
+
+/** The refusal a send gives when an unsubscribe source could not be read. */
+export function unsubscribePullError(errors: string[]): Error {
+  return new Error(`Could not read unsubscribes from ${errors.join(" or ")}; not sending until they are applied.`);
 }
 
 /**
