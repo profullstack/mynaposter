@@ -16,6 +16,7 @@ import {
   listQueue,
   loadSettings,
   postToAll,
+  utmPlan,
   postPaced,
   removeQueued,
   runAfterSchedule,
@@ -635,10 +636,13 @@ export async function callTool(name: string, args_: Record<string, unknown> = {}
         );
 
       case "myna_preview": {
-        const targets = resolveTargets(args.to ?? loadSettings().defaultTargets);
+        const settings = loadSettings();
+        const targets = resolveTargets(args.to ?? settings.defaultTargets);
+        // A preview shows the links tagged, because that is what will be sent.
+        const utm = utmPlan(settings);
         return text(
           targets.map((account) => {
-            const parts = tailor(account.network, { text: args.text, thread: true });
+            const parts = tailor(account.network, { text: args.text, thread: true }, utm);
             const limit = requireNetwork(account.network).caps.charLimit;
             return {
               account: account.id,

@@ -7,6 +7,7 @@ import {
   listQueue,
   requireNetwork,
   tailor,
+  utmPlan,
   loadSettings,
   type Account,
 } from "@profullstack/myna-core";
@@ -98,9 +99,12 @@ export function composeScreen(ui: Container, state: State, theme: Theme): void {
 
       const text = state.compose.value;
       const settings = loadSettings();
+      // The same tagger the send will use, so the counter measures the links
+      // as they will actually go out rather than as they were typed.
+      const utm = utmPlan(settings);
       for (const account of accounts.slice(0, 14)) {
         const network = requireNetwork(account.network);
-        const parts = text ? tailor(account.network, { text, thread: settings.threadByDefault }) : [];
+        const parts = text ? tailor(account.network, { text, thread: settings.threadByDefault }, utm) : [];
         const used = text ? charsFor(account.network, parts[0] ?? "") : 0;
         const limit = network.caps.charLimit;
 

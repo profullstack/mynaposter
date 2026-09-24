@@ -415,6 +415,7 @@ myna crawlproof <subcommand>      myna calendar <subcommand>
 myna directory <id> <url>         myna directory listings [id]
 myna skill list | show | init     myna skill add | default | rotate
 myna skill show type:<slug>       myna post --type <slug>
+myna utm [--add example.com]
 ```
 
 Flags: `--to`, `--title`, `--media`, `--style`, `--json`, `--dry-run`,
@@ -424,6 +425,33 @@ Reddit, `--privacy` for an upload.
 
 `--json` on any read command gives machine output, so `myna accounts --json | jq`
 works the way you would expect.
+
+## Campaign tags on your links
+
+A post that sends someone to your site is invisible at the other end unless the
+link says where it came from. myna adds `utm_source`, `utm_medium` and
+`utm_campaign` to the links in a post, per network, so your analytics can tell a
+Bluesky visit from a Mastodon one.
+
+```bash
+myna utm                                  what gets tagged, and with what
+myna utm --add crawlproof.com,example.org tag these sites too
+myna utm --exclude news.example.com       never tag this one
+myna utm --campaign "{type}-{date}"       change a template
+myna utm --off                            send links exactly as written
+```
+
+Two rules keep it from doing damage. Only sites you own are tagged: myna reads
+those off the accounts that told it where they publish, so a blog account needs
+no setting up, and `--add` covers everything else. And a link that already
+carries any `utm_` parameter is sent exactly as you wrote it, because a tag you
+placed by hand is a decision rather than an oversight.
+
+Templates take `{network}`, `{kind}`, `{type}` and `{date}`. The defaults are
+`{network}`, `{kind}` and `{type}`, which give you
+`utm_source=bluesky&utm_medium=social&utm_campaign=launch-announcement`. Tags go
+on before a post is measured against a network's character limit, so a tagged
+link can never push a post over it.
 
 ## The follow graph
 
