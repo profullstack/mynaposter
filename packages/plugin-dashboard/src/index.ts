@@ -48,12 +48,17 @@ import {
   readTypeSkill,
   DEFAULT_BLOG_TYPE,
   DEFAULT_SOCIAL_TYPE,
+  readNewsletters,
+  readContacts,
+  subscribers,
+  tally,
+  newsletterTracking,
   type Account,
   type MynaPlugin,
   type PluginContext,
   type Settings,
 } from "@profullstack/myna-core";
-import { readSnapshot, type Snapshot, type SnapshotInput } from "./snapshot.ts";
+import { readSnapshot, type NewsletterSummary, type Snapshot, type SnapshotInput } from "./snapshot.ts";
 import { page } from "./page.ts";
 
 export const DEFAULT_PORT = 7777;
@@ -98,8 +103,27 @@ export function snapshot(now?: number): Snapshot {
     engagement: listEngagement,
     settings: loadSettings,
     skills: (_accounts, settings) => skillRows(allTargets(), settings),
+    newsletter: newsletterSummary,
     now,
   });
+}
+
+/** The newsletter panel: every issue with its deliveries, and every list's size. */
+export function newsletterSummary(): NewsletterSummary {
+  const file = readNewsletters();
+  const tracking = newsletterTracking();
+  return {
+    issues: file.newsletters.map((n) => {
+      const t = tally(n.id, file);
+      return { id: n.id, subject: n.subject, list: n.list, status: n.status, ab: Boolean(n.subjectB), sent: t.sent, failed: t.failed, pending: t.pending, at: n.sentAt ?? n.scheduledFor ?? null };
+    }),
+    lists: Object.keys(readContacts().lists).map((name) => {
+      const people = subscribers(name);
+      return { name, active: people.filter((p) => p.active).length, total: people.length };
+    }),
+    address: Boolean(loadSettings().newsletter.address.trim()),
+    tracking: tracking ? tracking.id : null,
+  };
 }
 
 const json = (body: unknown, status = 200): Response =>

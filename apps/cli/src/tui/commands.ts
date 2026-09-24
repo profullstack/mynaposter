@@ -58,6 +58,7 @@ import { Field } from "./field.ts";
 import { startLogin } from "./login.ts";
 import { keptLoginValues, loginValuesFromArgs } from "../login-args.ts";
 import { parseWhen, describeWhen } from "./when.ts";
+import { runNewsletterCommand } from "./newsletter.ts";
 
 export interface Command {
   name: string;
@@ -81,6 +82,12 @@ const requireTargets = (state: State) => {
 };
 
 export const COMMANDS: Command[] = [
+  {
+    name: "newsletter",
+    args: "[new <list> <subject> | dry|test|send|stats|rm <id> | schedule <id> <when> | subscribe <list> <email...>]",
+    help: "Newsletters: write in the compose box, then new, dry, test, send",
+    run: (state, args, redraw) => runNewsletterCommand(state, args, redraw),
+  },
   {
     name: "update",
     args: "[--check]",

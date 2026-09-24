@@ -55,6 +55,17 @@ const base = {
   settings: settings(),
 };
 
+test("the newsletter panel carries what the reader gave it, and an empty one when it gave nothing", () => {
+  expect(buildSnapshot(base).newsletter).toEqual({ issues: [], lists: [], address: false, tracking: null });
+  const newsletter = {
+    issues: [{ id: "oct", subject: "October", list: "moshcode", status: "sending", ab: true, sent: 150, failed: 2, pending: 0, at: "2026-10-01T09:00:00.000Z" }],
+    lists: [{ name: "moshcode", active: 300, total: 312 }],
+    address: true,
+    tracking: "e960e0a69972a7f34ea197bb",
+  };
+  expect(buildSnapshot({ ...base, newsletter }).newsletter).toEqual(newsletter);
+});
+
 test("a network keeps its colour slot however many others are connected", () => {
   // Colour follows the entity, never its rank: bluesky is slot 2 whether or
   // not X is in the picture.

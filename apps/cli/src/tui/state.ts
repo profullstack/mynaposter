@@ -11,6 +11,7 @@ export type Screen =
   | "feed"
   | "networks"
   | "directories"
+  | "newsletter"
   | "help";
 
 export const SCREENS: Screen[] = [
@@ -22,6 +23,7 @@ export const SCREENS: Screen[] = [
   "feed",
   "networks",
   "directories",
+  "newsletter",
   "help",
 ];
 

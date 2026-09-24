@@ -241,6 +241,12 @@ a { color: inherit; }
   </section>
 
   <section class="card full">
+    <h2>Newsletters</h2>
+    <p class="note" id="newsletter-note">Issues to a contacts list, with one-click unsubscribe. <code>myna newsletter</code> in the terminal, the TUI or the desktop app writes and sends them.</p>
+    <div id="newsletters"></div>
+  </section>
+
+  <section class="card full">
     <h2>Pacing</h2>
     <div id="pacing"></div>
   </section>
@@ -495,6 +501,34 @@ function drawSkills(snap) {
         .join("")}</tbody></table>\`;
 }
 
+function drawNewsletters(snap) {
+  const nl = snap.newsletter ?? { issues: [], lists: [] };
+  const setup = [
+    nl.address ? "" : "No postal address yet, so nothing sends: myna config newsletter.address",
+    nl.tracking ? \`Tracking through CrawlProof (\${esc(nl.tracking)}).\` : "Tracking off.",
+  ].filter(Boolean).join(" ");
+  const issues = !nl.issues.length
+    ? '<p class="empty">No issues yet. myna newsletter create --subject "..." --list &lt;list&gt; &lt; issue.md</p>'
+    : \`<table><thead><tr><th>Issue</th><th>Status</th><th>List</th><th>Delivered</th><th>When</th><th>Subject</th></tr></thead><tbody>\${nl.issues
+        .map(
+          (row) => \`<tr>
+            <td class="reason">\${esc(row.id)}</td>
+            <td>\${row.status === "sent" ? statusCell("ok", "sent") : row.status === "sending" ? statusCell("hold", "sending") : statusCell("", esc(row.status))}</td>
+            <td class="when">\${esc(row.list)}</td>
+            <td class="when">\${row.sent}\${row.failed ? \` (\${row.failed} failed)\` : ""}\${row.pending ? \` (\${row.pending} uncertain)\` : ""}</td>
+            <td class="when">\${row.at ? clock(Date.parse(row.at)) : ""}</td>
+            <td class="text">\${esc(trim(row.subject, 70))}\${row.ab ? " (A/B)" : ""}</td>
+          </tr>\`,
+        )
+        .join("")}</tbody></table>\`;
+  const lists = !nl.lists.length
+    ? ""
+    : \`<table><thead><tr><th>List</th><th>Can be mailed</th><th>Unsubscribed or no email</th></tr></thead><tbody>\${nl.lists
+        .map((row) => \`<tr><td>\${esc(row.name)}</td><td class="when">\${row.active}</td><td class="when">\${row.total - row.active}</td></tr>\`)
+        .join("")}</tbody></table>\`;
+  $("newsletters").innerHTML = (setup ? \`<p class="note">\${setup}</p>\` : "") + issues + lists;
+}
+
 function drawPacing(snap) {
   const ever = snap.evergreen;
   $("pacing").innerHTML = \`<table><thead><tr><th>Rule</th><th>Setting</th><th>What it does</th></tr></thead><tbody>
@@ -537,6 +571,7 @@ function render(snap) {
   drawQueue(snap);
   drawHistory(snap);
   drawSkills(snap);
+  drawNewsletters(snap);
   drawPacing(snap);
   $("updated").textContent = \`updated \${clock(Date.now())}\`;
 }

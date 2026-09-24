@@ -253,6 +253,65 @@ handle("queue:remove", (id) => core.removeQueued(id));
 
 handle("history:list", () => core.listHistory().slice(0, 200));
 
+/*
+ * Newsletters. The same core as `myna newsletter`, so an issue written here
+ * is the one the CLI and the daemon send. Scheduled issues go out from the
+ * daemon (`myna run`), not from this window: two senders reading one ledger
+ * could mail someone twice.
+ */
+handle("newsletter:overview", () => {
+  const file = core.readNewsletters();
+  const settings = core.loadSettings();
+  const tracking = core.newsletterTracking();
+  return {
+    issues: file.newsletters.map((n) => ({ ...n, deliveries: core.tally(n.id, file) })),
+    lists: Object.keys(core.readContacts().lists).map((name) => {
+      const people = core.subscribers(name);
+      return { name, active: people.filter((p) => p.active).length, total: people.length };
+    }),
+    address: settings.newsletter.address,
+    tracking: tracking ? tracking.id : null,
+    smtp: core.readOutreach().smtp.map((s) => s.id),
+  };
+});
+handle("newsletter:create", ({ subject, subjectB, list, body, at }) =>
+  core.createNewsletter({ subject, subjectB: subjectB || null, list, body, scheduledFor: at ? new Date(at).toISOString() : null }),
+);
+handle("newsletter:update", (id, { subject, subjectB, list, body, at, draft }) =>
+  core.editNewsletter(id, {
+    subject,
+    subjectB: subjectB === undefined ? undefined : subjectB || null,
+    list,
+    body,
+    scheduledFor: at ? new Date(at).toISOString() : undefined,
+    draft: Boolean(draft),
+  }),
+);
+handle("newsletter:remove", (id) => core.removeNewsletter(id, { force: true }));
+handle("newsletter:dry", (id) => core.sendNewsletter(id, { dryRun: true }));
+handle("newsletter:test", (id, to) => core.sendNewsletter(id, { test: to }));
+handle("newsletter:send", (id) => core.sendNewsletter(id, { paceMs: core.loadSettings().newsletter.paceMs }));
+handle("newsletter:stats", async (id) => {
+  const tracking = core.newsletterTracking();
+  if (!tracking) throw new Error("Tracking is off. Run: myna newsletter track set <id>");
+  return core.fetchNewsletterStats(id, tracking);
+});
+handle("newsletter:subscribers", (list) =>
+  core.subscribers(list).map(({ contact, active }) => ({ id: contact.id, email: contact.email, name: contact.name, active })),
+);
+handle("newsletter:subscribe", (list, emails) => core.subscribe(list, emails.map((email) => ({ email })), `newsletter:${list}`));
+handle("newsletter:unsubscribe", (who, list) => core.unsubscribe(who, { list: list || undefined }));
+handle("newsletter:import", async (list) => {
+  const picked = await dialog.showOpenDialog(window, {
+    title: `Import subscribers into ${list}`,
+    properties: ["openFile"],
+    filters: [{ name: "Subscribers", extensions: ["csv", "json"] }],
+  });
+  if (picked.canceled || !picked.filePaths[0]) return null;
+  const path = picked.filePaths[0];
+  return core.subscribe(list, core.readSubscriberFile(path), `import:${path.split(/[\\/]/).pop()}`);
+});
+
 handle("settings:get", () => core.loadSettings());
 handle("settings:set", (settings) => {
   core.saveSettings(settings);

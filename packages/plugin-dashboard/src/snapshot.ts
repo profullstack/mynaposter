@@ -160,6 +160,26 @@ export interface Snapshot {
   skills: SkillSummary[];
   /** How far ahead the drip chart looks, in ms. */
   horizonMs: number;
+  /** Newsletter issues and the lists they go to. Empty when the reader was not supplied. */
+  newsletter: NewsletterSummary;
+}
+
+export interface NewsletterSummary {
+  issues: Array<{
+    id: string;
+    subject: string;
+    list: string;
+    status: string;
+    ab: boolean;
+    sent: number;
+    failed: number;
+    pending: number;
+    /** When it went out, or when it is scheduled to. */
+    at: string | null;
+  }>;
+  lists: Array<{ name: string; active: number; total: number }>;
+  address: boolean;
+  tracking: string | null;
 }
 
 export interface SnapshotInput {
@@ -177,6 +197,7 @@ export interface SnapshotInput {
    * itself stays pure; `sentToday` and `slot` are filled in here.
    */
   skills?: Array<Omit<SkillSummary, "sentToday" | "slot">>;
+  newsletter?: NewsletterSummary;
 }
 
 const DAY = 86_400_000;
@@ -295,6 +316,7 @@ export function buildSnapshot(input: SnapshotInput): Snapshot {
       sentToday: history.filter((entry) => entry.ok && entry.accountId === row.accountId && now - new Date(entry.at).getTime() < DAY).length,
     })),
     horizonMs: horizonFor(rules.dripMs),
+    newsletter: input.newsletter ?? { issues: [], lists: [], address: false, tracking: null },
   };
 }
 
@@ -306,6 +328,7 @@ export function readSnapshot(deps: {
   engagement: () => EngagementRecord[];
   settings: () => Settings;
   skills?: (accounts: Account[], settings: Settings) => SnapshotInput["skills"];
+  newsletter?: () => NewsletterSummary;
   now?: number;
 }): Snapshot {
   const queue = deps.queue();
@@ -320,5 +343,6 @@ export function readSnapshot(deps: {
     settings,
     evergreenLast: lastEvergreen(queue),
     skills: deps.skills?.(accounts, settings),
+    newsletter: deps.newsletter?.(),
   });
 }

@@ -15,6 +15,7 @@
     <button class="nav" data-view="directories">Directories</button>
     <button class="nav" data-view="queue">Queue</button>
     <button class="nav" data-view="history">History</button>
+    <button class="nav" data-view="newsletter">Newsletter</button>
     <button class="nav" data-view="settings">Settings</button>
     <div class="grow"></div>
     <div class="status" id="status"></div>
@@ -90,6 +91,47 @@
     <section class="view" data-view="history" hidden>
       <header><h1>History</h1></header>
       <div id="history-list" class="rows"></div>
+    </section>
+
+    <!-- Newsletter: issues to a contacts list, one-click unsubscribe on each -->
+    <section class="view" data-view="newsletter" hidden>
+      <header><h1>Newsletter</h1><div class="spacer"></div>
+        <button id="btn-nl-new" class="ghost">New issue</button>
+        <button id="btn-nl-save" class="primary">Save</button>
+      </header>
+      <div id="nl-setup" class="note"></div>
+      <div class="split">
+        <div class="pane">
+          <input id="nl-id" type="hidden">
+          <input id="nl-subject" class="title-input" placeholder="Subject">
+          <input id="nl-subject-b" class="title-input" placeholder="Subject B (optional: an A/B test)">
+          <input id="nl-list" class="title-input" placeholder="List (a contacts list, e.g. moshcode)">
+          <input id="nl-at" class="title-input" type="datetime-local" title="Schedule it (the daemon, myna run, sends it)">
+          <textarea id="nl-body" placeholder="The issue, in Markdown. {{cta}} marks where the call to action goes. myna adds the unsubscribe link and your postal address."></textarea>
+          <div class="writer">
+            <input id="nl-test-to" placeholder="you@example.com">
+            <button id="btn-nl-test" class="ghost">Send me a test</button>
+            <button id="btn-nl-dry" class="ghost">Who gets it</button>
+            <button id="btn-nl-send" class="primary">Send to the list</button>
+          </div>
+          <pre id="nl-report" class="doctor"></pre>
+        </div>
+        <aside class="pane targets">
+          <div class="pane-title">Issues</div>
+          <div id="nl-issues" class="cards"></div>
+          <div class="pane-title">Lists</div>
+          <div id="nl-lists" class="cards"></div>
+          <div class="writer">
+            <input id="nl-sub-emails" placeholder="Emails to add, comma separated">
+            <button id="btn-nl-sub" class="ghost">Subscribe</button>
+            <button id="btn-nl-import" class="ghost">Import CSV/JSON</button>
+          </div>
+          <div class="writer">
+            <input id="nl-unsub" placeholder="Email to unsubscribe">
+            <button id="btn-nl-unsub" class="ghost">Unsubscribe</button>
+          </div>
+        </aside>
+      </div>
     </section>
 
     <!-- Settings -->
