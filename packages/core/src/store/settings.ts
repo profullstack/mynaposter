@@ -256,6 +256,8 @@ export interface NewsletterSettings {
   paceMs: number;
   /** Named sets of calls to action; an issue with a set rotates through it, one per variant. */
   ctaSets: Record<string, NewsletterCta[]>;
+  /** The links every issue's footer carries: book a demo, plans, shop, support us. */
+  footerLinks: NewsletterCta[];
   /** Logo, name and accent colour. With a name or a logo set, issues go out in the branded layout. */
   brand: NewsletterBrand;
 }
@@ -271,6 +273,19 @@ export const DEFAULT_CTAS: NewsletterCta[] = [
   { label: "Schedule a call", url: "https://profullstack.com/contact" },
   { label: "See our plans", url: "https://profullstack.com/plans" },
   { label: "Support us", url: "https://profullstack.com/support-us" },
+  { label: "Get the Power Key", url: "https://profullstack.com/shop" },
+];
+
+/**
+ * The links every issue carries in its footer, whatever variant the reader
+ * got: the standard Profullstack row.
+ */
+export const DEFAULT_FOOTER_LINKS: NewsletterCta[] = [
+  { label: "Book a demo", url: "https://profullstack.com/book" },
+  { label: "Schedule a call", url: "https://profullstack.com/contact" },
+  { label: "Plans", url: "https://profullstack.com/plans" },
+  { label: "Shop", url: "https://profullstack.com/shop" },
+  { label: "Support us", url: "https://profullstack.com/support-us" },
 ];
 
 export const DEFAULT_NEWSLETTER: NewsletterSettings = {
@@ -280,13 +295,15 @@ export const DEFAULT_NEWSLETTER: NewsletterSettings = {
   trackingHost: "https://crawlproof.com",
   paceMs: 1000,
   ctaSets: { default: DEFAULT_CTAS },
+  footerLinks: DEFAULT_FOOTER_LINKS,
   brand: DEFAULT_BRAND,
 };
 
 /** Stored over the defaults, with the CTA sets copied so an edit never reaches the defaults. */
 function newsletterSettings(stored: Partial<NewsletterSettings> | undefined): NewsletterSettings {
   const sets = stored?.ctaSets && typeof stored.ctaSets === "object" ? stored.ctaSets : DEFAULT_NEWSLETTER.ctaSets;
-  return { ...DEFAULT_NEWSLETTER, ...stored, ctaSets: structuredClone(sets), brand: { ...DEFAULT_BRAND, ...stored?.brand } };
+  const footerLinks = Array.isArray(stored?.footerLinks) ? stored.footerLinks : DEFAULT_FOOTER_LINKS;
+  return { ...DEFAULT_NEWSLETTER, ...stored, ctaSets: structuredClone(sets), footerLinks: structuredClone(footerLinks), brand: { ...DEFAULT_BRAND, ...stored?.brand } };
 }
 
 export interface SynconfigSettings {

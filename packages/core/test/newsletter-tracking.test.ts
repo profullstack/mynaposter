@@ -16,6 +16,8 @@ import {
   buildVariants,
   clickUrl,
   composeNewsletter,
+  productOf,
+  reasonLine,
   fetchTrackingEvents,
   newsletterStats,
   openPixelUrl,
@@ -135,17 +137,18 @@ test("tracking URLs follow the crawlproof contract, signatures included", () => 
 
 test("variants are subjects x CTAs, and each person keeps theirs, split evenly", () => {
   const variants = buildVariants(["A subject", "B subject"], DEFAULT_CTAS);
-  expect(variants.map((v) => v.key)).toEqual(["A", "B", "C", "D", "E", "F", "G", "H"]);
+  expect(variants.map((v) => v.key)).toEqual(["A", "B", "C", "D", "E", "F", "G", "H", "I", "J"]);
   expect(variants[0]).toMatchObject({ subjectKey: "A", subject: "A subject", cta: { label: "Book a demo" } });
   expect(variants[1]).toMatchObject({ subjectKey: "B", cta: { label: "Book a demo" } });
   expect(variants[7]).toMatchObject({ subjectKey: "B", cta: { label: "Support us" } });
+  expect(variants[9]).toMatchObject({ subjectKey: "B", cta: { label: "Get the Power Key", url: "https://profullstack.com/shop" } });
   expect(buildVariants(["only"], [null]).map((v) => v.key)).toEqual(["A"]);
   expect(variantIndex("c1", "Ada@Example.com", 8)).toBe(variantIndex("c1", "ada@example.com", 8));
   const counts = new Array(8).fill(0);
   for (let i = 0; i < 8000; i++) counts[variantIndex("c1", `user${i}@example.com`, 8)]++;
   for (const count of counts) expect(Math.abs(count - 1000)).toBeLessThan(150);
   expect(variantsFor({ subject: "s", subjectB: null, ctaSet: null })).toHaveLength(1);
-  expect(variantsFor({ subject: "s", subjectB: "t", ctaSet: "default" })).toHaveLength(8);
+  expect(variantsFor({ subject: "s", subjectB: "t", ctaSet: "default" })).toHaveLength(10);
   expect(() => variantsFor({ subject: "s", subjectB: null, ctaSet: "nope" })).toThrow(/No CTA set/);
 });
 
@@ -167,7 +170,7 @@ test("a tracked message: CTA where {{cta}} was, every link signed, the pixel, cr
   expect(message.html!.indexOf("See our plans")).toBeLessThan(message.html!.indexOf("More at"));
   expect(message.html).toContain(`<img src="${amp(openPixelUrl(tracking, ids))}"`);
   expect(message.html).toContain(`<a href="${amp(link)}">Unsubscribe</a>`);
-  expect(message.html).toContain("You get this because you have an account at moshcode; our Terms say we may email news and updates.");
+  expect(message.html).toContain("You are getting this because you have an account at moshcode. Our Terms say we may email you news and updates.");
   expect(message.text).toContain(`Intro ${clickUrl(tracking, "https://moshcode.com/a", ids)}.`);
   expect(message.text).toContain(`See our plans: ${clickUrl(tracking, "https://profullstack.com/plans", ids)}`);
   expect(message.text).toContain(`Unsubscribe with one click: ${link}`);
@@ -211,7 +214,7 @@ test("a tracked A/B send: crawlproof unsubscribes first, variants per person, re
     expect(first.sent).toHaveLength(2);
     expect(first.remaining).toBe(2);
     expect(first.status).toBe("sending");
-    expect(first.variants).toHaveLength(8);
+    expect(first.variants).toHaveLength(10);
     expect(Object.values(first.split).reduce((a, b) => a + b, 0)).toBe(4);
     expect(sleeps).toEqual([1000]);
     // The next pull asks only for what is new.
@@ -228,9 +231,9 @@ test("a tracked A/B send: crawlproof unsubscribes first, variants per person, re
     expect(Object.keys(ledger).sort()).toEqual(["four@example.com", "one@example.com", "three@example.com", "two@example.com"]);
     expect(new Set(Object.values(ledger).map((d) => d.msgId)).size).toBe(4);
     for (const [email, delivery] of Object.entries(ledger)) {
-      const variant = variants[variantIndex("moshcode-001", email, 8)]!;
+      const variant = variants[variantIndex("moshcode-001", email, variants.length)]!;
       expect(delivery).toMatchObject({ state: "sent", variant: variant.key, subjectKey: variant.subjectKey, cta: variant.cta?.label });
-      const data = fake.messages.find((m) => m.rcpt[0] === email)!.data;
+      const data = fake.messages.find((m) => m.rcpt[0] === email)!.data.replace(/=\n/g, "").replace(/=3D/g, "=");
       expect(data).toContain(`Subject: ${variant.subject}`);
       expect(data).toContain(`o.png?m=${delivery.msgId}&amp;c=moshcode-001&amp;v=${variant.key}`);
       expect(data).toContain(`List-Unsubscribe: <${trackedUnsubscribeUrl(tracking, { m: delivery.msgId!, c: "moshcode-001", email })}>`);
@@ -281,7 +284,8 @@ test("--to: one tracked test copy as variant A, outside the ledger; an opted-out
     const data = fake.messages[0]!.data;
     expect(data).toContain("Subject: [test] Subject A");
     expect(data).toContain("Book a demo");
-    expect(data).toContain("&amp;v=A");
+    // The HTML part is quoted-printable once the footer's signed links make a long line.
+    expect(data.replace(/=\n/g, "").replace(/=3D/g, "=")).toContain("&amp;v=A");
     expect(data).toContain(`${BASE}/u?`);
     expect(readNewsletters().deliveries["moshcode-001"]).toBeUndefined();
     expect(requireNewsletter("moshcode-001").status).toBe("draft");
@@ -358,9 +362,18 @@ test("settings: tracking off by default, the default CTA set, copied rather than
   const settings = loadSettings();
   expect(settings.newsletter.trackingId).toBe("");
   expect(settings.newsletter.paceMs).toBe(1000);
-  expect(settings.newsletter.ctaSets.default?.map((cta) => cta.label)).toEqual(["Book a demo", "Schedule a call", "See our plans", "Support us"]);
+  expect(settings.newsletter.ctaSets.default?.map((cta) => cta.label)).toEqual(["Book a demo", "Schedule a call", "See our plans", "Support us", "Get the Power Key"]);
+  expect(settings.newsletter.footerLinks.map((l) => l.url)).toEqual([
+    "https://profullstack.com/book",
+    "https://profullstack.com/contact",
+    "https://profullstack.com/plans",
+    "https://profullstack.com/shop",
+    "https://profullstack.com/support-us",
+  ]);
   settings.newsletter.ctaSets.default!.push({ label: "x", url: "https://x" });
-  expect(loadSettings().newsletter.ctaSets.default).toHaveLength(4);
+  settings.newsletter.footerLinks.push({ label: "x", url: "https://x" });
+  expect(loadSettings().newsletter.ctaSets.default).toHaveLength(5);
+  expect(loadSettings().newsletter.footerLinks).toHaveLength(5);
 });
 
 // ---------------------------------------------------------------- fail closed on myna cloud too
@@ -517,4 +530,42 @@ test("syncAllUnsubscribes tries every source and names each that failed", async 
   } finally {
     restore();
   }
+});
+
+test("the standard footer: company, every link (signed when tracked), the product reason, unsubscribe, address", () => {
+  const message = composeNewsletter(
+    { subject: "News", body: "Body.", list: "profullstack-users", replyTo: null },
+    {
+      link: "https://example.com/u/tok",
+      address: "Profullstack, Inc., 16375 Bonnie Lane, Los Gatos, CA 95032, USA",
+      from: "Anthony at Profullstack <anthony@profullstack.com>",
+      token: "tok",
+      brand: { name: "Profullstack, Inc.", url: "https://profullstack.com", logoUrl: "", accent: "#e5383b", tagline: "" },
+      footerLinks: loadSettings().newsletter.footerLinks,
+      product: "coinpayportal.com",
+    },
+  );
+  const html = message.html as string;
+  expect(html).toContain('<a href="https://profullstack.com" style="color:#1f2328;text-decoration:none">Profullstack, Inc.</a>');
+  for (const [label, path] of [["Book a demo", "book"], ["Schedule a call", "contact"], ["Plans", "plans"], ["Shop", "shop"], ["Support us", "support-us"]]) {
+    expect(html).toContain(`href="https://profullstack.com/${path}"`);
+    expect(html).toContain(`>${label}</a>`);
+    expect(message.text).toContain(`${label}: https://profullstack.com/${path}`);
+  }
+  const reason = "You are getting this because you have an account at coinpayportal.com, a Profullstack, Inc. product. Our Terms say we may email you news and updates.";
+  expect(html).toContain(reason);
+  expect(message.text).toContain(reason);
+  expect(html).toContain('<a href="https://example.com/u/tok" style="color:#666;text-decoration:underline">Unsubscribe</a>');
+  expect(message.text).toContain("Profullstack, Inc., 16375 Bonnie Lane, Los Gatos, CA 95032, USA");
+  expect(message.headers?.["List-Unsubscribe-Post"]).toBe("List-Unsubscribe=One-Click");
+});
+
+test("the reason line: product, then service, then the list", () => {
+  expect(reasonLine({ product: "moshcode.sh", company: "Profullstack, Inc.", list: "l" })).toBe(
+    "You are getting this because you have an account at moshcode.sh, a Profullstack, Inc. product. Our Terms say we may email you news and updates.",
+  );
+  expect(reasonLine({ service: "moshcode", list: "l" })).toBe("You are getting this because you have an account at moshcode. Our Terms say we may email you news and updates.");
+  expect(reasonLine({ list: "profullstack-users" })).toBe("You are getting this because you subscribed to profullstack-users.");
+  expect(productOf({ tags: ["newsletter", "product:bittorrented.com", "product:moshcode.sh"] })).toBe("bittorrented.com");
+  expect(productOf({ tags: [] })).toBeNull();
 });
