@@ -286,3 +286,21 @@ create table if not exists oc_activity (
 );
 
 create index if not exists oc_activity_user_idx on oc_activity(user_id, at desc);
+
+-- Newsletter one-click unsubscribe. One inbox per user, a random public id
+-- the links carry; the tokens were made on the sender's machine and mean
+-- nothing here, so this table never holds an email address.
+create table if not exists newsletter_inboxes (
+  id          text primary key,
+  user_id     uuid not null unique references users(id) on delete cascade,
+  created_at  timestamptz not null default now()
+);
+
+create table if not exists newsletter_unsubscribes (
+  inbox_id    text not null references newsletter_inboxes(id) on delete cascade,
+  token       text not null,
+  at          timestamptz not null default now(),
+  primary key (inbox_id, token)
+);
+
+create index if not exists newsletter_unsubscribes_at_idx on newsletter_unsubscribes(inbox_id, at);

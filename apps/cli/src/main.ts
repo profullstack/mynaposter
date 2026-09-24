@@ -141,6 +141,20 @@ Direct (mail and texts to people, not posts to networks):
   email --to a@b | --list <L>       Markdown on stdin, sent as text and HTML
        --subject "..." [--smtp id] [--reply-to r] [--dry-run]
   email log
+
+Newsletter (issues to a contacts list; one-click unsubscribe and your postal
+address on every one, paced by outreach.maxEmailsPerDay):
+  newsletter create --subject "..." --list <L> [--at when] [--smtp id] [--reply-to r] < issue.md
+  newsletter list | show <id> [--body] | rm <id> [--force]
+  newsletter edit <id> [--subject] [--list] [--at when | --draft] [< issue.md]
+  newsletter send <id> [--dry-run] [--test addr] [--limit N]
+       [--retry-failed] [--retry-uncertain]   Resumes from its ledger; nobody gets it twice
+  newsletter subscribe <email...> --list <L> [--name] [--tags]
+  newsletter unsubscribe <email|token> [--list L]   Without --list: opted out for good
+  newsletter subscribers --list <L> | import <file.csv|.json> --list <L>
+  newsletter sync                   Pull one-click unsubscribes from myna cloud
+       myna config newsletter.address "..."        required (CAN-SPAM)
+       myna config newsletter.unsubscribeUrl https://you/u/{token}   else myna cloud hosts it
 AT Protocol (the network behind Bluesky; a directory of its servers):
   atproto [q] [--kind pds|relay|feed|labeler] [--online]
                                     The directory at mynaposter.com/listing/atproto

@@ -37,9 +37,9 @@ test("a job that throws does not stop the ones after it", async () => {
   expect(lines).toEqual(["first  failed: nope", "second  fine"]);
 });
 
-test("the follow graph and plugin work only run when configured", () => {
+test("posts and newsletters always run; the follow graph and plugin work only when configured", () => {
   const log = () => {};
-  expect(builtinJobs(log, 1000).map((job) => job.id)).toEqual(["posts"]);
+  expect(builtinJobs(log, 1000).map((job) => job.id)).toEqual(["posts", "newsletter"]);
 
   const settings = loadSettings();
   settings.graph.enabled = true;
@@ -53,7 +53,7 @@ test("the follow graph and plugin work only run when configured", () => {
   });
 
   const jobs = builtinJobs(log, 1000);
-  expect(jobs.map((job) => job.id)).toEqual(["posts", "graph.expand", "graph.follow", "p.t", "p.seeds.s"]);
+  expect(jobs.map((job) => job.id)).toEqual(["posts", "newsletter", "graph.expand", "graph.follow", "p.t", "p.seeds.s"]);
   // Six an hour means one every ten minutes, not six at once.
   expect(jobs.find((job) => job.id === "graph.follow")?.everyMs).toBe(600_000);
   expect(jobs.find((job) => job.id === "p.t")?.everyMs).toBe(5000);

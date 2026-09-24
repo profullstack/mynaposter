@@ -35,6 +35,8 @@ export const DID_FILE = "did.json";
 export const CONTACTS_FILE = "contacts.json";
 /** SMTP servers (secrets in the vault), the SMS setup, and what went out. */
 export const OUTREACH_FILE = "outreach.json";
+/** Newsletters, who each one reached, and the unsubscribe token per subscriber. */
+export const NEWSLETTERS_FILE = "newsletters.json";
 /** A hand-written OpenProfile.md wins over the one `myna profile` would build. */
 export const PROFILE_FILE = "openprofile.md";
 /** When the daily recap was last sent. State, not preference, so not in settings. */

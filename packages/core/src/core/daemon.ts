@@ -16,6 +16,8 @@ import { pluginContext } from "../plugins/context.ts";
 import { runEvergreen } from "./evergreen.ts";
 import { runRecap } from "./recap.ts";
 import { canSync, syncConfigOnce } from "../store/synconfig.ts";
+import { runDueNewsletters, syncUnsubscribes } from "./newsletter.ts";
+import { readNewsletters } from "../store/newsletters.ts";
 
 export interface DaemonJob {
   id: string;
@@ -58,6 +60,26 @@ export function builtinJobs(log: (line: string) => void, tickMs: number): Daemon
       },
     },
   ];
+
+  jobs.push({
+    id: "newsletter",
+    // Scheduled issues go out when due, and one the daily cap cut short
+    // carries on the next day. Unsubscribes are pulled on the same turn so
+    // a scheduled send never reaches someone who left since.
+    everyMs: 600_000,
+    async run() {
+      if (!readNewsletters().newsletters.some((entry) => entry.scheduledFor && entry.status !== "sent")) {
+        const synced = await syncUnsubscribes();
+        if (synced.optedOut.length) return `${synced.optedOut.length} unsubscribed`;
+        return;
+      }
+      const reports = await runDueNewsletters(new Date(), { log });
+      const lines = reports
+        .filter((report) => report.sent.length || report.failed.length)
+        .map((report) => `${report.id}: ${report.sent.length} sent, ${report.failed.length} failed, ${report.remaining} left (${report.status})`);
+      if (lines.length) return lines.join("; ");
+    },
+  });
 
   if (settings.evergreen.enabled) {
     jobs.push({

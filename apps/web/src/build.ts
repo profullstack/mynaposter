@@ -149,6 +149,17 @@ const page = `<!doctype html>
   </div>
 </section>
 
+<section>
+  <h2>A newsletter, from the same terminal</h2>
+  <p>
+    <code>myna newsletter create --list moshcode &lt; issue.md</code> writes the issue;
+    <code>myna newsletter send</code> mails it through your own SMTP server, a daily cap at a time,
+    and picks up where it stopped without mailing anyone twice. Every issue carries a one-click
+    unsubscribe (the header Gmail and Apple Mail turn into a button, and a link in the footer)
+    and your postal address. The unsubscribe page is hosted here and never sees an address.
+  </p>
+</section>
+
 <section id="login">
   <h2>Logging in, honestly</h2>
   <p class="lede narrow">

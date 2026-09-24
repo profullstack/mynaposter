@@ -83,6 +83,8 @@ export interface Settings {
   did: DidSettings;
   /** Direct mail and texts: the most that go out in a rolling day. */
   outreach: OutreachSettings;
+  /** `myna newsletter`: the postal address every issue carries, and where unsubscribes land. */
+  newsletter: NewsletterSettings;
   /** Settings sync with myna cloud (@profullstack/synconfig): settings.json, OpenProfile, skills. */
   synconfig: SynconfigSettings;
   /** Plugin specs: an absolute path, or a package name installed by `myna plugins add`. */
@@ -223,6 +225,22 @@ export interface OutreachSettings {
 
 export const DEFAULT_OUTREACH: OutreachSettings = { maxEmailsPerDay: 200, maxSmsPerDay: 100 };
 
+export interface NewsletterSettings {
+  /**
+   * The sender's physical postal address, printed at the foot of every issue.
+   * CAN-SPAM requires one; a newsletter will not send without it.
+   */
+  address: string;
+  /**
+   * Your own one-click unsubscribe endpoint, with `{token}` where the
+   * subscriber's token goes. Empty means myna cloud hosts it at
+   * mynaposter.com, which needs `myna cloud login`.
+   */
+  unsubscribeUrl: string;
+}
+
+export const DEFAULT_NEWSLETTER: NewsletterSettings = { address: "", unsubscribeUrl: "" };
+
 export interface SynconfigSettings {
   /** Let the daemon pull and push on a schedule. On by default; it only runs once signed in to myna cloud. */
   auto: boolean;
@@ -289,6 +307,7 @@ export const DEFAULT_SETTINGS: Settings = {
   engage: { ...DEFAULT_ENGAGE },
   did: { ...DEFAULT_DID },
   outreach: { ...DEFAULT_OUTREACH },
+  newsletter: { ...DEFAULT_NEWSLETTER },
   synconfig: { ...DEFAULT_SYNCONFIG },
   plugins: [],
   directories: [],
@@ -323,6 +342,7 @@ export function loadSettings(): Settings {
     engage: { ...DEFAULT_ENGAGE, ...stored.engage },
     did: { ...DEFAULT_DID, ...stored.did },
     outreach: { ...DEFAULT_OUTREACH, ...stored.outreach },
+    newsletter: { ...DEFAULT_NEWSLETTER, ...stored.newsletter },
     synconfig: { ...DEFAULT_SYNCONFIG, ...stored.synconfig },
     skills: {
       defaults: { ...(stored.skills?.defaults ?? {}) },
