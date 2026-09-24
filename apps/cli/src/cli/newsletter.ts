@@ -3,10 +3,13 @@
  * with one-click unsubscribe and a postal address on every one.
  *
  *   myna newsletter create --subject "..." [--subject-b "..."] --list L [--cta-set default|none] [--service moshcode]
- *        [--at "tomorrow 9am"] [--smtp id] [--reply-to r] [--id slug] < issue.md
+ *        [--at "tomorrow 9am"] [--via provider] [--reply-to r] [--id slug] < issue.md
  *   myna newsletter list | show <id> [--body] | rm <id> [--force]
- *   myna newsletter edit <id> [--subject] [--subject-b] [--list] [--cta-set] [--service] [--at when | --draft] [--smtp] [--reply-to] [< issue.md]
- *   myna newsletter send <id> [--dry-run] [--to addr] [--yes] [--limit N] [--max-per-day N] [--pace-ms N] [--retry-failed] [--retry-uncertain]
+ *   myna newsletter edit <id> [--subject] [--subject-b] [--list] [--cta-set] [--service] [--at when | --draft] [--via] [--reply-to] [< issue.md]
+ *   myna newsletter send <id> [--dry-run] [--to addr] [--yes] [--via provider] [--limit N] [--max-per-day N] [--pace-ms N] [--retry-failed] [--retry-uncertain]
+ *
+ * --via names a mail provider (`myna mail provider list`): an SMTP server, an
+ * HTTP API such as Resend or Postmark, or myna cloud. --smtp is its old name.
  *   myna newsletter subscribe <email...> --list L [--name] [--tags a,b]
  *   myna newsletter unsubscribe <email|token> [--list L]
  *   myna newsletter subscribers --list L [--json]
@@ -271,7 +274,7 @@ export async function runNewsletter(positional: string[], flags: Flags): Promise
       const body = pipedBody();
       if (!subject || !listName || !body)
         throw new Error(
-          'Usage: myna newsletter create --subject "..." [--subject-b "..."] --list <list> [--cta-set default|none] [--service moshcode] [--at when] [--smtp id] [--reply-to r] [--id slug] < issue.md',
+          'Usage: myna newsletter create --subject "..." [--subject-b "..."] --list <list> [--cta-set default|none] [--service moshcode] [--at when] [--via provider] [--reply-to r] [--id slug] < issue.md',
         );
       const created = createNewsletter({
         subject,
@@ -279,7 +282,7 @@ export async function runNewsletter(positional: string[], flags: Flags): Promise
         list: listName,
         id: str(flags, "id"),
         scheduledFor: when(str(flags, "at")) ?? null,
-        smtp: str(flags, "smtp") ?? null,
+        smtp: str(flags, "via") ?? str(flags, "smtp") ?? null,
         replyTo: str(flags, "replyTo") ?? null,
         address: str(flags, "address") ?? null,
         subjectB: str(flags, "subjectB") ?? null,
@@ -314,7 +317,7 @@ export async function runNewsletter(positional: string[], flags: Flags): Promise
       if (n.scheduledFor) out(`Scheduled: ${n.scheduledFor}`);
       if (n.sentAt) out(`Sent:      ${n.sentAt}`);
       out(`Delivered: ${t.sent} sent, ${t.failed} failed, ${t.pending} uncertain`);
-      if (n.smtp) out(`SMTP:      ${n.smtp}`);
+      if (n.smtp) out(`Via:       ${n.smtp}`);
       if (n.replyTo) out(`Reply-To:  ${n.replyTo}`);
       out(flags.body ? `\n${n.body}` : `Body:      ${n.body.length} chars of Markdown (--body prints it)`);
       return 0;
@@ -328,7 +331,7 @@ export async function runNewsletter(positional: string[], flags: Flags): Promise
         list: str(flags, "list"),
         scheduledFor: when(str(flags, "at")),
         draft: Boolean(flags.draft),
-        smtp: str(flags, "smtp"),
+        smtp: str(flags, "via") ?? str(flags, "smtp"),
         replyTo: str(flags, "replyTo"),
         address: str(flags, "address"),
         subjectB: str(flags, "subjectB"),
@@ -347,7 +350,7 @@ export async function runNewsletter(positional: string[], flags: Flags): Promise
     }
 
     case "send": {
-      if (!rest[0]) throw new Error("Usage: myna newsletter send <id> [--dry-run] [--to addr] [--yes] [--limit N] [--max-per-day N] [--retry-failed] [--retry-uncertain]");
+      if (!rest[0]) throw new Error("Usage: myna newsletter send <id> [--dry-run] [--to addr] [--yes] [--via provider] [--limit N] [--max-per-day N] [--retry-failed] [--retry-uncertain]");
       const test = str(flags, "to") ?? str(flags, "test");
       const dryRun = Boolean(flags.dryRun);
       const common = {
@@ -356,6 +359,7 @@ export async function runNewsletter(positional: string[], flags: Flags): Promise
         paceMs: num(flags, "paceMs") ?? loadSettings().newsletter.paceMs,
         retryFailed: Boolean(flags.retryFailed),
         retryUncertain: Boolean(flags.retryUncertain),
+        via: str(flags, "via") ?? str(flags, "smtp"),
         log: (line: string) => out(line),
       };
       // A list send needs --yes. Without it: the numbers, and nothing sent.
@@ -386,6 +390,8 @@ export async function runNewsletter(positional: string[], flags: Flags): Promise
       );
       if (report.uncertain) out(`${report.uncertain} died mid-send last time and may have it; --retry-uncertain mails them again.`);
       if (report.previouslyFailed) out(`${report.previouslyFailed} were refused before; --retry-failed tries them again.`);
+      if (report.retrying) out(`${report.retrying} hit a retryable error last time (rate limit or outage) and were tried again.`);
+      if (report.via && !dryRun) out(`Via: ${report.via}.`);
       if (!dryRun) out(`Status: ${report.status}.${report.remaining ? " Run the same command again to carry on." : ""}`);
       return report.failed.length ? 1 : 0;
     }

@@ -24,16 +24,26 @@
  * Pacing is the outreach cap: an issue sends what today's
  * `outreach.maxEmailsPerDay` still allows and leaves the rest for the next
  * run, which picks up from the ledger.
+ *
+ * The door out is any mail provider (core/mail): an SMTP server, an HTTP API,
+ * or myna cloud. A provider with a batch endpoint (Resend, Postmark, Mailjet,
+ * myna cloud) gets the due recipients in batches, one API call each, with
+ * newsletter.paceMs between calls; every recipient is still marked pending
+ * before its call and sent or failed after it, one ledger row each. A failure
+ * the provider calls retryable (429, 5xx) is tried again on the next run by
+ * itself and stops this one; a connection that died leaves the rows pending
+ * (uncertain), as a dropped SMTP conversation always has.
  */
 import { readFileSync } from "node:fs";
 import { extname } from "node:path";
 import { createHash, createHmac, randomBytes } from "node:crypto";
-import { addressOf, sendSmtp, type SmtpMessage, type SmtpOptions, type SmtpServer } from "./smtp.ts";
+import { addressOf, type SmtpMessage, type SmtpOptions, type SmtpServer } from "./smtp.ts";
+import { resolveSender, sendEach, smtpProvider, type MailMessage, type MailSender } from "./mail/index.ts";
 import { escapeHtml, renderMarkdown } from "../util/markdown.ts";
 import { getJson, postJson } from "../util/http.ts";
 import { loadSettings, type NewsletterCta } from "../store/settings.ts";
 import { addToList, optIn, optOut, readContacts, recipients, upsertContact, removeFromList, contactId, type Contact } from "../store/contacts.ts";
-import { outreachSentToday, recordSent, smtpServer } from "../store/outreach.ts";
+import { outreachSentToday, recordSent } from "../store/outreach.ts";
 import { getPluginSecrets } from "../store/accounts.ts";
 import { session, DEFAULT_SERVER } from "../store/cloud.ts";
 import {
@@ -556,7 +566,10 @@ export interface SendNewsletterOptions {
   /** Try again the recipients the server refused last time. */
   retryFailed?: boolean;
   log?: (line: string) => void;
-  /** Tests hand these in. */
+  /** The mail provider id, over the issue's own and the default. */
+  via?: string;
+  /** Tests hand these in: a ready sender, or an SMTP server and its socket options. */
+  sender?: MailSender;
   server?: SmtpServer & { pass: string };
   smtp?: SmtpOptions;
   link?: (token: string) => string;
@@ -582,8 +595,12 @@ export interface SendNewsletterReport {
   failed: { to: string; error: string }[];
   /** Would go out now, on a dry run. */
   wouldSend: string[];
-  /** Left for a later run by the daily cap or the limit. */
+  /** Left for a later run by the daily cap or the limit, or by a retryable failure that stopped the run. */
   remaining: number;
+  /** Refused with a retryable answer on an earlier run (429, 5xx): tried again this run. */
+  retrying?: number;
+  /** The provider it went out through. */
+  via?: string;
   status: Newsletter["status"];
   /** The variants, and how many of those still due get each. */
   variants: Variant[];
@@ -624,20 +641,29 @@ export async function sendNewsletter(id: string, options: SendNewsletterOptions 
   };
 
   /** One person's message: their variant, their msgId, their unsubscribe link. */
-  const messageFor = (to: string, variant: Variant, token: string, link: (token: string) => string, server: SmtpServer, subjectPrefix = "") => {
+  const messageFor = (to: string, variant: Variant, token: string, link: (token: string) => string, from: string, subjectPrefix = "") => {
     const msgId = newMsgId();
     const ids = { m: msgId, c: newsletter.id, v: variant.key };
     const unsubscribeLink = tracking ? trackedUnsubscribeUrl(tracking, { m: msgId, c: newsletter.id, email: to }) : link(token);
     const message = composeNewsletter(newsletter, {
       link: unsubscribeLink,
       address: addressFor(newsletter),
-      from: server.from,
+      from,
       token,
       subject: `${subjectPrefix}${variant.subject}`,
       cta: variant.cta,
       ...(tracking ? { tracking: { tracking, ids } } : {}),
     });
     return { message, msgId };
+  };
+  const pickSender = (): MailSender => {
+    const sender = options.sender ?? (options.server ? smtpProvider(options.server, options.smtp) : resolveSender(options.via ?? newsletter.smtp, { smtp: options.smtp }));
+    report.via = sender.id;
+    return sender;
+  };
+  const senderFrom = (sender: MailSender): string => {
+    if (!sender.from) throw new Error(`${sender.id} has no sender address; a newsletter needs one. myna mail provider add ${sender.id} --type ${sender.type} --from "Name <you@example.com>"`);
+    return sender.from;
   };
   // Tracking makes crawlproof the unsubscribe host, so myna cloud is only asked when it is not.
   const hostedLink = async (): Promise<(token: string) => string> => options.link ?? (tracking ? () => "" : await linkMaker());
@@ -654,7 +680,7 @@ export async function sendNewsletter(id: string, options: SendNewsletterOptions 
     }
     const known = readContacts().contacts.find((c) => c.id === options.test!.trim().toLowerCase());
     if (known?.optedOut) throw new Error(`${options.test} has opted out. It is never written to again.`);
-    const server = options.server ?? smtpServer(newsletter.smtp ?? undefined);
+    const sender = pickSender();
     let link: (token: string) => string;
     try {
       link = await hostedLink();
@@ -662,18 +688,19 @@ export async function sendNewsletter(id: string, options: SendNewsletterOptions 
       link = () => "https://example.invalid/unsubscribe";
       log(`warning: ${(error as Error).message} The test copy carries a placeholder link.`);
     }
-    const { message, msgId } = messageFor(options.test, variant, "test", link, server, "[test] ");
+    const { message, msgId } = messageFor(options.test, variant, "test", link, senderFrom(sender), "[test] ");
     if (options.dryRun) {
       report.wouldSend.push(options.test);
       return report;
     }
-    try {
-      await sendSmtp(server, { ...message, to: [options.test] }, options.smtp);
-      recordSent([{ at: now.toISOString(), kind: "email", to: options.test, via: server.id, subject: message.subject, ok: true, id: msgId }]);
+    const result = await sender.send({ ...message, to: [options.test] }, { kind: "bulk" });
+    if (result.ok) {
+      recordSent([{ at: now.toISOString(), kind: "email", to: options.test, via: sender.id, subject: message.subject, ok: true, id: result.id ?? msgId }]);
       report.sent.push(options.test);
-    } catch (error) {
-      recordSent([{ at: now.toISOString(), kind: "email", to: options.test, via: server.id, subject: message.subject, ok: false, error: (error as Error).message }]);
-      report.failed.push({ to: options.test, error: (error as Error).message });
+    } else {
+      const error = result.error ?? "not sent";
+      recordSent([{ at: now.toISOString(), kind: "email", to: options.test, via: sender.id, subject: message.subject, ok: false, error }]);
+      report.failed.push({ to: options.test, error });
     }
     return report;
   }
@@ -697,7 +724,10 @@ export async function sendNewsletter(id: string, options: SendNewsletterOptions 
     const entry = ledger[contact.id];
     if (entry?.state === "sent") report.alreadySent++;
     else if (entry?.state === "pending" && !options.retryUncertain) report.uncertain++;
-    else if (entry?.state === "failed" && !options.retryFailed) report.previouslyFailed++;
+    else if (entry?.state === "failed" && entry.retryable && !options.retryFailed) {
+      report.retrying = (report.retrying ?? 0) + 1;
+      due.push(contact);
+    } else if (entry?.state === "failed" && !options.retryFailed) report.previouslyFailed++;
     else due.push(contact);
   }
   const variantOf = (contact: Contact): Variant => variants[variantIndex(newsletter.id, contact.email as string, variants.length)] as Variant;
@@ -726,36 +756,63 @@ export async function sendNewsletter(id: string, options: SendNewsletterOptions 
 
   addressFor(newsletter);
   if (batch.length) {
-    const server = options.server ?? smtpServer(newsletter.smtp ?? undefined);
+    const sender = pickSender();
+    const from = senderFrom(sender);
     const link = await hostedLink();
-    for (const [index, contact] of batch.entries()) {
+    type Prepared = { contact: Contact; to: string; variant: Variant; msgId: string; message: MailMessage; tag: Pick<Delivery, "msgId" | "variant" | "subjectKey" | "cta"> };
+    const prepared: Prepared[] = batch.map((contact) => {
       const to = contact.email as string;
-      const token = tokenFor(contact.id);
       const variant = variantOf(contact);
-      const { message, msgId } = messageFor(to, variant, token, link, server);
-      const tag: Pick<Delivery, "msgId" | "variant" | "subjectKey" | "cta"> = {
-        msgId,
-        variant: variant.key,
-        subjectKey: variant.subjectKey,
-        ...(variant.cta ? { cta: variant.cta.label } : {}),
-      };
-      recordDelivery(newsletter.id, contact.id, { state: "pending", at: new Date().toISOString(), to, ...tag });
-      try {
-        const result = await sendSmtp(server, { ...message, to: [to] }, options.smtp);
-        const at = new Date().toISOString();
-        recordDelivery(newsletter.id, contact.id, { state: "sent", at, to, messageId: result.messageId, ...tag });
-        recordSent([{ at, kind: "email", to, via: server.id, subject: message.subject, ok: true, id: result.messageId }]);
-        report.sent.push(to);
-        log(`sent ${variants.length > 1 ? `${variant.key} ` : ""}to ${contact.name ? `${contact.name} ` : ""}<${to}>`);
-      } catch (error) {
-        const at = new Date().toISOString();
-        const reason = (error as Error).message;
-        recordDelivery(newsletter.id, contact.id, { state: "failed", at, to, error: reason, ...tag });
-        recordSent([{ at, kind: "email", to, via: server.id, subject: message.subject, ok: false, error: reason }]);
-        report.failed.push({ to, error: reason });
-        log(`could not send to <${to}>: ${reason}`);
-      }
-      if (options.paceMs && index < batch.length - 1) await sleep(options.paceMs);
+      const { message, msgId } = messageFor(to, variant, tokenFor(contact.id), link, from);
+      const tag: Prepared["tag"] = { msgId, variant: variant.key, subjectKey: variant.subjectKey, ...(variant.cta ? { cta: variant.cta.label } : {}) };
+      return { contact, to, variant, msgId, message: { ...message, to: [to] }, tag };
+    });
+    let stopped = false;
+    let reached = 0;
+    await sendEach(
+      sender,
+      prepared.map((entry) => entry.message),
+      {
+        kind: "bulk",
+        before: (indexes) => {
+          for (const index of indexes) {
+            const entry = prepared[index] as Prepared;
+            recordDelivery(newsletter.id, entry.contact.id, { state: "pending", at: new Date().toISOString(), to: entry.to, via: sender.id, ...entry.tag });
+          }
+        },
+        after: (index, result) => {
+          const entry = prepared[index] as Prepared;
+          const { contact, to, variant, tag } = entry;
+          const at = new Date().toISOString();
+          reached = index + 1;
+          if (result.ok) {
+            recordDelivery(newsletter.id, contact.id, { state: "sent", at, to, via: sender.id, ...(result.id ? { messageId: result.id } : {}), ...tag });
+            recordSent([{ at, kind: "email", to, via: sender.id, subject: entry.message.subject, ok: true, ...(result.id ? { id: result.id } : {}) }]);
+            report.sent.push(to);
+            log(`sent ${variants.length > 1 ? `${variant.key} ` : ""}to ${contact.name ? `${contact.name} ` : ""}<${to}>`);
+            return;
+          }
+          const reason = result.error ?? "not sent";
+          recordSent([{ at, kind: "email", to, via: sender.id, subject: entry.message.subject, ok: false, error: reason }]);
+          report.failed.push({ to, error: reason });
+          log(`could not send to <${to}>: ${reason}`);
+          if (result.retryable && result.status === 0) {
+            // The connection died: it may have gone out. Left pending, as an SMTP conversation cut off mid-message is.
+            stopped = true;
+            return;
+          }
+          recordDelivery(newsletter.id, contact.id, { state: "failed", at, to, via: sender.id, error: reason, ...(result.retryable ? { retryable: true } : {}), ...tag });
+          if (result.retryable) stopped = true;
+        },
+        pause: async () => {
+          if (options.paceMs) await sleep(options.paceMs);
+        },
+        stop: () => stopped,
+      },
+    );
+    if (stopped && reached < prepared.length) {
+      report.remaining += prepared.length - reached;
+      log(`${sender.id} asked for a pause; ${prepared.length - reached} more wait for a later run.`);
     }
   }
 

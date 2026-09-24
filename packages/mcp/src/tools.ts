@@ -352,8 +352,8 @@ export const TOOLS = [
     name: "myna_newsletters",
     description:
       "List the newsletters on this machine: id, subject, the contacts list each goes to, status (draft, scheduled, " +
-      "sending, sent) and how many were delivered. Subscribers are a contacts list; sending needs an SMTP server " +
-      "(myna smtp add) and a postal address (myna config newsletter.address), both set by a person.",
+      "sending, sent) and how many were delivered. Subscribers are a contacts list; sending needs a mail provider " +
+      "(myna mail provider add, or myna smtp add) and a postal address (myna config newsletter.address), both set by a person.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
   },
   {
@@ -381,7 +381,8 @@ export const TOOLS = [
         at: { type: "string", description: 'When to send, e.g. "tomorrow 9am", "in 2h", or an ISO time. Omit for a draft.' },
         id: { type: "string", description: "A slug to use as the id. Defaults to one from the subject." },
         reply_to: { type: "string" },
-        smtp: { type: "string", description: "An SMTP server id; the first configured one when omitted." },
+        smtp: { type: "string", description: "The mail provider id (an SMTP server or a `myna mail provider`); the default when omitted. Same as via." },
+        via: { type: "string", description: "The mail provider id (an SMTP server, Resend, Postmark, myna cloud...); the default when omitted." },
       },
       required: ["subject", "body", "list"],
       additionalProperties: false,
@@ -401,6 +402,7 @@ export const TOOLS = [
         draft: { type: "boolean", description: "Unschedule: back to a draft." },
         reply_to: { type: "string" },
         smtp: { type: "string" },
+        via: { type: "string", description: "The mail provider id; same as smtp." },
       },
       required: ["id"],
       additionalProperties: false,
@@ -847,7 +849,7 @@ export async function callTool(name: string, args_: Record<string, unknown> = {}
             id: args.id,
             scheduledFor: at ? parseWhen(at).at.toISOString() : null,
             replyTo: args.reply_to ?? null,
-            smtp: args.smtp ?? null,
+            smtp: args.via ?? args.smtp ?? null,
           }),
         );
       }
@@ -862,7 +864,7 @@ export async function callTool(name: string, args_: Record<string, unknown> = {}
             scheduledFor: at ? parseWhen(at).at.toISOString() : undefined,
             draft: Boolean(args.draft),
             replyTo: args.reply_to,
-            smtp: args.smtp,
+            smtp: args.via ?? args.smtp,
           }),
         );
       }

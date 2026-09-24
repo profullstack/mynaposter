@@ -415,7 +415,28 @@ export { normaliseHandoff, type Handoff, type HandoffInput, type CloudHandoff } 
 export { sendSmtp, buildMime, dotStuff, addressOf, SmtpError, type SmtpServer, type SmtpMessage, type SmtpResult, type SmtpOptions, type SmtpSecurity } from "./core/smtp.ts";
 export { sendSms, e164, TELNYX_MESSAGES_URL, type SmsConfig, type SmsResult } from "./core/sms.ts";
 export { readContacts, writeContacts, upsertContact, removeContact, optOut, optIn, addToList, removeFromList, recipients, contactId, type Contact, type ContactsFile } from "./store/contacts.ts";
-export { readOutreach, writeOutreach, saveSmtpServer, removeSmtpServer, smtpServer, saveSms, smsConfig, recordSent, outreachSentToday, type SmsSetup, type SentRecord, type OutreachFile } from "./store/outreach.ts";
+export { readOutreach, writeOutreach, saveSmtpServer, removeSmtpServer, smtpServer, saveSms, smsConfig, recordSent, outreachSentToday, saveMailProvider, removeMailProvider, mailProviderSecret, type SmsSetup, type SentRecord, type OutreachFile } from "./store/outreach.ts";
+// Mail providers: one sendMail over SMTP, Resend, Mailgun, Mandrill, SendGrid, Postmark, SES, Brevo, SparkPost, Mailjet, SMTP2GO and myna cloud.
+export {
+  MAIL_PROVIDER_TYPES,
+  sendMail,
+  sendEach,
+  resolveSender,
+  providerSender,
+  listMailProviders,
+  defaultProviderId,
+  smtpProvider,
+  mynaCloudProvider,
+  parseAddress,
+  retryableStatus,
+  signV4,
+  type MailMessage,
+  type MailResult,
+  type MailSender,
+  type MailKind,
+  type MailProviderConfig,
+  type MailProviderType,
+} from "./core/mail/index.ts";
 export { importFromAgenticjobs, type ImportOptions, type ImportResult } from "./core/contacts-import.ts";
 export { DEFAULT_OUTREACH, type OutreachSettings, DEFAULT_NEWSLETTER, DEFAULT_CTAS, type NewsletterSettings, type NewsletterCta } from "./store/settings.ts";
 export { quotedPrintable } from "./core/smtp.ts";
