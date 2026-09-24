@@ -245,7 +245,10 @@ export async function runNewsletter(positional: string[], flags: Flags): Promise
 
     case "sync": {
       const result = await syncUnsubscribes();
-      out(`${result.pulled} unsubscribe${result.pulled === 1 ? "" : "s"} read, ${result.optedOut.length} newly opted out${result.unknown ? `, ${result.unknown} for tokens this install never sent` : ""}.`);
+      out(
+        `${result.pulled} change${result.pulled === 1 ? "" : "s"} read: ${result.optedOut.length} newly unsubscribed, ${result.resubscribed.length} re-subscribed` +
+          `${result.unknown ? `, ${result.unknown} for tokens this install never sent` : ""}.`,
+      );
       return 0;
     }
 

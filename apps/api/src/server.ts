@@ -548,8 +548,8 @@ app.route("/v1/handoff", handoffRoutes);
 /**
  * Newsletter one-click unsubscribe. The link in every issue is
  * /v1/newsletter/u/<inbox>/<token> (mynaposter.com/api/v1/... on the site):
- * a GET shows a button, a POST records the token, which is what a mail
- * client's one-click sends. The sender's myna, signed in, opens its inbox
+ * a click (GET) or a mail client's one-click (POST) unsubscribes, and the
+ * page offers Re-subscribe. The sender's myna, signed in, opens its inbox
  * and pulls the tokens back; the addresses never come here.
  */
 const newsletterRoutes = new Hono<{ Variables: { user: cloud.CloudUser | null } }>();
@@ -573,18 +573,36 @@ newsletterRoutes.use("*", async (context, next) => {
   return next();
 });
 
+// Actions are relative, so the pages work under mynaposter.com/api and on
+// the API's own host alike.
+const resubscribeAction = (token: string): string => `${token}/resubscribe`;
+const unsubscribeAction = (token: string): string => `../${token}`;
+
+// The footer link: one click and it is done, with Re-subscribe on the page.
+// A HEAD (a link checker) records nothing.
 newsletterRoutes.get("/u/:inbox/:token", async (context) => {
-  const known = newsletter.PART_SHAPE.test(context.req.param("token")) && (await newsletter.inboxExists(context.req.param("inbox")));
-  return known ? htmlReply(newsletter.confirmPage()) : htmlReply(newsletter.unknownPage(), 404);
+  const { inbox, token } = context.req.param();
+  const recorded = context.req.method === "HEAD"
+    ? newsletter.PART_SHAPE.test(token) && (await newsletter.inboxExists(inbox))
+    : await newsletter.recordUnsubscribe(inbox, token);
+  return recorded ? htmlReply(newsletter.unsubscribedPage(resubscribeAction(token))) : htmlReply(newsletter.unknownPage(), 404);
 });
 
+// RFC 8058 one-click: the mail client POSTs `List-Unsubscribe=One-Click` and
+// reads only the status. The resubscribed page's Unsubscribe button posts
+// here too, and wants a page back.
 newsletterRoutes.post("/u/:inbox/:token", async (context) => {
-  const recorded = await newsletter.recordUnsubscribe(context.req.param("inbox"), context.req.param("token"));
-  // The page's button posts a form and wants a page back; a mail client's
-  // one-click posts the same form and reads only the status.
+  const { inbox, token } = context.req.param();
+  const recorded = await newsletter.recordUnsubscribe(inbox, token);
   const wantsHtml = (context.req.header("accept") ?? "").includes("text/html");
-  if (wantsHtml) return recorded ? htmlReply(newsletter.donePage()) : htmlReply(newsletter.unknownPage(), 404);
+  if (wantsHtml) return recorded ? htmlReply(newsletter.unsubscribedPage(resubscribeAction(token))) : htmlReply(newsletter.unknownPage(), 404);
   return recorded ? context.json({ ok: true }) : context.json({ ok: false, error: "Unknown link." }, 404);
+});
+
+newsletterRoutes.post("/u/:inbox/:token/resubscribe", async (context) => {
+  const { inbox, token } = context.req.param();
+  const recorded = await newsletter.recordResubscribe(inbox, token);
+  return recorded ? htmlReply(newsletter.resubscribedPage(unsubscribeAction(token))) : htmlReply(newsletter.unknownPage(), 404);
 });
 
 newsletterRoutes.post("/inbox", async (context) => {

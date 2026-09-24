@@ -326,12 +326,16 @@ test("hosted links: the inbox is opened once, and one-click unsubscribes come ba
   subscribe("moshcode", [{ email: "ada@example.com" }, { email: "bob@example.com" }]);
   const adaToken = tokenFor("ada@example.com");
   const calls: string[] = [];
+  let pulls = [
+    { token: adaToken, at: "2026-09-24T10:00:00.000Z", state: "unsubscribed" },
+    { token: "someone-else-entirely", at: "2026-09-24T11:00:00.000Z", state: "unsubscribed" },
+  ];
   globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
     const url = String(input);
     calls.push(`${init?.method ?? "GET"} ${url}`);
     expect((init?.headers as Record<string, string>).authorization).toBe("Bearer tok");
     if (url.endsWith("/v1/newsletter/inbox")) return Response.json({ ok: true, inbox: "INBOXINBOXINBOX1" });
-    if (url.includes("/v1/newsletter/unsubscribes")) return Response.json({ ok: true, unsubscribes: [{ token: adaToken, at: "2026-09-24T10:00:00.000Z" }, { token: "someone-else-entirely", at: "2026-09-24T11:00:00.000Z" }] });
+    if (url.includes("/v1/newsletter/unsubscribes")) return Response.json({ ok: true, unsubscribes: pulls });
     return new Response("nope", { status: 404 });
   }) as typeof fetch;
 
@@ -341,9 +345,14 @@ test("hosted links: the inbox is opened once, and one-click unsubscribes come ba
   expect(calls.filter((c) => c.endsWith("/inbox"))).toHaveLength(1);
 
   const synced = await syncUnsubscribes();
-  expect(synced).toEqual({ pulled: 2, optedOut: ["ada@example.com"], unknown: 1 });
+  expect(synced).toEqual({ pulled: 2, optedOut: ["ada@example.com"], resubscribed: [], unknown: 1 });
   expect(recipients({ list: "moshcode" }).map((c) => c.id)).toEqual(["bob@example.com"]);
   expect(readNewsletters().unsubscribesSince).toBe("2026-09-24T11:00:00.000Z");
-  await syncUnsubscribes();
+
+  // Ada pressed Re-subscribe on the page her link opened: she is back on the list.
+  pulls = [{ token: adaToken, at: "2026-09-24T12:00:00.000Z", state: "resubscribed" }];
+  const back = await syncUnsubscribes();
   expect(calls[calls.length - 1]).toContain("since=2026-09-24T11%3A00%3A00.000Z");
+  expect(back).toEqual({ pulled: 1, optedOut: [], resubscribed: ["ada@example.com"], unknown: 0 });
+  expect(recipients({ list: "moshcode" }).map((c) => c.id).sort()).toEqual(["ada@example.com", "bob@example.com"]);
 });

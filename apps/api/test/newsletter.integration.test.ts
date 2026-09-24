@@ -41,15 +41,27 @@ it("one inbox per user; a token recorded once; each user reads only their own", 
   expect(await newsletter.recordUnsubscribe(inbox, "short")).toBe(false);
 
   const mine = await newsletter.listUnsubscribes(user.id);
-  expect(mine.map((row) => row.token)).toEqual([token]);
+  expect(mine.map((row) => [row.token, row.state])).toEqual([[token, "unsubscribed"]]);
   expect(await newsletter.listUnsubscribes(other.id)).toEqual([]);
-  expect(await newsletter.listUnsubscribes(user.id, new Date(Date.now() + 60_000).toISOString())).toEqual([]);
+  const seen = mine[0]?.at as string;
+  expect(await newsletter.listUnsubscribes(user.id, seen)).toEqual([]);
+
+  // Re-subscribe moves the row forward, so the next pull hands it over again.
+  expect(await newsletter.recordResubscribe(inbox, token)).toBe(true);
+  const after = await newsletter.listUnsubscribes(user.id, seen);
+  expect(after.map((row) => [row.token, row.state])).toEqual([[token, "resubscribed"]]);
+  expect(await newsletter.recordUnsubscribe(inbox, token)).toBe(true);
+  expect((await newsletter.listUnsubscribes(user.id, after[0]?.at)).map((row) => row.state)).toEqual(["unsubscribed"]);
 });
 
-test("the pages carry no script and post only to themselves", () => {
+test("the pages carry no script; one says done and offers Re-subscribe, the other offers the way out again", () => {
   expect(newsletter.PAGE_CSP).toContain("default-src 'none'");
   expect(newsletter.PAGE_CSP).toContain("form-action 'self'");
-  expect(newsletter.confirmPage()).toContain('<form method="post">');
-  expect(newsletter.confirmPage()).not.toContain("<script");
-  expect(newsletter.donePage()).toContain("unsubscribed");
+  const done = newsletter.unsubscribedPage("tok/resubscribe");
+  expect(done).toContain("You're unsubscribed.");
+  expect(done).toContain('<form method="post" action="tok/resubscribe"><button type="submit" class="quiet">Re-subscribe</button>');
+  expect(done).not.toContain("<script");
+  const back = newsletter.resubscribedPage("../tok");
+  expect(back).toContain("subscribed again");
+  expect(back).toContain('action="../tok"');
 });
