@@ -17,6 +17,17 @@ test("site paths map onto API paths", () => {
   expect(apiPath("/api/api/mcp")).toBe("/api/mcp");
 });
 
+test("OAuth callback pages under /api are the site's, never the API's", () => {
+  // Registered on the providers' apps with these exact URLs. The API answered
+  // them 401, so Google sign-ins landed on {"error":"Unauthorized"}.
+  for (const p of ["/api/v1/google/oauth/callback", "/api/v1/facebook/oauth/callback", "/api/v1/instagram/oauth/callback", "/api/linkedin/callback", "/api/v1/google/oauth/callback.html"]) {
+    expect(apiPath(p), p).toBeNull();
+  }
+  // Everything else under /api/v1 still goes to the API.
+  expect(apiPath("/api/v1/google/oauth/token")).toBe("/v1/google/oauth/token");
+  expect(apiPath("/api/v1/newsletter/u/inbox/token")).toBe("/v1/newsletter/u/inbox/token");
+});
+
 test("the forward keeps method, query, body and headers, and says so when the API is down", async () => {
   const upstream = Bun.serve({
     port: 0,

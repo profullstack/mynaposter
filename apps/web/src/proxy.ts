@@ -13,8 +13,18 @@
 export const DEFAULT_UPSTREAM = "http://mynaposter-api.railway.internal:8787";
 
 /** The API path for a site path, or null when the request is not for the API. */
+/**
+ * OAuth callback pages the SITE builds under /api (build.ts copies
+ * oauth-callback.html there), because each provider's app is registered with
+ * that exact URL. They must be served as pages, not handed to the API: the
+ * API answered them 401, which is how `myna login gcal` broke (the browser
+ * landed on {"error":"Unauthorized"} instead of the page that relays the code).
+ */
+const SITE_CALLBACK = /^\/api\/(v1\/[a-z0-9-]+\/oauth\/callback|linkedin\/callback)(\.html)?\/?$/;
+
 export function apiPath(pathname: string): string | null {
   if (pathname !== "/api" && !pathname.startsWith("/api/")) return null;
+  if (SITE_CALLBACK.test(pathname)) return null;
   const rest = pathname.slice("/api".length) || "/";
   // The API's own MCP door is /api/mcp, so /api/mcp on the site means that,
   // and so does /api/api/mcp, which is what a client with server=/api builds.
