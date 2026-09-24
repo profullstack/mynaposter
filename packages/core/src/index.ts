@@ -438,7 +438,7 @@ export {
   type MailProviderType,
 } from "./core/mail/index.ts";
 export { importFromAgenticjobs, type ImportOptions, type ImportResult } from "./core/contacts-import.ts";
-export { DEFAULT_OUTREACH, type OutreachSettings, DEFAULT_NEWSLETTER, DEFAULT_CTAS, type NewsletterSettings, type NewsletterCta } from "./store/settings.ts";
+export { DEFAULT_OUTREACH, type OutreachSettings, DEFAULT_FOOTER_LINKS, DEFAULT_NEWSLETTER, DEFAULT_CTAS, type NewsletterSettings, type NewsletterCta } from "./store/settings.ts";
 export { quotedPrintable } from "./core/smtp.ts";
 // Newsletters: issues to a contacts list, a per-recipient ledger, one-click unsubscribe.
 export {
@@ -483,6 +483,8 @@ export {
   // crawlproof tracking, A/B variants, stats
   newsletterTracking,
   connectTracking,
+  productOf,
+  reasonLine,
   type TrackingConnection,
   TRACKING_SECRETS,
   TRACKING_ID,

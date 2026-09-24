@@ -309,6 +309,22 @@ export interface NewsletterComposeOptions {
   tracking?: { tracking: Tracking; ids: TrackingIds };
   /** Set with a name or a logo, the issue goes out in the branded layout. */
   brand?: NewsletterBrand;
+  /** The standard links row in the footer. */
+  footerLinks?: NewsletterCta[];
+  /** The product this reader has an account at, for the footer's reason line. */
+  product?: string | null;
+}
+
+/**
+ * Why this reader gets the mail. With a product: the account they hold, and
+ * whose product it is; with only a service: that account; otherwise the list.
+ */
+export function reasonLine(input: { product?: string | null; service?: string | null; company?: string; list: string }): string {
+  const company = input.company?.trim();
+  const terms = "Our Terms say we may email you news and updates.";
+  if (input.product) return `You are getting this because you have an account at ${input.product}${company ? `, a ${company} product` : ""}. ${terms}`;
+  if (input.service) return `You are getting this because you have an account at ${input.service}. ${terms}`;
+  return `You are getting this because you subscribed to ${input.list}.`;
 }
 
 /** `https://...` in plain text; trailing sentence punctuation is left outside the link. */
@@ -331,9 +347,9 @@ export function composeNewsletter(
   const sender = addressOf(options.from);
   const domain = sender.split("@")[1] ?? "myna.local";
   const listToken = newsletter.list.replace(/[^a-z0-9-]/gi, "-").toLowerCase() || "newsletter";
-  const reason = newsletter.service
-    ? `You get this because you have an account at ${newsletter.service}; our Terms say we may email news and updates.`
-    : `You are getting this because you subscribed to ${newsletter.list}.`;
+  const company = options.brand?.name ?? "";
+  const reason = reasonLine({ product: options.product, service: newsletter.service, company, list: newsletter.list });
+  const footerLinks = options.footerLinks ?? [];
 
   const tracked = options.tracking;
   const base = tracked ? trackingBase(tracked.tracking) : "";
@@ -350,7 +366,10 @@ export function composeNewsletter(
       const trimmed = match.replace(/[.,;:!?]+$/, "");
       return wrap(trimmed) + match.slice(trimmed.length);
     });
-  const text = `${textBody.trimEnd()}\n\n-- \n${reason}\nUnsubscribe with one click: ${options.link}\n\n${options.address.trim()}\n`;
+  const linksText = footerLinks.map((l) => `${l.label}: ${wrap(l.url)}`).join("\n");
+  const text =
+    `${textBody.trimEnd()}\n\n-- \n${company ? `${company}\n` : ""}${linksText ? `${linksText}\n\n` : ""}` +
+    `${reason}\nUnsubscribe with one click: ${options.link}\n\n${options.address.trim()}\n`;
 
   const branded = hasBrand(options.brand) ? options.brand : undefined;
   const buttonColor = safeAccent(branded?.accent);
@@ -364,7 +383,20 @@ export function composeNewsletter(
   if (tracked) rendered = rendered.replace(/href="(https?:\/\/[^"]+)"/g, (_, href: string) => `href="${escapeHtml(wrap(href.replace(/&amp;/g, "&")))}"`);
   const small = 'style="font-size:12px;color:#666;line-height:1.5"';
   const pixel = tracked ? `<img src="${escapeHtml(openPixelUrl(tracked.tracking, tracked.ids))}" width="1" height="1" alt="" style="border:0;width:1px;height:1px">\n` : "";
+  const linkStyle = `color:${buttonColor};text-decoration:none;font-weight:600`;
+  const linksHtml = footerLinks.length
+    ? `<p style="font-size:13px;line-height:1.8;margin:0 0 14px">${footerLinks
+        .map((l) => `<a href="${escapeHtml(wrap(l.url))}" style="${linkStyle}">${escapeHtml(l.label)}</a>`)
+        .join(' <span style="color:#c4c7cc">&middot;</span> ')}</p>\n`
+    : "";
+  const brandLine = company
+    ? `<p style="font-size:13px;font-weight:700;color:#1f2328;margin:0 0 6px">${
+        branded?.url ? `<a href="${escapeHtml(wrap(branded.url))}" style="color:#1f2328;text-decoration:none">${escapeHtml(company)}</a>` : escapeHtml(company)
+      }</p>\n`
+    : "";
   const footer =
+    brandLine +
+    linksHtml +
     `<p ${small}>${escapeHtml(reason)} <a href="${escapeHtml(options.link)}"${branded ? ' style="color:#666;text-decoration:underline"' : ""}>Unsubscribe</a>.</p>\n` +
     `<p ${small}>${escapeHtml(options.address.trim()).replace(/\r?\n/g, "<br>")}</p>\n`;
   const html = branded
@@ -677,6 +709,15 @@ export interface SendNewsletterReport {
   tracked: boolean;
 }
 
+/**
+ * The product a contact has an account at: a `product:<site>` tag, first one
+ * wins. Imports from each product's user table write it.
+ */
+export function productOf(contact: Pick<Contact, "tags">): string | null {
+  const tag = contact.tags.find((t) => t.startsWith("product:"));
+  return tag ? tag.slice("product:".length) || null : null;
+}
+
 /** The postal address for an issue, or an error that says where to set it. */
 export function addressFor(newsletter: Newsletter): string {
   const address = (newsletter.address ?? loadSettings().newsletter.address).trim();
@@ -710,7 +751,7 @@ export async function sendNewsletter(id: string, options: SendNewsletterOptions 
   };
 
   /** One person's message: their variant, their msgId, their unsubscribe link. */
-  const messageFor = (to: string, variant: Variant, token: string, link: (token: string) => string, from: string, subjectPrefix = "") => {
+  const messageFor = (to: string, variant: Variant, token: string, link: (token: string) => string, from: string, subjectPrefix = "", product: string | null = null) => {
     const msgId = newMsgId();
     const ids = { m: msgId, c: newsletter.id, v: variant.key };
     const unsubscribeLink = tracking ? trackedUnsubscribeUrl(tracking, { m: msgId, c: newsletter.id, email: to }) : link(token);
@@ -722,6 +763,8 @@ export async function sendNewsletter(id: string, options: SendNewsletterOptions 
       subject: `${subjectPrefix}${variant.subject}`,
       cta: variant.cta,
       brand: loadSettings().newsletter.brand,
+      footerLinks: loadSettings().newsletter.footerLinks,
+      product,
       ...(tracking ? { tracking: { tracking, ids } } : {}),
     });
     return { message, msgId };
@@ -758,7 +801,7 @@ export async function sendNewsletter(id: string, options: SendNewsletterOptions 
       link = () => "https://example.invalid/unsubscribe";
       log(`warning: ${(error as Error).message} The test copy carries a placeholder link.`);
     }
-    const { message, msgId } = messageFor(options.test, variant, "test", link, senderFrom(sender), "[test] ");
+    const { message, msgId } = messageFor(options.test, variant, "test", link, senderFrom(sender), "[test] ", known ? productOf(known) : null);
     if (options.dryRun) {
       report.wouldSend.push(options.test);
       return report;
@@ -833,7 +876,7 @@ export async function sendNewsletter(id: string, options: SendNewsletterOptions 
     const prepared: Prepared[] = batch.map((contact) => {
       const to = contact.email as string;
       const variant = variantOf(contact);
-      const { message, msgId } = messageFor(to, variant, tokenFor(contact.id), link, from);
+      const { message, msgId } = messageFor(to, variant, tokenFor(contact.id), link, from, "", productOf(contact));
       const tag: Prepared["tag"] = { msgId, variant: variant.key, subjectKey: variant.subjectKey, ...(variant.cta ? { cta: variant.cta.label } : {}) };
       return { contact, to, variant, msgId, message: { ...message, to: [to] }, tag };
     });
