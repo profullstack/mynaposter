@@ -293,9 +293,10 @@ ${networkRows}
   </p>
   <p>
     Optionally, myna can connect to <strong>Google Calendar</strong>: it then adds an event for each post you
-    schedule to your calendar, updates it if you move the post and deletes it if you cancel. It asks only
-    for permission to manage those events and to list your calendars so you can choose one. It does not
-    read your other events. See exactly what myna does with Google data in the
+    schedule to your calendar, updates it if you move the post and deletes it if you cancel. You can also add
+    events and see your upcoming ones from the terminal (<code>myna calendar add</code>, <code>myna calendar list</code>).
+    It asks only for permission to manage events and to list your calendars so you can choose one, and never
+    stores or uploads your events. See exactly what myna does with Google data in the
     <a href="/privacy#google">privacy policy</a>.
   </p>
 </section>
