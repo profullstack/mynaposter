@@ -145,14 +145,23 @@ Direct (mail and texts to people, not posts to networks):
 Newsletter (issues to a contacts list; one-click unsubscribe and your postal
 address on every one, paced by outreach.maxEmailsPerDay):
   newsletter create --subject "..." --list <L> [--at when] [--smtp id] [--reply-to r] < issue.md
+       [--subject-b "..."]          A/B: variants are the subjects x the CTA set,
+       [--cta-set default|none]     one per person; {{cta}} marks the button
+       [--service moshcode] [--id slug]   footer: "an account at moshcode" not "subscribed"
   newsletter list | show <id> [--body] | rm <id> [--force]
-  newsletter edit <id> [--subject] [--list] [--at when | --draft] [< issue.md]
-  newsletter send <id> [--dry-run] [--test addr] [--limit N]
-       [--retry-failed] [--retry-uncertain]   Resumes from its ledger; nobody gets it twice
+  newsletter edit <id> [--subject] [--subject-b] [--list] [--cta-set] [--at when | --draft] [< issue.md]
+  newsletter send <id> [--dry-run] [--to addr] [--yes] [--limit N] [--max-per-day N]
+       [--retry-failed] [--retry-uncertain]   --yes sends the list; --to one test copy (variant A)
+                                    Resumes from its ledger; nobody gets it twice
+  newsletter stats <id>             Per variant: sent, opens, clicks, CTR, unsubscribes
   newsletter subscribe <email...> --list <L> [--name] [--tags]
   newsletter unsubscribe <email|token> [--list L]   Without --list: opted out for good
   newsletter subscribers --list <L> | import <file.csv|.json> --list <L>
-  newsletter sync                   Pull one-click unsubscribes from myna cloud
+  newsletter sync | sync-optouts    Pull unsubscribes from myna cloud and crawlproof
+  newsletter track set <id> [--secret hex] | track status [--check] | track off
+                                    crawlproof tracking: signed links, open pixel,
+                                    its unsubscribe link; the secret goes in the vault
+  newsletter cta list | add "<label>" <url> | rm "<label>"   [--set default]
        myna config newsletter.address "..."        required (CAN-SPAM)
        myna config newsletter.unsubscribeUrl https://you/u/{token}   else myna cloud hosts it
 AT Protocol (the network behind Bluesky; a directory of its servers):

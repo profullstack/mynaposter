@@ -417,7 +417,8 @@ export { sendSms, e164, TELNYX_MESSAGES_URL, type SmsConfig, type SmsResult } fr
 export { readContacts, writeContacts, upsertContact, removeContact, optOut, addToList, removeFromList, recipients, contactId, type Contact, type ContactsFile } from "./store/contacts.ts";
 export { readOutreach, writeOutreach, saveSmtpServer, removeSmtpServer, smtpServer, saveSms, smsConfig, recordSent, outreachSentToday, type SmsSetup, type SentRecord, type OutreachFile } from "./store/outreach.ts";
 export { importFromAgenticjobs, type ImportOptions, type ImportResult } from "./core/contacts-import.ts";
-export { DEFAULT_OUTREACH, type OutreachSettings, DEFAULT_NEWSLETTER, type NewsletterSettings } from "./store/settings.ts";
+export { DEFAULT_OUTREACH, type OutreachSettings, DEFAULT_NEWSLETTER, DEFAULT_CTAS, type NewsletterSettings, type NewsletterCta } from "./store/settings.ts";
+export { quotedPrintable } from "./core/smtp.ts";
 // Newsletters: issues to a contacts list, a per-recipient ledger, one-click unsubscribe.
 export {
   readNewsletters,
@@ -458,4 +459,28 @@ export {
   type SubscriberInput,
   type SubscribeResult,
   type SyncResult,
+  // crawlproof tracking, A/B variants, stats
+  newsletterTracking,
+  TRACKING_SECRETS,
+  TRACKING_ID,
+  trackingBase,
+  signTracking,
+  openPixelUrl,
+  clickUrl,
+  trackedUnsubscribeUrl,
+  fetchTrackingEvents,
+  syncTrackingUnsubscribes,
+  syncAllUnsubscribes,
+  buildVariants,
+  variantIndex,
+  variantsFor,
+  newsletterStats,
+  fetchNewsletterStats,
+  type Tracking,
+  type TrackingEvent,
+  type TrackingIds,
+  type TrackingSyncResult,
+  type Variant,
+  type VariantStats,
+  type NewsletterStats,
 } from "./core/newsletter.ts";
