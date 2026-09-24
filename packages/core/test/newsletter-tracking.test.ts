@@ -174,8 +174,8 @@ test("a tracked message: CTA where {{cta}} was, every link signed, the pixel, cr
   expect(message.headers?.["List-Unsubscribe"]).toBe(`<${link}>, <mailto:news@profullstack.com?subject=unsubscribe%20tok>`);
   expect(message.headers?.["List-Unsubscribe-Post"]).toBe("List-Unsubscribe=One-Click");
   expect(message.headers?.Precedence).toBe("bulk");
-  expect(message.text).not.toContain("—");
-  expect(message.html).not.toContain("—");
+  expect(message.text).not.toContain("\u2014");
+  expect(message.html).not.toContain("\u2014");
 });
 
 test("without {{cta}} the CTA goes last before the footer; with no CTA a stray marker is dropped; untracked links stay as they are", () => {
@@ -441,7 +441,7 @@ test("a --to test copy still goes out when a pull fails, with a warning", async 
     expect(copy.sent).toEqual(["owner@profullstack.com"]);
     expect(fake.messages).toHaveLength(1);
     expect(lines.some((line) => line.startsWith("warning: could not read unsubscribes from myna cloud") && line.includes("a list send would stop here"))).toBe(true);
-    for (const line of lines) expect(line).not.toContain("—");
+    for (const line of lines) expect(line).not.toContain("\u2014");
   } finally {
     restore();
     await fake.close();

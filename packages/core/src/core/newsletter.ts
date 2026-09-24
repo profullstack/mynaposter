@@ -852,7 +852,7 @@ export async function fetchNewsletterStats(id: string, tracking: Tracking, optio
 }
 
 /** An error's message as plain text for a refusal: the HTTP helper's dash becomes a colon. */
-const plainError = (error: unknown): string => (error as Error).message.replace(/\s*—\s*/g, ": ");
+const plainError = (error: unknown): string => (error as Error).message.replace(/\s*\u2014\s*/g, ": ");
 
 export interface AllSyncResult {
   cloud: SyncResult;
