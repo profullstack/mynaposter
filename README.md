@@ -1310,6 +1310,31 @@ packages/core     adapters, vault, scheduling, the writer, infographics
 apps/cli          the TUI and the scriptable CLI
 ```
 
+### Cutting a release
+
+Pushing a `v*` tag builds and attaches the binaries, but a tag on its own leaves
+four things undone: the `VERSION` literal a test guards, the binary in
+`~/.local/bin` that the daemon actually runs, the announcement, and the ad.
+`scripts/ship.ts` does the lot in order and stops at the first thing that does
+not look right.
+
+```bash
+bun scripts/ship.ts minor --dry-run          see every step, change nothing
+bun scripts/ship.ts minor --announce "..."   bump, test, tag, install, announce
+bun scripts/ship.ts 0.34.1                   an exact version instead of a level
+```
+
+`--no-install` leaves this box alone, `--no-ad` skips the CrawlProof ad.
+
+Two things it reads rather than restates, so it cannot drift: the packages to
+bump are every workspace `package.json` already on the current version, so a
+package that joins the release set is found and one deliberately left behind
+stays behind; and the test command is parsed out of the release workflow, so
+ship can never test less than CI does.
+
+The announcement copy is never written for you. Without `--announce` the send is
+skipped and the command to run is printed instead.
+
 ## Licence
 
 MIT
