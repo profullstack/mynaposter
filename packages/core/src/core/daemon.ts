@@ -10,7 +10,7 @@
 import { runDuePosts } from "./scheduler.ts";
 import { summarize } from "./poster.ts";
 import { addSeeds, expandSeeds, followNext } from "./graph.ts";
-import { loadSettings } from "../store/settings.ts";
+import { effectiveRecap, loadSettings } from "../store/settings.ts";
 import { pluginTasks, seedProviders } from "../plugins/loader.ts";
 import { pluginContext } from "../plugins/context.ts";
 import { runEvergreen } from "./evergreen.ts";
@@ -103,19 +103,22 @@ export function builtinJobs(log: (line: string) => void, tickMs: number): Daemon
       run: () => syncConfigOnce(),
     });
   }
-  if (settings.recap.enabled) {
-    jobs.push({
-      id: "recap",
-      // Look every ten minutes. `runRecap` owns the "is it due" question, so
-      // the tick rate only decides how close to `at` the mail lands.
-      everyMs: 600_000,
-      async run() {
-        const turn = await runRecap(settings.recap);
-        if (turn.idle || !turn.result) return;
-        return turn.result.sent ? `sent to ${settings.recap.to}` : `not sent: ${turn.result.error}`;
-      },
-    });
-  }
+  // Always registered, and the switch is read on every tick: the nightly
+  // summary is on by default, and `myna recap off` (or on) has to take effect
+  // without anybody restarting the daemon.
+  jobs.push({
+    id: "recap",
+    // Look every ten minutes. `runRecap` owns the "is it due" question, so
+    // the tick rate only decides how close to `at` the mail lands.
+    everyMs: 600_000,
+    async run() {
+      const recap = effectiveRecap();
+      if (!recap.enabled) return;
+      const turn = await runRecap(recap);
+      if (turn.idle || !turn.result) return;
+      return turn.result.sent ? `sent to ${recap.to}` : `not sent: ${turn.result.error}`;
+    },
+  });
 
   if (settings.graph.enabled) {
     jobs.push(

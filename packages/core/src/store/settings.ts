@@ -3,7 +3,8 @@ import { readJson, writeJson } from "../util/json.ts";
 import { SETTINGS_FILE } from "../util/paths.ts";
 import { DEFAULT_PACING, type PacingSettings } from "../core/pacing.ts";
 import { DEFAULT_EVERGREEN, type EvergreenSettings } from "../core/evergreen.ts";
-import { DEFAULT_RECAP, type RecapSettings } from "../core/recap.ts";
+import { DEFAULT_RECAP, recapAddress, resolveRecapSettings, type RecapSettings } from "../core/recap.ts";
+import { session as cloudSession } from "./cloud.ts";
 import { DEFAULT_BRAND, type NewsletterBrand } from "../core/newsletter-layout.ts";
 
 export interface Settings {
@@ -400,7 +401,7 @@ export function loadSettings(): Settings {
     graph: { ...DEFAULT_SETTINGS.graph, ...stored.graph },
     pacing: { ...DEFAULT_SETTINGS.pacing, ...stored.pacing },
     evergreen: { ...DEFAULT_SETTINGS.evergreen, ...stored.evergreen },
-    recap: { ...DEFAULT_SETTINGS.recap, ...stored.recap },
+    recap: resolveRecapSettings(stored.recap),
     blog: { ...DEFAULT_SETTINGS.blog, ...stored.blog },
     profile: { ...DEFAULT_PROFILE, ...stored.profile },
     reshare: { ...DEFAULT_RESHARE, ...stored.reshare },
@@ -416,6 +417,22 @@ export function loadSettings(): Settings {
     },
     plugins: Array.isArray(stored.plugins) ? stored.plugins.filter((entry) => typeof entry === "string") : [],
   };
+}
+
+/**
+ * The recap as the daemon sends it: the stored switch, and an address even
+ * when none was set — the profile email, else the myna cloud login's — so an
+ * install that never ran `myna recap on` still gets its nightly summary.
+ */
+export function effectiveRecap(settings: Settings = loadSettings()): RecapSettings & { toSource: ReturnType<typeof recapAddress>["source"] } {
+  let cloud: string | undefined;
+  try {
+    cloud = cloudSession()?.email;
+  } catch {
+    cloud = undefined;
+  }
+  const address = recapAddress(settings.recap, { profile: settings.profile.email, cloud });
+  return { ...settings.recap, to: address.to, toSource: address.source };
 }
 
 export function saveSettings(settings: Settings): void {
