@@ -13,10 +13,11 @@ import { splitThread, truncateTo, appendHashtags, countChars, deriveTitle } from
 import { recordHistory, listHistory } from "../store/history.ts";
 import { postedEvent, runAfterPost, runAfterSchedule, type HookOutcome } from "../plugins/hooks.ts";
 import { enqueue, listQueue, updateQueued, type QueuedPost } from "../store/queue.ts";
-import { getAccount } from "../store/accounts.ts";
+import { getAccount, listAccounts } from "../store/accounts.ts";
 import { loadSettings } from "../store/settings.ts";
 import { pacingRules, planTargets, reflowQueue, type Plan, type Reflow } from "./pacing.ts";
-import { duplicateTitle, planLimitsFor, takeSkill, titleOf } from "./skills.ts";
+import { duplicateTitle, planLimitsFor, skillKindFor, takeSkill, titleOf } from "./skills.ts";
+import { ownedHosts, stampLinks, type UtmPlan } from "./utm.ts";
 import { bookingsForType, defaultTypeFor, refuseTypeMismatch, typeCapFor } from "./post-types.ts";
 
 export interface ComposeOptions {
@@ -85,12 +86,19 @@ export function charsFor(networkId: string, text: string): number {
 }
 
 /** Shape one piece of text for one network. */
-export function tailor(networkId: string, options: ComposeOptions): string[] {
+export function tailor(networkId: string, options: ComposeOptions, utm?: UtmPlan): string[] {
   const network = requireNetwork(networkId);
   const weight = URL_WEIGHT[network.id];
 
   let text = options.text.trim();
   if (options.signature) text = `${text}\n\n${options.signature}`;
+  // Campaign tags go on before anything is counted or cut. Tagging later would
+  // let a post that fit when it was measured go over the limit on the way out,
+  // and would tag a link the truncation had already cut in half. The signature
+  // is already attached, so a link in it is tagged too.
+  if (utm) {
+    text = stampLinks(text, utm, { network: network.id, kind: skillKindFor(network.id), type: options.type });
+  }
   if (options.hashtags?.length && HASHTAG_NETWORKS.has(network.id)) {
     text = appendHashtags(text, options.hashtags, network.caps.charLimit, weight);
   }
@@ -101,9 +109,9 @@ export function tailor(networkId: string, options: ComposeOptions): string[] {
   return [truncateTo(text, limit, weight)];
 }
 
-async function postOne(account: Account, options: ComposeOptions): Promise<TargetResult> {
+async function postOne(account: Account, options: ComposeOptions, utm?: UtmPlan): Promise<TargetResult> {
   const network = requireNetwork(account.network);
-  const parts = tailor(account.network, options);
+  const parts = tailor(account.network, options, utm);
 
   try {
     if (network.caps.needsTitle && !options.title && !options.extra?.title) {
@@ -163,6 +171,27 @@ export function refuseDuplicateTitles(accounts: Account[], options: Pick<Compose
 }
 
 /**
+ * The tagger for one send: the settings, the hosts myna can see you own and
+ * today's date. Resolved once per send rather than per target, so every
+ * network in a fan-out carries the same campaign.
+ *
+ * Nothing here may stop a post going out. A vault that will not open yields no
+ * owned hosts rather than an error, and with nothing to tag and no configured
+ * domains the answer is `undefined`: links go out exactly as they were typed.
+ */
+export function utmPlan(settings = loadSettings(), now = new Date()): UtmPlan | undefined {
+  if (!settings.utm?.enabled) return undefined;
+  let hosts: string[] = [];
+  try {
+    hosts = ownedHosts(listAccounts());
+  } catch {
+    hosts = [];
+  }
+  if (!hosts.length && !settings.utm.domains.length) return undefined;
+  return { settings: settings.utm, hosts, date: now.toISOString().slice(0, 10) };
+}
+
+/**
  * One result per target, plus what every plugin's `afterPost` hook said.
  * Still an array, so a caller that only reads the results sees no change.
  */
@@ -188,7 +217,11 @@ export async function postToAll(accounts: Account[], options: ComposeOptions, st
   const settings = loadSettings();
   const skills = new Map(accounts.map((account) => [account.id, safeTakeSkill(account, settings)]));
 
-  const results = await Promise.all(accounts.map((account) => postOne(account, options)));
+  // Dated from the caller's clock, not the wall clock, for the same reason the
+  // history entry below is: a `{date}` in a campaign template and the history
+  // row for that send must never disagree.
+  const utm = utmPlan(settings, new Date(stamp.at ?? Date.now()));
+  const results = await Promise.all(accounts.map((account) => postOne(account, options, utm)));
   for (const result of results) result.skill = skills.get(result.account.id);
 
   const at = new Date(stamp.at ?? Date.now()).toISOString();

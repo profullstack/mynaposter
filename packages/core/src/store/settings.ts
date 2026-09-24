@@ -6,6 +6,7 @@ import { DEFAULT_EVERGREEN, type EvergreenSettings } from "../core/evergreen.ts"
 import { DEFAULT_RECAP, recapAddress, resolveRecapSettings, type RecapSettings } from "../core/recap.ts";
 import { session as cloudSession } from "./cloud.ts";
 import { DEFAULT_BRAND, type NewsletterBrand } from "../core/newsletter-layout.ts";
+import { DEFAULT_UTM, type UtmSettings } from "../core/utm.ts";
 
 export interface Settings {
   /** Default `--to` value when none is given. "all" posts everywhere. */
@@ -73,6 +74,11 @@ export interface Settings {
    * skill file always wins over it.
    */
   blog: { maxPerDay?: number };
+  /**
+   * Campaign tags added to the links in a post, so the site a post drives
+   * people to can see which network sent them. See core/utm.ts.
+   */
+  utm: UtmSettings;
   /** Which skill each account uses, and where its rotation stands. */
   skills: SkillSettings;
   /** Who you are, for `myna profile`: the OpenProfile.md myna writes when there is no hand-written one. */
@@ -367,6 +373,7 @@ export const DEFAULT_SETTINGS: Settings = {
   evergreen: { ...DEFAULT_EVERGREEN },
   recap: { ...DEFAULT_RECAP },
   blog: {},
+  utm: DEFAULT_UTM,
   skills: { defaults: {}, rotate: {}, cursor: {} },
   profile: { ...DEFAULT_PROFILE },
   reshare: { ...DEFAULT_RESHARE },
@@ -403,6 +410,7 @@ export function loadSettings(): Settings {
     evergreen: { ...DEFAULT_SETTINGS.evergreen, ...stored.evergreen },
     recap: resolveRecapSettings(stored.recap),
     blog: { ...DEFAULT_SETTINGS.blog, ...stored.blog },
+    utm: { ...DEFAULT_UTM, ...stored.utm },
     profile: { ...DEFAULT_PROFILE, ...stored.profile },
     reshare: { ...DEFAULT_RESHARE, ...stored.reshare },
     engage: { ...DEFAULT_ENGAGE, ...stored.engage },

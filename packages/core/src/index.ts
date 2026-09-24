@@ -123,7 +123,20 @@ export * as cloud from "./store/cloud.ts";
 // Settings sync with myna cloud, through @profullstack/synconfig.
 export * as synconfig from "./store/synconfig.ts";
 
-export { postToAll, postPaced, refuseDuplicateTitles, tailor, charsFor, summarize, type ComposeOptions, type TargetResult, type PostOutcome, type PacedOptions, type PacedOutcome } from "./core/poster.ts";
+export { postToAll, postPaced, refuseDuplicateTitles, tailor, charsFor, summarize, utmPlan, type ComposeOptions, type TargetResult, type PostOutcome, type PacedOptions, type PacedOutcome } from "./core/poster.ts";
+export {
+  DEFAULT_UTM,
+  hostMatches,
+  hostOf,
+  ownedHosts,
+  slugifyTag,
+  stampLinks,
+  stampUrl,
+  utmParams,
+  type UtmContext,
+  type UtmPlan,
+  type UtmSettings,
+} from "./core/utm.ts";
 export {
   planTargets,
   pacingRules,

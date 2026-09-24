@@ -30,7 +30,9 @@ import {
   listDirectories,
   infographicCopy,
   infographicHtml,
+  hostOf,
   listAccounts,
+  ownedHosts,
   listHistory,
   listQueue,
   loadAllMedia,
@@ -707,6 +709,63 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
       if (!changed) {
         out("\nChange one: myna pace --gap 2h --drip 48h --repost 7d.");
         out("Jump the queue but keep the gaps: myna post --front. Skip the gates outright: myna post --now.");
+      }
+      return 0;
+    }
+
+    case "utm": {
+      // myna utm                            what gets tagged, and with what
+      // myna utm --add crawlproof.com,moshcoding.com
+      // myna utm --remove crawlproof.com    --exclude news.ycombinator.com
+      // myna utm --campaign "{type}-{date}"  --off / --on
+      const cfg = { ...settings.utm, domains: [...settings.utm.domains], exclude: [...settings.utm.exclude] };
+      let changed = false;
+
+      const list = (value: unknown): string[] =>
+        typeof value === "string" ? value.split(",").map((entry) => hostOf(entry)).filter(Boolean) : [];
+
+      for (const host of list(flags.add)) {
+        if (!cfg.domains.includes(host)) cfg.domains.push(host);
+        changed = true;
+      }
+      for (const host of list(flags.remove)) {
+        cfg.domains = cfg.domains.filter((entry) => entry !== host);
+        cfg.exclude = cfg.exclude.filter((entry) => entry !== host);
+        changed = true;
+      }
+      for (const host of list(flags.exclude)) {
+        if (!cfg.exclude.includes(host)) cfg.exclude.push(host);
+        changed = true;
+      }
+      for (const key of ["source", "medium", "campaign"] as const) {
+        const value = flags[key];
+        if (typeof value !== "string") continue;
+        cfg[key] = value;
+        changed = true;
+      }
+      if (flags.off) { cfg.enabled = false; changed = true; }
+      if (flags.on) { cfg.enabled = true; changed = true; }
+      if (changed) saveSettings({ ...settings, utm: cfg });
+
+      // Shown apart from the configured list because they need no setting up
+      // and cannot be removed here: they are the sites your accounts publish to.
+      let derived: string[] = [];
+      try {
+        derived = ownedHosts(listAccounts());
+      } catch {
+        derived = [];
+      }
+
+      out(`utm       ${cfg.enabled ? "on" : "off"}`);
+      out(`source    ${cfg.source}`);
+      out(`medium    ${cfg.medium}`);
+      out(`campaign  ${cfg.campaign}`);
+      out(`tagged    ${[...derived, ...cfg.domains].join(", ") || "(nothing yet)"}`);
+      if (derived.length) out(`          ${derived.join(", ")} came from your accounts`);
+      if (cfg.exclude.length) out(`never     ${cfg.exclude.join(", ")}`);
+      if (!changed) {
+        out("\nTag more sites: myna utm --add example.com,blog.example.org");
+        out("A link that already carries a utm_ parameter is always left as written.");
       }
       return 0;
     }
