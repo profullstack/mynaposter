@@ -41,28 +41,94 @@ Rules, all of them load-bearing:
 - Hashtags only where the network uses them, lowercase, specific, at most the number requested. No #innovation, #tech, #future.
 - Return only the JSON described. No preamble, no code fences.`;
 
-export function providerComplete(system: string, prompt: string, maxTokens = 4000): Promise<string> {
+/** Whether OpenAI can be used as the understudy. */
+export const hasOpenAI = (): boolean => Boolean(process.env.OPENAI_API_KEY);
+
+/** The model to fall back to, since the configured one names a Claude model. */
+export const FALLBACK_MODEL = "gpt-4o";
+
+/**
+ * Whether a failed completion is worth retrying somewhere else.
+ *
+ * A spend cap, a dead key, a rate limit or a server error are all the
+ * provider being unavailable rather than the request being wrong, and the
+ * answer to all of them is to ask somebody else. A refusal is not: the model
+ * read the prompt and declined, and asking a second model to do what the
+ * first would not is how you launder a refusal, so those propagate.
+ */
+export function worthFallingBackFrom(error: Error): boolean {
+  const message = error.message.toLowerCase();
+  if (message.includes("declined to write")) return false;
+  return (
+    message.includes("usage limit") ||
+    message.includes("credit") ||
+    message.includes("quota") ||
+    message.includes("rate limit") ||
+    message.includes("authentication") ||
+    message.includes("api key") ||
+    message.includes("401") ||
+    message.includes("403") ||
+    message.includes("429") ||
+    message.includes("500") ||
+    message.includes("502") ||
+    message.includes("503") ||
+    message.includes("529") ||
+    message.includes("overloaded")
+  );
+}
+
+/**
+ * One completion from the configured provider, falling back to OpenAI.
+ *
+ * The house Anthropic key is shared across the fleet and carries a spend cap,
+ * so "the writer is down" is a routine Tuesday rather than an emergency: it
+ * comes back as a 400 saying the limit is reached, or a 401 when a key has
+ * been rotated out from under us. Neither is a reason to stop writing when
+ * there is a second key that works, so Claude is tried first and OpenAI picks
+ * up whatever it drops.
+ *
+ * Only the configured provider falls back, and only to OpenAI. Ollama is a
+ * deliberate choice to keep the text on this machine, and quietly shipping it
+ * to a third party because the local model was busy would be a betrayal of
+ * the reason somebody picked it.
+ */
+export async function providerComplete(system: string, prompt: string, maxTokens = 4000): Promise<string> {
   const { ai } = loadSettings();
-  switch (ai.provider) {
-    case "openai":
-      return completeOpenAI({ system, prompt, model: ai.model, maxTokens });
-    case "ollama":
-      return completeOllama({ system, prompt, model: ai.model, maxTokens });
-    default:
-      return completeAnthropic({ system, prompt, model: ai.model, maxTokens });
+
+  if (ai.provider === "ollama") return completeOllama({ system, prompt, model: ai.model, maxTokens });
+  if (ai.provider === "openai") return completeOpenAI({ system, prompt, model: ai.model, maxTokens });
+
+  try {
+    if (!hasAnthropic()) throw new Error("ANTHROPIC_API_KEY is not set.");
+    return await completeAnthropic({ system, prompt, model: ai.model, maxTokens });
+  } catch (error) {
+    const reason = error as Error;
+    if (!hasOpenAI() || !worthFallingBackFrom(reason)) throw reason;
+    // The configured model names a Claude model, which OpenAI has never heard
+    // of, so the understudy uses its own.
+    return completeOpenAI({ system, prompt, model: FALLBACK_MODEL, maxTokens });
   }
 }
 
-/** True when the configured provider has what it needs to run. */
+/**
+ * True when the writer can run at all.
+ *
+ * "At all" is the question, not "on the configured provider": with a fallback
+ * in place, a missing Anthropic key is not the end of writing when an OpenAI
+ * key is sitting right there. Saying otherwise turns off every feature that
+ * checks this first, which is how link drops stayed silently dead.
+ */
 export function writerAvailable(): { ok: boolean; reason?: string } {
   const { ai } = loadSettings();
-  if (ai.provider === "anthropic" && !hasAnthropic()) {
-    return { ok: false, reason: "ANTHROPIC_API_KEY is not set. Run `myna config ai.provider ollama` to use a local model instead." };
+  if (ai.provider === "ollama") return { ok: true };
+  if (ai.provider === "openai") {
+    return hasOpenAI() ? { ok: true } : { ok: false, reason: "OPENAI_API_KEY is not set." };
   }
-  if (ai.provider === "openai" && !process.env.OPENAI_API_KEY) {
-    return { ok: false, reason: "OPENAI_API_KEY is not set." };
-  }
-  return { ok: true };
+  if (hasAnthropic() || hasOpenAI()) return { ok: true };
+  return {
+    ok: false,
+    reason: "Neither ANTHROPIC_API_KEY nor OPENAI_API_KEY is set. Run `myna config ai.provider ollama` to use a local model instead.",
+  };
 }
 
 /**
