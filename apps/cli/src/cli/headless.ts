@@ -9,7 +9,7 @@
  * in the other. Output is plain text so it pipes; --json gives machine output.
  */
 import { writeFileSync, readFileSync, existsSync, mkdtempSync, mkdirSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { hostname, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import {
   NETWORKS,
@@ -42,6 +42,8 @@ import {
   runEvergreen,
   buildRecap,
   renderRecapText,
+  renderRecapHtml,
+  effectiveRecap,
   runRecap,
   loadRecapState,
   DEFAULT_EVERGREEN,
@@ -749,13 +751,18 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
     case "recap": {
       // myna recap                     print the last 24 hours and the next
       // myna recap --days 2            a wider window, both ways
+      // myna recap --html recap.html   write the HTML mail to a file to look at
       // myna recap --send              send it now, whether or not it is due
-      // myna recap on --to me@x.com [--at 08:00]
+      // myna recap on [--to me@x.com] [--at 08:00]
       // myna recap off
+      // myna recap status
       //
       // Deliberately no vault: the recap reads history and the queue, both
       // plain JSON, so it works from cron with nobody there to type a
       // passphrase. That is the whole point of a morning email.
+      //
+      // The nightly summary is ON by default (settings.recap.enabled); on and
+      // off here, and `myna config recap.enabled`, all drive that one switch.
       const cfg = { ...settings.recap };
       const action = positional[0];
       let changed = false;
@@ -771,14 +778,26 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
         changed = true;
       }
       if (typeof flags.command === "string") { cfg.command = flags.command; changed = true; }
-      if (cfg.enabled && !cfg.to) throw new Error("Where to? Try: myna recap on --to you@example.com");
-      if (changed) saveSettings({ ...settings, recap: cfg });
+      const next = { ...settings, recap: cfg };
+      const effective = effectiveRecap(next);
+      if (action === "on" && !effective.to) {
+        throw new Error("Where to? There is no profile or myna cloud email to fall back on. Try: myna recap on --to you@example.com");
+      }
+      if (changed) saveSettings(next);
 
       if (action === "status" || action === "on" || action === "off") {
         const state = loadRecapState();
-        out(`recap  ${cfg.enabled ? "on" : "off"}${cfg.to ? `  to ${cfg.to}` : ""}  at ${cfg.at}  via ${cfg.command}`);
-        out(state.lastSentAt ? `last sent ${describeWhen(new Date(state.lastSentAt))}` : "never sent");
-        if (cfg.enabled) out("The daemon (myna run) sends it; myna recap --send sends one now.");
+        const source =
+          effective.toSource === "profile" ? " (profile email)" : effective.toSource === "cloud" ? " (myna cloud login)" : "";
+        out(
+          `recap  ${effective.enabled ? "on" : "off"}` +
+            (effective.to ? `  to ${effective.to}${source}` : "  no address") +
+            `  at ${effective.at}  via ${effective.command}`,
+        );
+        out(state.lastSentAt ? `last sent ${new Date(state.lastSentAt).toLocaleString("en-US", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}` : "never sent");
+        if (effective.enabled && !effective.to) out("Nothing is sent until there is an address: myna recap on --to you@example.com");
+        else if (effective.enabled) out("The daemon (myna run) sends it nightly; myna recap --send sends one now; myna recap off stops it.");
+        else out("Turn the nightly summary back on with: myna recap on");
         return 0;
       }
 
@@ -791,12 +810,23 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
         return 0;
       }
 
+      if (typeof flags.html === "string") {
+        // Write the HTML mail to look at before it is sent; "-" prints it.
+        const html = renderRecapHtml(recap, undefined, { host: hostname() });
+        if (flags.html === "-") process.stdout.write(html);
+        else {
+          writeFileSync(flags.html, html);
+          out(`Wrote ${flags.html}`);
+        }
+        return 0;
+      }
+
       if (flags.send) {
         // Through runRecap rather than sendRecap, so a hand-sent recap stamps
         // the day and the daemon does not follow it with an identical one.
-        const turn = await runRecap(cfg, { force: true, windowMs: days * 24 * 3_600_000 });
+        const turn = await runRecap(effective, { force: true, windowMs: days * 24 * 3_600_000 });
         const result = turn.result!;
-        out(result.sent ? `Sent "${result.subject}" to ${cfg.to}.` : `Not sent: ${result.error}`);
+        out(result.sent ? `Sent "${result.subject}" to ${effective.to}${result.html === false ? " (text only: this mail command has no --html)" : ""}.` : `Not sent: ${result.error}`);
         return result.sent ? 0 : 1;
       }
 

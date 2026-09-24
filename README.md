@@ -799,6 +799,31 @@ secret: anyone holding it can read the card and mark it done, nobody else can
 find it. `--local` keeps a card off the cloud. The daily recap lists open
 hand-offs with their links, so the mail is enough to finish them.
 
+## The nightly summary
+
+Once a day the daemon (`myna run`) mails a report of what myna did: sent in
+the last 24 hours, booked for the next 24, hand-offs waiting on you and the
+queue depth, each against the day before; a 7-day chart of posts sent; a row
+per network with its own 7-day heat strip; the next day's posts; and every
+open hand-off as an **Open card** button. It is HTML with a plain-text part,
+drawn in the same house style as our fleet and GitHub reports.
+
+It is **on by default**. It goes to `recap.to`, else your profile email
+(`myna profile`), else your myna cloud login, at 08:00 local time.
+
+```sh
+myna recap status                 # on/off, where it goes, when it last went
+myna recap off                    # stop the nightly summary
+myna recap on [--to you@example.com] [--at 07:30]
+myna recap                        # print it now
+myna recap --html recap.html      # write the HTML mail to look at
+myna recap --send                 # send one now (the daemon then skips today)
+```
+
+`myna config recap.enabled false` is the same switch as `myna recap off`. The
+mail goes out through the `mail` command (`--command` picks another); a `mail`
+too old for `--html` still gets the plain-text recap.
+
 ## AT Protocol servers
 
 The network behind Bluesky is servers anyone can run: a PDS holds accounts, a

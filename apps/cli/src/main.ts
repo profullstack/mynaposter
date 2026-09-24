@@ -67,8 +67,10 @@ Posting:
     skill default <account> <slug>  Pin one; rotate <account> on|off takes turns
     skill remove <account> <slug>
   recap [--days 1] [--send]         The last day and the next: what was sent,
-  recap on --to you@example.com     what failed, what is booked. "on" mails it
-       [--at 08:00]                 daily from the daemon; "off" stops it
+       [--html out.html]            what failed, what is booked, as a report
+  recap on|off|status               The nightly summary email, ON by default:
+       [--to you@example.com]       the daemon mails it at --at (08:00) to your
+       [--at 08:00]                 profile email unless --to says otherwise
   delete <account> <post id>        Delete a post you made
   repost <account> <post url>       Share a post from one account.
        [--at "in 2h"]               With --at it is queued instead of sent now

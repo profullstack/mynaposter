@@ -106,7 +106,7 @@ export {
   type EngagementRecord,
 } from "./core/analytics.ts";
 export { refreshEngagement, type RefreshResult } from "./core/refresh.ts";
-export { loadSettings, saveSettings, DEFAULT_SETTINGS, type Settings, type CustomDirectorySetting, type SkillSettings } from "./store/settings.ts";
+export { loadSettings, saveSettings, effectiveRecap, DEFAULT_SETTINGS, type Settings, type CustomDirectorySetting, type SkillSettings } from "./store/settings.ts";
 export {
   collect,
   seal,
@@ -208,6 +208,11 @@ export { runEvergreen, pickEvergreen, evergreenText, lastEvergreen, DEFAULT_EVER
 export {
   buildRecap,
   renderRecapText,
+  renderRecapHtml,
+  resolveRecapSettings,
+  recapAddress,
+  RECAP_DAYS,
+  RECAP_SETTINGS_VERSION,
   recapSubject,
   recapDue,
   runRecap,
@@ -222,6 +227,9 @@ export {
   type RecapFailure,
   type RecapUpcoming,
   type RecapTurn,
+  type RecapChannel,
+  type RecapDay,
+  type RecapPrev,
   type SendRecapResult,
 } from "./core/recap.ts";
 export { runAfterPost, runAfterSchedule, runAfterCancel, postedEvent, scheduledEvent, type HookOutcome } from "./plugins/hooks.ts";
