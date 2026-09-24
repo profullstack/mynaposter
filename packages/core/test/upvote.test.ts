@@ -17,7 +17,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { scanUpvotes, runUpvotes, share, ourHandles, actedToday } from "../src/core/upvote.ts";
-import { topicIndex, queriesFor, scoreAgainst, bestLink, termSet } from "../src/core/topics.ts";
+import { topicIndex, queriesFor, scoreAgainst, bestLink, termSet, MAX_DF } from "../src/core/topics.ts";
 import { listUpvotes, readUpvotes, updateUpvote } from "../src/store/upvote.ts";
 import { recordHistory, listHistory } from "../src/store/history.ts";
 import { resetAccountCache, saveAccount } from "../src/store/accounts.ts";
@@ -666,4 +666,85 @@ test("handOff false keeps a scan local", async () => {
   await scanUpvotes({ settings, now: T0, drafter, writerReady: true, handOff: false });
   expect(seen.length).toBe(0);
   resetPlugins();
+});
+
+/**
+ * The failure this guards against actually shipped. Ranking topics by raw
+ * frequency over a history that spans a dozen different products puts the
+ * install's own filler on top — "every" appeared in 327 of 1000 posts — and
+ * the engine went looking for strangers who had used the word "first". It
+ * queued posts about colonialism, a Spotify single and fan art.
+ */
+function manyProducts(): Parameters<typeof topicIndex>[0] {
+  const entries = [];
+  // 100 posts of promotional filler about unrelated things. "every" and
+  // "first" are in all of them; each product's real subject is in a few.
+  for (let i = 0; i < 100; i += 1) {
+    const subject =
+      i % 10 === 0
+        ? "rope editor benchmarks"
+        : i % 10 === 1
+          ? "coinpay crypto checkout"
+          : `widget${i} thing${i}`;
+    entries.push({
+      at: new Date(Date.parse("2026-09-12T10:00:00.000Z") - i * 3_600_000).toISOString(),
+      accountId: "fake:me",
+      network: "fake",
+      handle: "me",
+      text: `Every first live open page: ${subject}. Never nothing, runs whole.`,
+      ok: true,
+      postId: `p${i}`,
+      url: `https://example.com/p${i}`,
+    });
+  }
+  return entries as never;
+}
+
+test("the install's own filler never becomes a topic, however often it is said", () => {
+  const index = topicIndex(manyProducts(), { days: 14, now: Date.parse("2026-09-12T12:00:00.000Z") });
+  const terms = index.topics.map((topic) => topic.term);
+
+  // These are in all 100 posts. That makes them vocabulary, not subject.
+  for (const filler of ["every", "first", "live", "open", "page", "never", "nothing", "whole"]) {
+    expect(terms).not.toContain(filler);
+  }
+  // The things actually said about only a few posts survive.
+  expect(terms.some((term) => term.includes("rope") || term.includes("coinpay"))).toBe(true);
+});
+
+test("a stranger's post sharing only our filler scores nothing", () => {
+  const index = topicIndex(manyProducts(), { days: 14, now: Date.parse("2026-09-12T12:00:00.000Z") });
+  // Real posts the frequency-ranked version wrongly queued.
+  const decoys = [
+    'When Fanon says that "we must first of all conquer the women", he shows how colonialism can use gender',
+    "On Spotify's page for Jets to Brazil, there's a new single that sounds like a stomp clap",
+    "I don't get fan art very often but it makes me really happy when I do",
+  ];
+  for (const decoy of decoys) expect(scoreAgainst(decoy, index).score).toBe(0);
+});
+
+test("one matching word is a coincidence; a phrase or two words is a subject", () => {
+  ourHistory();
+  const index = topicIndex(listHistory(), { days: 14, now: T0 });
+  // A single shared word, and nothing else.
+  expect(scoreAgainst("the benchmarks were inconclusive", index).score).toBe(0);
+  // A phrase we actually use.
+  expect(scoreAgainst("has anyone tried rust ropes for this", index).score).toBeGreaterThan(0);
+});
+
+test("a single word is never sent as a query on its own when anything else exists", () => {
+  ourHistory();
+  const index = topicIndex(listHistory(), { days: 14, now: T0 });
+  const queries = queriesFor(index, 6);
+  expect(queries.length).toBeGreaterThan(0);
+  // Every query is at least two words: one narrow word still finds the network.
+  for (const query of queries) expect(query.split(" ").length).toBeGreaterThan(1);
+});
+
+test("a barely-used install still gets topics rather than none", () => {
+  // Two posts: every term is in both, so an unsmoothed idf would zero them all.
+  ourHistory();
+  const index = topicIndex(listHistory(), { days: 14, now: T0 });
+  expect(index.topics.length).toBeGreaterThan(0);
+  expect(MAX_DF).toBeLessThan(1);
 });
