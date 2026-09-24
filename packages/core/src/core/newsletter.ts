@@ -39,7 +39,8 @@ import { extname } from "node:path";
 import { createHash, createHmac, randomBytes } from "node:crypto";
 import { addressOf, type SmtpMessage, type SmtpOptions, type SmtpServer } from "./smtp.ts";
 import { resolveSender, sendEach, smtpProvider, type MailMessage, type MailSender } from "./mail/index.ts";
-import { escapeHtml, renderMarkdown } from "../util/markdown.ts";
+import { escapeHtml, firstParagraph, renderMarkdown } from "../util/markdown.ts";
+import { hasBrand, layoutNewsletter, safeAccent, type NewsletterBrand } from "./newsletter-layout.ts";
 import { getJson, postJson } from "../util/http.ts";
 import { loadSettings, type NewsletterCta } from "../store/settings.ts";
 import { addToList, optIn, optOut, readContacts, recipients, upsertContact, removeFromList, contactId, type Contact } from "../store/contacts.ts";
@@ -262,6 +263,8 @@ export interface NewsletterComposeOptions {
   cta?: NewsletterCta | null;
   /** Set, every link goes through a signed click URL and the HTML carries the open pixel. */
   tracking?: { tracking: Tracking; ids: TrackingIds };
+  /** Set with a name or a logo, the issue goes out in the branded layout. */
+  brand?: NewsletterBrand;
 }
 
 /** `https://...` in plain text; trailing sentence punctuation is left outside the link. */
@@ -296,18 +299,31 @@ export function composeNewsletter(
     });
   const text = `${textBody.trimEnd()}\n\n-- \n${reason}\nUnsubscribe with one click: ${options.link}\n\n${options.address.trim()}\n`;
 
-  const button = cta
-    ? `<p style="margin:28px 0"><a href="${escapeHtml(cta.url)}" style="display:inline-block;padding:12px 22px;background:#111827;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:600">${escapeHtml(cta.label)}</a></p>`
-    : "";
+  const branded = hasBrand(options.brand) ? options.brand : undefined;
+  const buttonColor = safeAccent(branded?.accent);
+  const button = !cta
+    ? ""
+    : branded
+      ? `<p style="margin:28px 0;text-align:center"><a href="${escapeHtml(cta.url)}" style="display:inline-block;padding:13px 26px;background:${buttonColor};color:#ffffff;text-decoration:none;border-radius:6px;font-weight:600;font-size:16px">${escapeHtml(cta.label)}</a></p>`
+      : `<p style="margin:28px 0"><a href="${escapeHtml(cta.url)}" style="display:inline-block;padding:12px 22px;background:#111827;color:#ffffff;text-decoration:none;border-radius:6px;font-weight:600">${escapeHtml(cta.label)}</a></p>`;
   let rendered = renderMarkdown(body);
   rendered = rendered.split(`<p>${CTA_MARK}</p>`).join(button).split(CTA_MARK).join(button);
   if (tracked) rendered = rendered.replace(/href="(https?:\/\/[^"]+)"/g, (_, href: string) => `href="${escapeHtml(wrap(href.replace(/&amp;/g, "&")))}"`);
   const small = 'style="font-size:12px;color:#666;line-height:1.5"';
   const pixel = tracked ? `<img src="${escapeHtml(openPixelUrl(tracked.tracking, tracked.ids))}" width="1" height="1" alt="" style="border:0;width:1px;height:1px">\n` : "";
-  const html =
-    `${rendered}\n<hr>\n` +
-    `<p ${small}>${escapeHtml(reason)} <a href="${escapeHtml(options.link)}">Unsubscribe</a>.</p>\n` +
-    `<p ${small}>${escapeHtml(options.address.trim()).replace(/\r?\n/g, "<br>")}</p>\n${pixel}`;
+  const footer =
+    `<p ${small}>${escapeHtml(reason)} <a href="${escapeHtml(options.link)}"${branded ? ' style="color:#666;text-decoration:underline"' : ""}>Unsubscribe</a>.</p>\n` +
+    `<p ${small}>${escapeHtml(options.address.trim()).replace(/\r?\n/g, "<br>")}</p>\n`;
+  const html = branded
+    ? layoutNewsletter({
+        subject: options.subject ?? newsletter.subject,
+        body: rendered,
+        footer,
+        preview: firstParagraph(body.split(CTA_MARK).join("")).replace(/[*_`#>[\]]/g, "").slice(0, 140),
+        brand: branded,
+        pixel,
+      })
+    : `${rendered}\n<hr>\n${footer}${pixel}`;
   return {
     subject: options.subject ?? newsletter.subject,
     text,
@@ -652,6 +668,7 @@ export async function sendNewsletter(id: string, options: SendNewsletterOptions 
       token,
       subject: `${subjectPrefix}${variant.subject}`,
       cta: variant.cta,
+      brand: loadSettings().newsletter.brand,
       ...(tracking ? { tracking: { tracking, ids } } : {}),
     });
     return { message, msgId };

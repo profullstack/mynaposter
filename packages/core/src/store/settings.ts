@@ -4,6 +4,7 @@ import { SETTINGS_FILE } from "../util/paths.ts";
 import { DEFAULT_PACING, type PacingSettings } from "../core/pacing.ts";
 import { DEFAULT_EVERGREEN, type EvergreenSettings } from "../core/evergreen.ts";
 import { DEFAULT_RECAP, type RecapSettings } from "../core/recap.ts";
+import { DEFAULT_BRAND, type NewsletterBrand } from "../core/newsletter-layout.ts";
 
 export interface Settings {
   /** Default `--to` value when none is given. "all" posts everywhere. */
@@ -255,6 +256,8 @@ export interface NewsletterSettings {
   paceMs: number;
   /** Named sets of calls to action; an issue with a set rotates through it, one per variant. */
   ctaSets: Record<string, NewsletterCta[]>;
+  /** Logo, name and accent colour. With a name or a logo set, issues go out in the branded layout. */
+  brand: NewsletterBrand;
 }
 
 /** A call to action in a newsletter: the button text and where it goes. */
@@ -277,12 +280,13 @@ export const DEFAULT_NEWSLETTER: NewsletterSettings = {
   trackingHost: "https://crawlproof.com",
   paceMs: 1000,
   ctaSets: { default: DEFAULT_CTAS },
+  brand: DEFAULT_BRAND,
 };
 
 /** Stored over the defaults, with the CTA sets copied so an edit never reaches the defaults. */
 function newsletterSettings(stored: Partial<NewsletterSettings> | undefined): NewsletterSettings {
   const sets = stored?.ctaSets && typeof stored.ctaSets === "object" ? stored.ctaSets : DEFAULT_NEWSLETTER.ctaSets;
-  return { ...DEFAULT_NEWSLETTER, ...stored, ctaSets: structuredClone(sets) };
+  return { ...DEFAULT_NEWSLETTER, ...stored, ctaSets: structuredClone(sets), brand: { ...DEFAULT_BRAND, ...stored?.brand } };
 }
 
 export interface SynconfigSettings {
