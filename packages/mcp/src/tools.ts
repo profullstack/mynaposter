@@ -61,6 +61,13 @@ import {
   subscribers,
   readSubscriberFile,
   parseWhen,
+  listUpvotes,
+  updateUpvote,
+  scanUpvotes,
+  runUpvotes,
+  topicIndex,
+  queriesFor,
+  saveSettings,
 } from "@profullstack/myna-core";
 
 export interface ToolResult {
@@ -492,6 +499,77 @@ export const TOOLS = [
       additionalProperties: false,
     },
   },
+  {
+    name: "myna_upvote_queue",
+    description:
+      "The upvoter's queue: other people's posts myna found worth amplifying because they are about what this " +
+      "account has been posting about, each with the match score, the topics it matched, and what myna intends " +
+      "to do (vote, share, or reply with a link). Read this before casting anything. Nothing here has happened yet.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        status: {
+          type: "string",
+          description: 'Filter: "pending" (the default view), "done", "skipped", "failed", or "all".',
+        },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "myna_upvote_topics",
+    description:
+      "What myna thinks this install is about, read off its own recent posts, plus the searches that follow " +
+      "from it. This is the input to the upvoter: if the topics are wrong, what it finds will be wrong. " +
+      "Reading changes nothing.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+  },
+  {
+    name: "myna_upvote_scan",
+    description:
+      "Search every connected network for other people posting about what this install posts about, score what " +
+      "comes back, and queue what clears the bar. Casts nothing: it only fills the queue, which " +
+      "myna_upvote_send works through. Safe to call.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+  },
+  {
+    name: "myna_upvote_send",
+    description:
+      "Cast what is due in the upvote queue: the votes, the shares, and any replies carrying a link. This acts " +
+      "on other people's posts under this person's own accounts, so it honours every cap (per day, per gap, " +
+      "per author) and refuses networks marked manual-only unless you name them. Use dry_run first.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        limit: { type: "number", description: "At most this many actions this turn, across accounts." },
+        dry_run: { type: "boolean", description: "Show what would be cast and cast nothing. Do this first." },
+        networks: {
+          type: "array",
+          items: { type: "string" },
+          description:
+            'Networks that are manual-only (reddit ships that way, because its API terms forbid automated ' +
+            'voting) to act on anyway. Only name one when the person has actually asked for it.',
+        },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "myna_upvote_set",
+    description:
+      "Turn the upvoter on or off, drop one queued action, or rewrite the reply a queued action carries. " +
+      "Turning it on lets the daemon search and cast on its own, inside the caps.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        enabled: { type: "boolean", description: "Turn the whole engine on or off." },
+        id: { type: "string", description: "A queued action, from myna_upvote_queue." },
+        skip: { type: "boolean", description: "Drop that queued action so it is never cast." },
+        reply: { type: "string", description: "Replace the drafted reply on that queued action." },
+      },
+      additionalProperties: false,
+    },
+  },
 ];
 
 /**
@@ -532,6 +610,128 @@ export async function callTool(name: string, args_: Record<string, unknown> = {}
 
   try {
     switch (name) {
+      case "myna_upvote_queue": {
+        const items = listUpvotes();
+        const wanted = typeof args.status === "string" ? (args.status as string).toLowerCase() : "pending";
+        const list = wanted === "all" ? items : items.filter((item) => item.status === wanted);
+        const settings = loadSettings().upvote;
+        if (!list.length) {
+          return text(
+            `Nothing ${wanted} in the upvote queue. The upvoter is ${settings.enabled ? "on" : "off"}. ` +
+              "myna_upvote_scan searches now.",
+          );
+        }
+        return text({
+          enabled: settings.enabled,
+          caps: {
+            perDay: settings.maxPerDay,
+            gapMinutes: settings.gapMinutes,
+            linksPerDay: settings.linkPerDay,
+            manualOnly: settings.manualOnly,
+          },
+          items: list.map((item) => ({
+            id: item.id,
+            account: item.accountId,
+            action: item.action,
+            handle: item.handle,
+            score: item.score,
+            matched: item.matched,
+            their_post: item.postText,
+            url: item.postUrl,
+            reply: item.reply,
+            link: item.link,
+            status: item.status,
+            due_at: item.dueAt,
+            error: item.error ?? item.reason,
+          })),
+        });
+      }
+
+      case "myna_upvote_topics": {
+        const settings = loadSettings().upvote;
+        const index = topicIndex(listHistory(), { days: settings.topicDays });
+        if (!index.topics.length) {
+          return text(
+            `Nothing posted in the last ${settings.topicDays} days, so the upvoter has no subject to work from. ` +
+              "It follows what you post: post something first.",
+          );
+        }
+        return text({
+          days: settings.topicDays,
+          topics: index.topics.slice(0, 20).map((topic) => ({
+            term: topic.term,
+            weight: Number(topic.weight.toFixed(3)),
+            posts: topic.posts,
+          })),
+          queries: queriesFor(index, settings.queriesPerScan),
+        });
+      }
+
+      case "myna_upvote_scan": {
+        const result = await scanUpvotes();
+        return text({
+          read: result.read,
+          queries: result.queries,
+          queued: result.queued.map((item) => ({
+            id: item.id,
+            account: item.accountId,
+            action: item.action,
+            handle: item.handle,
+            score: item.score,
+            url: item.postUrl,
+            reply: item.reply,
+          })),
+          skipped: result.skipped,
+          note: "Nothing has been cast. myna_upvote_send works through this queue.",
+        });
+      }
+
+      case "myna_upvote_send": {
+        const networks = Array.isArray(args.networks)
+          ? (args.networks as string[]).filter((id) => typeof id === "string")
+          : [];
+        const result = await runUpvotes({
+          ...(typeof args.limit === "number" ? { limit: args.limit as number } : {}),
+          ...(args.dry_run ? { dryRun: true } : {}),
+          ...(networks.length ? { networks } : {}),
+        });
+        return text({
+          cast: result.done.length,
+          dry_run: Boolean(args.dry_run),
+          held: [...new Set(result.held)],
+          items: result.done.map((item) => ({
+            account: item.accountId,
+            action: item.action,
+            handle: item.handle,
+            url: item.result?.url ?? item.postUrl,
+            already: item.result?.already ?? false,
+            status: item.status,
+            error: item.error,
+          })),
+        });
+      }
+
+      case "myna_upvote_set": {
+        const done: string[] = [];
+        if (typeof args.enabled === "boolean") {
+          const settings = loadSettings();
+          settings.upvote.enabled = args.enabled as boolean;
+          saveSettings(settings);
+          done.push(`the upvoter is ${settings.upvote.enabled ? "on" : "off"}`);
+        }
+        if (typeof args.id === "string") {
+          const id = args.id as string;
+          const item = args.skip
+            ? updateUpvote(id, { status: "skipped", reason: "skipped by an assistant" })
+            : typeof args.reply === "string"
+              ? updateUpvote(id, { reply: args.reply as string, drafted: "template", action: "reply" })
+              : undefined;
+          if (!item) return text(`No queued action called ${id}, or nothing asked of it.`);
+          done.push(args.skip ? `dropped ${id}` : `rewrote the reply on ${id}`);
+        }
+        return text(done.length ? done.join("; ") : "Nothing to change: pass enabled, or an id with skip or reply.");
+      }
+
       case "myna_accounts": {
         const accounts = listAccounts().map(({ creds, ...rest }) => rest);
         if (!accounts.length) {

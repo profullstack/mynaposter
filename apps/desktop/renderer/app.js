@@ -56,6 +56,7 @@ function refresh(view) {
   if (view === "history") renderHistory();
   if (view === "settings") renderSettings();
   if (view === "newsletter") renderNewsletter();
+  if (view === "upvote") renderUpvote();
 }
 
 /* ------------------------------------------------------------------ compose */
@@ -486,6 +487,75 @@ async function renderQueue() {
     list.append(card);
   }
 }
+
+/* ------------------------------------------------------------------ upvoter */
+
+/**
+ * The upvoter view.
+ *
+ * Every row is somebody else's post myna found because it is about what this
+ * install posts about. Nothing here has happened yet: the buttons are the
+ * same scan and run the daemon does, under the same caps.
+ */
+async function renderUpvote() {
+  const data = await guard(() => api.upvote.overview());
+  const list = $("#upvote-list");
+  if (!data) return;
+
+  const settings = data.settings;
+  $("#upvote-note").textContent =
+    `${settings.enabled ? "On: searching every 30 minutes." : "Off."} ` +
+    `${data.castToday}/${settings.maxPerDay} cast today per account, ${settings.gapMinutes} min apart. ` +
+    `${data.linksToday}/${settings.linkPerDay} replies with a link today. ` +
+    (data.manualOnly.length ? `Manual only: ${data.manualOnly.join(", ")}. ` : "") +
+    (data.topics.length ? `Topics: ${data.topics.join(", ")}.` : "Nothing posted recently, so no topics yet.");
+
+  if (!data.items.length) {
+    list.innerHTML = `<div class="note">Nothing queued. Search now looks for posts about what you post about.</div>`;
+    return;
+  }
+
+  list.innerHTML = "";
+  for (const item of data.items) {
+    const does = item.action === "reply" ? "reply + vote" : item.action === "repost" ? "share + vote" : "vote";
+    const card = document.createElement("div");
+    card.className = "card";
+    card.innerHTML =
+      `<div><div class="title">${escapeHtml(item.text.slice(0, 80))}</div>` +
+      `<div class="sub">${escapeHtml(item.handle)} · ${escapeHtml(does)} · match ${item.score}` +
+      `${item.matched?.length ? ` · ${escapeHtml(item.matched.join(", "))}` : ""}` +
+      ` · ${new Date(item.dueAt).toLocaleString()}</div>` +
+      (item.reply ? `<div class="sub">${escapeHtml(item.reply)}</div>` : "") +
+      `</div><div class="spacer"></div>`;
+
+    const drop = document.createElement("button");
+    drop.className = "ghost";
+    drop.textContent = "Skip";
+    drop.addEventListener("click", async () => {
+      await guard(() => api.upvote.skip(item.id));
+      renderUpvote();
+    });
+    card.append(drop);
+    list.append(card);
+  }
+}
+
+$("#btn-up-scan").addEventListener("click", async () => {
+  const result = await guard(() => api.upvote.scan());
+  if (result) status(`Read ${result.read}, queued ${result.queued}`, "success");
+  renderUpvote();
+});
+
+$("#btn-up-dry").addEventListener("click", async () => {
+  const result = await guard(() => api.upvote.send({ dryRun: true }));
+  if (result) status(`${result.cast} would be cast, nothing sent`, "success");
+});
+
+$("#btn-up-send").addEventListener("click", async () => {
+  const result = await guard(() => api.upvote.send({}));
+  if (result) status(`${result.cast} cast`, "success");
+  renderUpvote();
+});
 
 /* ------------------------------------------------------------------ history */
 

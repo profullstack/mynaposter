@@ -87,6 +87,8 @@ export interface Settings {
   reshare: ReshareSettings;
   /** Follow-ups: who replied, reposted or followed, and what to send them back. */
   engage: EngageSettings;
+  /** The upvoter: finding posts worth a vote, and what myna may do about them. */
+  upvote: UpvoteSettings;
   /** Where a DID is proved: the CoinPay origin and the OAuth client myna is registered as there. */
   did: DidSettings;
   /** Direct mail and texts: the most that go out in a rolling day. */
@@ -220,6 +222,52 @@ export interface EngageSettings {
   scanLimit: number;
 }
 
+/**
+ * The upvoter: what myna is allowed to do with somebody else's post.
+ *
+ * Every number here is a brake. The engine finds far more that it could vote
+ * on than it should, and these decide how much of that actually goes out:
+ * how close a match has to be, how fast an account may act, and how rarely a
+ * reply is allowed to carry a link. The defaults are deliberately timid.
+ */
+export interface UpvoteSettings {
+  /** Off until a person turns it on. Voting on strangers' posts is not something to do by accident. */
+  enabled: boolean;
+  /** Votes and shares cast per account in a rolling day. */
+  maxPerDay: number;
+  /** Least time between two actions from the same account. */
+  gapMinutes: number;
+  /** One action per author per account inside this window, however many of their posts match. */
+  cooldownDays: number;
+  /** Which networks to amplify on: "all" or a comma list. */
+  networks: string;
+  /**
+   * Networks that are found and queued but never acted on without a person,
+   * whatever `networks` says. Reddit's API terms forbid automated voting, so
+   * it ships here: the queue fills, and `myna upvote send --network reddit`
+   * is a decision somebody makes.
+   */
+  manualOnly: string;
+  /** Results asked of each network per query. */
+  searchLimit: number;
+  /** Queries built per scan, strongest topics first. */
+  queriesPerScan: number;
+  /** How far back our own posts are read to work out what we are about. */
+  topicDays: number;
+  /** A post older than this is stale; the vote reads as a sweep rather than a reader. */
+  maxAgeHours: number;
+  /** 0-1. How well a post must match our topics before it is worth a vote. */
+  minScore: number;
+  /** 0-1. Of the posts voted on, the share also shared onward. 0 turns resharing off. */
+  repostRatio: number;
+  /** 0-1. Of the posts voted on, the share that also gets a reply carrying one of our links. */
+  linkRatio: number;
+  /** A link drop has to be a better match than a bare vote does. */
+  linkMinScore: number;
+  /** Replies carrying a link, per account, in a rolling day. The hard cap under `linkRatio`. */
+  linkPerDay: number;
+}
+
 export interface DidSettings {
   server: string;
   /** A public OAuth client (PKCE, loopback redirect) registered at the server with the `did` scope. */
@@ -340,6 +388,25 @@ export const DEFAULT_ENGAGE: EngageSettings = {
   scanLimit: 40,
 };
 
+export const DEFAULT_UPVOTE: UpvoteSettings = {
+  enabled: false,
+  maxPerDay: 30,
+  gapMinutes: 4,
+  cooldownDays: 3,
+  networks: "all",
+  manualOnly: "reddit",
+  searchLimit: 25,
+  queriesPerScan: 6,
+  topicDays: 14,
+  maxAgeHours: 48,
+  minScore: 0.25,
+  repostRatio: 0.15,
+  // Roughly one reply in sixteen, and never more than `linkPerDay` of them.
+  linkRatio: 0.06,
+  linkMinScore: 0.5,
+  linkPerDay: 2,
+};
+
 export const DEFAULT_SETTINGS: Settings = {
   defaultTargets: "all",
   signature: "",
@@ -378,6 +445,7 @@ export const DEFAULT_SETTINGS: Settings = {
   profile: { ...DEFAULT_PROFILE },
   reshare: { ...DEFAULT_RESHARE },
   engage: { ...DEFAULT_ENGAGE },
+  upvote: { ...DEFAULT_UPVOTE },
   did: { ...DEFAULT_DID },
   outreach: { ...DEFAULT_OUTREACH },
   newsletter: newsletterSettings(undefined),

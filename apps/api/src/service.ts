@@ -23,6 +23,13 @@ import {
   resolveTargets,
   summarize,
   writerAvailable,
+  listUpvotes,
+  updateUpvote,
+  scanUpvotes,
+  runUpvotes,
+  topicIndex,
+  queriesFor,
+  saveSettings,
 } from "@profullstack/myna-core";
 
 export interface PostRequest {
@@ -142,4 +149,110 @@ export async function timeline(spec: string, limit = 20) {
     account: account.id,
     items: (await requireNetwork(account.network).timeline!(account, limit)) ?? [],
   };
+}
+
+/**
+ * The upvoter, as the API and the MCP tools both see it.
+ *
+ * Read the queue, search now, cast what is due, and look at what myna thinks
+ * you are about. The switch lives here too, because an assistant asked to
+ * "start amplifying" should not have to tell somebody to go and run a CLI.
+ */
+export function upvoteQueue(status?: string) {
+  const items = listUpvotes();
+  const wanted = status?.trim().toLowerCase();
+  const list = wanted && wanted !== "all" ? items.filter((item) => item.status === wanted) : items;
+  const settings = loadSettings().upvote;
+  return {
+    enabled: settings.enabled,
+    settings,
+    pending: items.filter((item) => item.status === "pending").length,
+    items: list.map((item) => ({
+      id: item.id,
+      account: item.accountId,
+      network: item.network,
+      action: item.action,
+      handle: item.handle,
+      score: item.score,
+      matched: item.matched,
+      post: { id: item.postId, url: item.postUrl, text: item.postText, at: item.postedAt },
+      reply: item.reply,
+      link: item.link,
+      status: item.status,
+      dueAt: item.dueAt,
+      doneAt: item.doneAt,
+      error: item.error,
+      reason: item.reason,
+    })),
+  };
+}
+
+/** What myna thinks we are about, and the searches that follow from it. */
+export function upvoteTopics() {
+  const settings = loadSettings().upvote;
+  const index = topicIndex(listHistory(), { days: settings.topicDays });
+  return {
+    days: settings.topicDays,
+    topics: index.topics.map((topic) => ({ term: topic.term, weight: Number(topic.weight.toFixed(3)), posts: topic.posts })),
+    queries: queriesFor(index, settings.queriesPerScan),
+  };
+}
+
+export async function upvoteScan() {
+  const result = await scanUpvotes();
+  return {
+    read: result.read,
+    queries: result.queries,
+    skipped: result.skipped,
+    queued: result.queued.map((item) => ({
+      id: item.id,
+      account: item.accountId,
+      action: item.action,
+      handle: item.handle,
+      score: item.score,
+      url: item.postUrl,
+      reply: item.reply,
+    })),
+  };
+}
+
+export async function upvoteSend(options: { limit?: number; dryRun?: boolean; networks?: string[] } = {}) {
+  const result = await runUpvotes({
+    ...(options.limit ? { limit: options.limit } : {}),
+    ...(options.dryRun ? { dryRun: true } : {}),
+    ...(options.networks?.length ? { networks: options.networks } : {}),
+  });
+  return {
+    cast: result.done.length,
+    held: [...new Set(result.held)],
+    items: result.done.map((item) => ({
+      id: item.id,
+      account: item.accountId,
+      action: item.action,
+      handle: item.handle,
+      url: item.result?.url ?? item.postUrl,
+      already: item.result?.already ?? false,
+      status: item.status,
+      error: item.error,
+    })),
+  };
+}
+
+/** Turn the whole thing on or off. */
+export function upvoteEnabled(enabled: boolean) {
+  const settings = loadSettings();
+  settings.upvote.enabled = enabled;
+  saveSettings(settings);
+  return { enabled };
+}
+
+/** Drop one queued action, or change the reply it carries. */
+export function upvoteEdit(id: string, patch: { skip?: boolean; reply?: string }) {
+  const item = patch.skip
+    ? updateUpvote(id, { status: "skipped", reason: "skipped over the API" })
+    : patch.reply
+      ? updateUpvote(id, { reply: patch.reply, drafted: "template", action: "reply" })
+      : undefined;
+  if (!item) throw new Error(`No queued action called ${id}.`);
+  return { id: item.id, status: item.status, action: item.action, reply: item.reply };
 }

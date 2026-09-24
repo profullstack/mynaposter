@@ -246,6 +246,50 @@ app.post("/v1/write", async (context) => {
 });
 
 /**
+ * The upvoter. Same shape as `myna upvote`, because the CLI is the spec.
+ *
+ * `POST /v1/upvote/send` is the only one that touches somebody else's post,
+ * and it honours every cap and the manual-only list exactly as the daemon
+ * does — naming a network in the body is the "a person said so" that a
+ * manual-only network requires.
+ */
+app.get("/v1/upvote", (context) => guard(() => service.upvoteQueue(context.req.query("status")))(context));
+
+app.get("/v1/upvote/topics", guard(() => service.upvoteTopics()));
+
+app.post("/v1/upvote/scan", (context) => guard(async () => await service.upvoteScan())(context));
+
+app.post("/v1/upvote/send", async (context) => {
+  const body = (await context.req.json().catch(() => ({}))) as {
+    limit?: number;
+    dryRun?: boolean;
+    networks?: string[] | string;
+  };
+  const networks = Array.isArray(body.networks)
+    ? body.networks
+    : typeof body.networks === "string"
+      ? body.networks.split(",").map((id) => id.trim()).filter(Boolean)
+      : [];
+  return guard(async () =>
+    await service.upvoteSend({
+      ...(body.limit ? { limit: Number(body.limit) } : {}),
+      ...(body.dryRun ? { dryRun: true } : {}),
+      ...(networks.length ? { networks } : {}),
+    }),
+  )(context);
+});
+
+app.post("/v1/upvote/enabled", async (context) => {
+  const body = (await context.req.json().catch(() => ({}))) as { enabled?: boolean };
+  return guard(() => service.upvoteEnabled(Boolean(body.enabled)))(context);
+});
+
+app.patch("/v1/upvote/:id", async (context) => {
+  const body = (await context.req.json().catch(() => ({}))) as { skip?: boolean; reply?: string };
+  return guard(() => service.upvoteEdit(context.req.param("id"), body))(context);
+});
+
+/**
  * Cloud backup. Entirely optional, and needs the database.
  *
  * These routes sit outside the /v1/* token middleware because they carry their

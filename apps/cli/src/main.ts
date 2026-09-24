@@ -237,6 +237,22 @@ Follow-ups (the people who replied, reposted or followed you):
                                     followLikers, networks
   engage log                        What went out
 
+  upvote                            The queue: whose post, why it matched, and
+                                    what myna will do about it
+  upvote on | off                   Let the daemon search every 30 minutes and
+                                    cast what is due
+  upvote scan                       Search now for people posting about what
+                                    you post about
+  upvote send [--limit N] [--dry-run] [--network reddit]
+                                    Cast what is due. --network names one that
+                                    is manual only
+  upvote topics                     What myna thinks you are about, and what it
+                                    searches for
+  upvote skip <id> | edit <id> "…"  Drop one, or change its reply before it goes
+  upvote set <key> <value>          maxPerDay, gapMinutes, minScore, linkRatio,
+                                    linkPerDay, repostRatio, networks, manualOnly
+  upvote log                        What was cast
+
 Directories (submitting the product, not a post):
   directory                         The directories myna can submit to, and
                                     which of them this machine is signed in to

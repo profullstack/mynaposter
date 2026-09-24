@@ -36,6 +36,14 @@ contextBridge.exposeInMainWorld("myna", {
     remove: (directory, listingId) => call("directories:remove", directory, listingId),
   },
 
+  upvote: {
+    overview: () => call("upvote:overview"),
+    enabled: (on) => call("upvote:enabled", on),
+    scan: () => call("upvote:scan"),
+    send: (options) => call("upvote:send", options),
+    skip: (id) => call("upvote:skip", id),
+    edit: (id, reply) => call("upvote:edit", id, reply),
+  },
   queue: {
     list: () => call("queue:list"),
     add: (options) => call("queue:add", options),

@@ -5,7 +5,7 @@
  * handle and a real password. Use an App Password from Settings → App
  * Passwords rather than the account password.
  */
-import type { Account, Network, PostInput, PostResult, Profile, TimelineItem } from "../types.ts";
+import type { Account, Network, PostInput, PostResult, Profile, TimelineItem, UpvoteResult } from "../types.ts";
 import { getJson, normalizeInstance, postJson, request } from "../../util/http.ts";
 import { countChars } from "../../util/text.ts";
 import { buildPostRecord } from "./bluesky-facets.ts";
@@ -39,6 +39,47 @@ async function uploadBlob(base: string, token: string, item: { data: Uint8Array;
   return ((await response.json()) as { blob: unknown }).blob;
 }
 
+/**
+ * The `{uri, cid}` a like or a repost record has to point at, from whatever
+ * reference a person had to hand.
+ *
+ * A record names a specific version of a post, so the cid is not optional. A
+ * `bsky.app` URL carries neither the DID nor the cid, so both are resolved;
+ * an `at://uri|cid` composite, which is what the timeline and search hand
+ * back, already has them and costs no round trip. `viewer` comes back on the
+ * same lookup and says whether this account has already liked it.
+ */
+async function postSubject(
+  base: string,
+  accessJwt: string,
+  ref: string,
+): Promise<{ uri: string; cid: string; actor: string; rkey: string; likedAt?: string }> {
+  const target = blueskyPostRef(ref);
+
+  let uri = target.uri;
+  if (!uri) {
+    const resolved = await getJson<{ did: string }>(
+      `${base}/xrpc/com.atproto.identity.resolveHandle?handle=${encodeURIComponent(target.actor)}`,
+      { headers: auth(accessJwt) },
+    );
+    uri = `at://${resolved.did}/app.bsky.feed.post/${target.rkey}`;
+  }
+
+  let cid = target.cid;
+  let likedAt: string | undefined;
+  if (!cid) {
+    const found = await getJson<{ posts: { cid: string; viewer?: { like?: string } }[] }>(
+      `${base}/xrpc/app.bsky.feed.getPosts?uris=${encodeURIComponent(uri)}`,
+      { headers: auth(accessJwt) },
+    );
+    const post = found.posts[0];
+    if (!post?.cid) throw new Error(`Bluesky could not find that post: ${ref}`);
+    cid = post.cid;
+    likedAt = post.viewer?.like;
+  }
+  return { uri, cid, actor: target.actor, rkey: target.rkey, ...(likedAt ? { likedAt } : {}) };
+}
+
 export const bluesky: Network = {
   id: "bluesky",
   name: "Bluesky",
@@ -54,7 +95,7 @@ export const bluesky: Network = {
       { key: "service", label: "PDS", optional: true, default: DEFAULT_SERVICE, help: "Only change this for a self-hosted PDS." },
     ],
   },
-  caps: { charLimit: 300, mediaLimit: 4, threads: true, delete: true, timeline: true, notifications: true, stats: true, repost: true, follow: true },
+  caps: { charLimit: 300, mediaLimit: 4, threads: true, delete: true, timeline: true, notifications: true, stats: true, repost: true, search: true, follow: true, upvote: true },
 
   async login(input) {
     const base = input.service ? normalizeInstance(input.service) : DEFAULT_SERVICE;
@@ -183,40 +224,89 @@ export const bluesky: Network = {
   async repost(account, ref) {
     const base = service(account);
     const { accessJwt, did } = await session(account);
-    const target = blueskyPostRef(ref);
-
-    // A bsky.app URL names the author by handle; the record needs their DID.
-    let uri = target.uri;
-    if (!uri) {
-      const resolved = await getJson<{ did: string }>(
-        `${base}/xrpc/com.atproto.identity.resolveHandle?handle=${encodeURIComponent(target.actor)}`,
-        { headers: auth(accessJwt) },
-      );
-      uri = `at://${resolved.did}/app.bsky.feed.post/${target.rkey}`;
-    }
-
-    // A repost record points at a specific version of the post, so it needs
-    // the cid as well as the uri.
-    let cid = target.cid;
-    if (!cid) {
-      const found = await getJson<{ posts: { cid: string }[] }>(
-        `${base}/xrpc/app.bsky.feed.getPosts?uris=${encodeURIComponent(uri)}`,
-        { headers: auth(accessJwt) },
-      );
-      cid = found.posts[0]?.cid;
-      if (!cid) throw new Error(`Bluesky could not find that post: ${ref}`);
-    }
+    const target = await postSubject(base, accessJwt, ref);
 
     const created = await postJson<{ uri: string; cid: string }>(
       `${base}/xrpc/com.atproto.repo.createRecord`,
       {
         repo: did,
         collection: "app.bsky.feed.repost",
-        record: { $type: "app.bsky.feed.repost", subject: { uri, cid }, createdAt: new Date().toISOString() },
+        record: {
+          $type: "app.bsky.feed.repost",
+          subject: { uri: target.uri, cid: target.cid },
+          createdAt: new Date().toISOString(),
+        },
       },
       { headers: auth(accessJwt) },
     );
     return { id: `${created.uri}|${created.cid}`, url: `https://bsky.app/profile/${target.actor}/post/${target.rkey}` };
+  },
+
+  async search(account, query, limit) {
+    const base = service(account);
+    const { accessJwt } = await session(account);
+    const found = await getJson<{ posts: Record<string, any>[] }>(
+      `${base}/xrpc/app.bsky.feed.searchPosts?q=${encodeURIComponent(query)}&limit=${Math.min(100, Math.max(1, limit))}`,
+      { headers: auth(accessJwt) },
+    );
+    return (found.posts ?? []).map((post): TimelineItem => ({
+      // The composite the like and repost records need, so acting on a search
+      // result costs no second lookup.
+      id: `${post.uri}|${post.cid}`,
+      author: post.author?.displayName || post.author?.handle || "",
+      handle: post.author?.handle ?? "",
+      text: post.record?.text ?? "",
+      createdAt: post.record?.createdAt ?? post.indexedAt ?? "",
+      url: `https://bsky.app/profile/${post.author?.handle}/post/${String(post.uri).split("/").pop()}`,
+      likes: post.likeCount,
+      reposts: post.repostCount,
+      replies: post.replyCount,
+    }));
+  },
+
+  async upvote(account, ref, direction = 1): Promise<UpvoteResult> {
+    const base = service(account);
+    const { accessJwt, did } = await session(account);
+    const target = await postSubject(base, accessJwt, ref);
+    const url = `https://bsky.app/profile/${target.actor}/post/${target.rkey}`;
+
+    // `viewer.like` is the record this account already wrote, when it has.
+    // The composite form skips that lookup, so ask for it when it is missing.
+    let existing = target.likedAt;
+    if (existing === undefined) {
+      const found = await getJson<{ posts: { viewer?: { like?: string } }[] }>(
+        `${base}/xrpc/app.bsky.feed.getPosts?uris=${encodeURIComponent(target.uri)}`,
+        { headers: auth(accessJwt) },
+      );
+      existing = found.posts[0]?.viewer?.like;
+    }
+
+    if (direction === 0) {
+      if (!existing) return { already: true, url };
+      await postJson(
+        `${base}/xrpc/com.atproto.repo.deleteRecord`,
+        { repo: did, collection: "app.bsky.feed.like", rkey: String(existing).split("/").pop() },
+        { headers: auth(accessJwt) },
+      );
+      return { url };
+    }
+
+    if (existing) return { already: true, id: existing, url };
+
+    const created = await postJson<{ uri: string }>(
+      `${base}/xrpc/com.atproto.repo.createRecord`,
+      {
+        repo: did,
+        collection: "app.bsky.feed.like",
+        record: {
+          $type: "app.bsky.feed.like",
+          subject: { uri: target.uri, cid: target.cid },
+          createdAt: new Date().toISOString(),
+        },
+      },
+      { headers: auth(accessJwt) },
+    );
+    return { id: created.uri, url };
   },
 
   async following(account, handle, limit) {

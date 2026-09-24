@@ -1,5 +1,5 @@
 /** Lemmy. Real username + password login, posts go to a community. */
-import type { Network, TimelineItem } from "../types.ts";
+import type { Network, TimelineItem, UpvoteResult } from "../types.ts";
 import { getJson, normalizeInstance, postJson, request } from "../../util/http.ts";
 
 const auth = (token: string) => ({ authorization: `Bearer ${token}` });
@@ -8,6 +8,8 @@ interface PostView {
   post: { id: number; name: string; body?: string; url?: string; published: string; ap_id: string };
   creator: { name: string; display_name?: string };
   counts?: { score: number; comments: number };
+  /** 1, 0 or -1: what this account has already cast on it. */
+  my_vote?: number;
 }
 
 export const lemmy: Network = {
@@ -27,7 +29,7 @@ export const lemmy: Network = {
       { key: "community", label: "Default community", optional: true, placeholder: "technology" },
     ],
   },
-  caps: { charLimit: 0, mediaLimit: 1, threads: false, delete: true, timeline: true, notifications: false, stats: true, needsTitle: true },
+  caps: { charLimit: 0, mediaLimit: 1, threads: false, delete: true, timeline: true, notifications: false, stats: true, needsTitle: true, search: true, upvote: true },
 
   async login(input) {
     const instance = normalizeInstance(input.instance);
@@ -98,5 +100,46 @@ export const lemmy: Network = {
       headers: auth(account.creds.token),
     });
     return { likes: result.post_view.counts?.score, replies: result.post_view.counts?.comments };
+  },
+
+  async search(account, query, limit) {
+    const result = await getJson<{ posts: PostView[] }>(
+      `${account.meta.instance}/api/v3/search?type_=Posts&sort=New&listing_type=All` +
+        `&limit=${Math.min(50, Math.max(1, limit))}&q=${encodeURIComponent(query)}`,
+      { headers: auth(account.creds.token) },
+    );
+    return (result.posts ?? []).map((view): TimelineItem => ({
+      id: String(view.post.id),
+      author: view.creator.display_name || view.creator.name,
+      handle: view.creator.name,
+      text: `${view.post.name}${view.post.body ? `\n${view.post.body}` : ""}`,
+      createdAt: view.post.published,
+      url: view.post.ap_id,
+      likes: view.counts?.score,
+      replies: view.counts?.comments,
+    }));
+  },
+
+  async upvote(account, ref, direction = 1): Promise<UpvoteResult> {
+    // A Lemmy vote is by numeric post id. `ap_id` is what search hands back as
+    // the URL, and its last segment is that id on the home instance.
+    const id = Number(/^\d+$/.test(ref.trim()) ? ref.trim() : (ref.split("/").pop() ?? ""));
+    if (!Number.isFinite(id) || id <= 0) throw new Error(`Not a Lemmy post: ${ref}`);
+
+    if (direction === 1) {
+      const current = await getJson<{ post_view: PostView }>(`${account.meta.instance}/api/v3/post?id=${id}`, {
+        headers: auth(account.creds.token),
+      });
+      if (current.post_view.my_vote === 1) {
+        return { already: true, id: String(id), url: current.post_view.post.ap_id };
+      }
+    }
+
+    const voted = await postJson<{ post_view: PostView }>(
+      `${account.meta.instance}/api/v3/post/like`,
+      { post_id: id, score: direction === 0 ? 0 : 1 },
+      { headers: auth(account.creds.token) },
+    );
+    return { id: String(id), url: voted.post_view?.post?.ap_id };
   },
 };

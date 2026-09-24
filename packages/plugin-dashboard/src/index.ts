@@ -53,12 +53,16 @@ import {
   subscribers,
   tally,
   newsletterTracking,
+  listUpvotes,
+  actedToday,
+  manualOnly,
+  topicIndex,
   type Account,
   type MynaPlugin,
   type PluginContext,
   type Settings,
 } from "@profullstack/myna-core";
-import { readSnapshot, type NewsletterSummary, type Snapshot, type SnapshotInput } from "./snapshot.ts";
+import { readSnapshot, type NewsletterSummary, type Snapshot, type SnapshotInput, type UpvoteSummary } from "./snapshot.ts";
 import { page } from "./page.ts";
 
 export const DEFAULT_PORT = 7777;
@@ -104,8 +108,56 @@ export function snapshot(now?: number): Snapshot {
     settings: loadSettings,
     skills: (_accounts, settings) => skillRows(allTargets(), settings),
     newsletter: newsletterSummary,
+    upvote: upvoteSummary,
     now,
   });
+}
+
+/**
+ * The upvoter panel: what is queued against other people's posts, and the
+ * caps it is running under. Leads with the caps because that is the number
+ * that matters when the engine is acting on strangers.
+ */
+export function upvoteSummary(): UpvoteSummary {
+  const settings = loadSettings().upvote;
+  const items = listUpvotes();
+  const pending = items.filter((item) => item.status === "pending");
+  const now = Date.now();
+  const accounts = new Set(items.map((item) => item.accountId));
+  let castToday = 0;
+  let linksToday = 0;
+  for (const id of accounts) {
+    castToday += actedToday(items, id, now);
+    linksToday += actedToday(items, id, now, "reply");
+  }
+  const index = topicIndex(listHistory(), { days: settings.topicDays, now });
+  return {
+    enabled: settings.enabled,
+    pending: pending.length,
+    pendingLinks: pending.filter((item) => item.action === "reply").length,
+    castToday,
+    linksToday,
+    perDay: settings.maxPerDay,
+    linksPerDay: settings.linkPerDay,
+    gapMinutes: settings.gapMinutes,
+    manualOnly: [...manualOnly(settings)],
+    topics: index.topics.slice(0, 8).map((topic) => topic.term),
+    items: pending
+      .sort((a, b) => a.dueAt.localeCompare(b.dueAt))
+      .slice(0, 12)
+      .map((item) => ({
+        id: item.id,
+        account: item.accountId,
+        network: item.network,
+        action: item.action,
+        handle: item.handle,
+        score: item.score,
+        text: item.postText.slice(0, 180),
+        ...(item.postUrl ? { url: item.postUrl } : {}),
+        ...(item.reply ? { reply: item.reply } : {}),
+        dueAt: item.dueAt,
+      })),
+  };
 }
 
 /** The newsletter panel: every issue with its deliveries, and every list's size. */

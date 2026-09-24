@@ -108,6 +108,7 @@ import { runHandoff } from "./handoff.ts";
 import { runConnect } from "./connect.ts";
 import { runSynconfig } from "./synconfig.ts";
 import { runEngage } from "./engage.ts";
+import { runUpvote } from "./upvote.ts";
 import { runDid } from "./did.ts";
 import { runContacts, runEmail, runSms, runSmtp } from "./outreach.ts";
 import { runNewsletter } from "./newsletter.ts";
@@ -580,6 +581,13 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
     case "followups": {
       await ensureUnlocked();
       return await runEngage(positional, flags);
+    }
+
+    case "upvote":
+    case "upvotes":
+    case "amplify": {
+      await ensureUnlocked();
+      return await runUpvote(positional, flags);
     }
 
     case "did": {

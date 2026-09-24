@@ -247,6 +247,12 @@ a { color: inherit; }
   </section>
 
   <section class="card full">
+    <h2>Upvoter</h2>
+    <p class="note" id="upvote-note">Other people's posts myna found worth amplifying, because they are about what you post about. <code>myna upvote</code> shows the same queue and casts it.</p>
+    <div id="upvote"></div>
+  </section>
+
+  <section class="card full">
     <h2>Pacing</h2>
     <div id="pacing"></div>
   </section>
@@ -529,6 +535,36 @@ function drawNewsletters(snap) {
   $("newsletters").innerHTML = (setup ? \`<p class="note">\${setup}</p>\` : "") + issues + lists;
 }
 
+function drawUpvote(snap) {
+  const up = snap.upvote ?? { enabled: false, items: [], topics: [], manualOnly: [] };
+  const head = [
+    up.enabled ? "On: searching every 30 minutes and casting what is due." : "Off (myna upvote on).",
+    \`\${up.castToday}/\${up.perDay} cast today per account, \${up.gapMinutes} min apart.\`,
+    \`\${up.linksToday}/\${up.linksPerDay} replies carrying a link today.\`,
+    up.manualOnly.length ? \`Manual only: \${up.manualOnly.map(esc).join(", ")}.\` : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const topics = up.topics.length
+    ? \`<p class="note">What myna thinks you are about: \${up.topics.map(esc).join(", ")}</p>\`
+    : '<p class="note">No subject yet: the upvoter follows what you post, so post something first.</p>';
+  const rows = !up.items.length
+    ? '<p class="empty">Nothing queued. myna upvote scan searches now.</p>'
+    : \`<table><thead><tr><th>Due</th><th>Account</th><th>Does</th><th>Whose</th><th>Match</th><th>Their post</th></tr></thead><tbody>\${up.items
+        .map(
+          (row) => \`<tr>
+            <td class="when">\${clock(Date.parse(row.dueAt))}</td>
+            <td class="reason">\${esc(row.account)}</td>
+            <td>\${row.action === "reply" ? statusCell("hold", "reply + vote") : row.action === "repost" ? statusCell("", "share + vote") : statusCell("ok", "vote")}</td>
+            <td class="when">\${esc(row.handle)}</td>
+            <td class="when">\${row.score}</td>
+            <td class="text">\${esc(trim(row.text, 80))}\${row.reply ? \`<br><span class="reason">\${esc(trim(row.reply, 90))}</span>\` : ""}</td>
+          </tr>\`,
+        )
+        .join("")}</tbody></table>\`;
+  $("upvote").innerHTML = \`<p class="note">\${head}</p>\` + topics + rows;
+}
+
 function drawPacing(snap) {
   const ever = snap.evergreen;
   $("pacing").innerHTML = \`<table><thead><tr><th>Rule</th><th>Setting</th><th>What it does</th></tr></thead><tbody>
@@ -572,6 +608,7 @@ function render(snap) {
   drawHistory(snap);
   drawSkills(snap);
   drawNewsletters(snap);
+  drawUpvote(snap);
   drawPacing(snap);
   $("updated").textContent = \`updated \${clock(Date.now())}\`;
 }

@@ -445,3 +445,75 @@ export async function replyDraft(request: ReplyRequest): Promise<string> {
   if (!text) throw new Error("The writer returned an empty reply.");
   return limit && text.length > limit ? `${text.slice(0, limit - 1).trimEnd()}…` : text;
 }
+
+/**
+ * The system prompt for a link drop.
+ *
+ * This is the riskiest thing myna writes: a reply on a stranger's post, from
+ * an account with something to sell, carrying a link to that something. The
+ * difference between a useful comment and spam is entirely in here, so the
+ * rules are strict and the escape hatch is real — a draft that cannot justify
+ * the link returns an empty string and the engine downgrades the action to a
+ * plain vote rather than sending something nobody asked for.
+ */
+const LINK_SYSTEM = `You are replying to a stranger's post on a social network, as someone who works on the thing being linked. You are a guest in their thread.
+
+Rules, all of them load-bearing:
+- Reply to what they actually said. Pick up one specific detail of their post and respond to it. A reply that could sit under any post is a failure.
+- The link is secondary and goes last. It is offered as "here is the thing I wrote about that", never as a pitch. No "check out", no "you should try", no "we built", no call to action of any kind.
+- One or two sentences before the link. Three at the absolute most. Plain and specific.
+- No em dashes. No hashtags. No emoji. No exclamation marks. No "great post", no "this is so true", no "couldn't agree more", no "love this".
+- Never claim to have used their thing, met them, or had an experience you did not have. Never invent a fact about the product.
+- Never argue, correct them, or one-up them. If their post is a complaint about something the link would look like an advert for, you must decline.
+- Decline whenever the link would not genuinely help the person reading. Declining is the correct answer far more often than not, and costs nothing.
+
+Return JSON: {"text": "<the reply including the link>"} — or {"text": ""} to decline.`;
+
+export interface LinkDropRequest {
+  /** Whose post it is, as the network names them. */
+  handle: string;
+  /** What they wrote. */
+  theirText: string;
+  /** The URL to offer, which is one of our own posts. */
+  link: string;
+  /** What that post of ours says, so the reply can be honest about it. */
+  ourText: string;
+  network?: string;
+  /** Overrides the saved voice for this reply only. */
+  voice?: string;
+}
+
+/**
+ * Draft a reply that carries one of our links, or decline.
+ *
+ * Returns an empty string when the writer judged that the link does not
+ * belong under that post. The caller must treat that as a refusal and not
+ * send anything, which is the whole point of asking.
+ */
+export async function linkDropDraft(request: LinkDropRequest): Promise<string> {
+  const { ai } = loadSettings();
+  const limit = request.network ? (getNetwork(request.network)?.caps.charLimit ?? 0) : 0;
+  const prompt = [
+    `Voice: ${request.voice ?? ai.voice}`,
+    limit ? `Hard limit: ${limit} characters, including the link.` : "",
+    "",
+    `${request.handle} posted:`,
+    request.theirText,
+    "",
+    `The link you may offer, if and only if it genuinely helps them: ${request.link}`,
+    `What is at that link:`,
+    request.ourText,
+    "",
+    "If it does not genuinely help them, return an empty text and nothing will be sent.",
+  ]
+    .filter((line) => line !== "")
+    .join("\n");
+
+  const raw = await providerComplete(LINK_SYSTEM, prompt, 800);
+  const text = extractJson<{ text: string }>(raw).text.trim();
+  if (!text) return "";
+  // A draft that dropped the link is not a link drop; the engine will see the
+  // missing URL and fall back to a plain vote.
+  if (!text.includes(request.link)) return "";
+  return limit && text.length > limit ? "" : text;
+}

@@ -5,7 +5,7 @@
  * installed one is found on disk at run time. Both go through the same
  * registry, so nothing downstream knows the difference.
  */
-import { loadPlugins, registerPlugin, resharePlugin, engagePlugin, type LoadedPlugin } from "@profullstack/myna-core";
+import { loadPlugins, registerPlugin, resharePlugin, engagePlugin, upvotePlugin, type LoadedPlugin } from "@profullstack/myna-core";
 import outreachgraph from "@profullstack/myna-plugin-outreachgraph";
 import crawlproof from "@profullstack/myna-plugin-crawlproof";
 import calendar from "@profullstack/myna-plugin-calendar";
@@ -21,6 +21,7 @@ export function preparePlugins(): Promise<LoadedPlugin[]> {
     registerPlugin(dashboard, "bundled");
     registerPlugin(resharePlugin, "bundled");
     registerPlugin(engagePlugin, "bundled");
+    registerPlugin(upvotePlugin, "bundled");
     prepared = loadPlugins();
   }
   return prepared;

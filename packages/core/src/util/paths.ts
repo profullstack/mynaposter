@@ -61,5 +61,7 @@ export const PROFILE_FILE = "openprofile.md";
 export const RECAP_FILE = "recap.json";
 /** Hand-off cards: the steps a person does by hand. Plain JSON, nothing secret. */
 export const HANDOFFS_FILE = "handoffs.json";
+/** The upvoter: what was found worth a vote, what was done about it, and what has been seen before. */
+export const UPVOTE_FILE = "upvote.json";
 /** Where `myna plugins add <package>` installs to. */
 export const PLUGINS_DIR = "plugins";
