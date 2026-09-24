@@ -34,6 +34,7 @@
  * itself and stops this one; a connection that died leaves the rows pending
  * (uncertain), as a dropped SMTP conversation always has.
  */
+import { acquireSendLock, liveSendLock } from "./newsletter-lock.ts";
 import { readFileSync } from "node:fs";
 import { extname } from "node:path";
 import { createHash, createHmac, randomBytes } from "node:crypto";
@@ -725,7 +726,23 @@ export function addressFor(newsletter: Newsletter): string {
   return address;
 }
 
+/**
+ * Send an issue. A list send (not a test copy, not a dry run) holds the
+ * issue's send lock the whole way, so a second process sending the same issue
+ * at the same time is refused instead of walking the same ledger.
+ */
 export async function sendNewsletter(id: string, options: SendNewsletterOptions = {}): Promise<SendNewsletterReport> {
+  if (options.dryRun || options.test) return await sendNewsletterUnlocked(id, options);
+  const newsletter = requireNewsletter(id);
+  const release = acquireSendLock(newsletter.id);
+  try {
+    return await sendNewsletterUnlocked(newsletter.id, options);
+  } finally {
+    release();
+  }
+}
+
+async function sendNewsletterUnlocked(id: string, options: SendNewsletterOptions): Promise<SendNewsletterReport> {
   const log = options.log ?? (() => undefined);
   const now = options.now ?? new Date();
   const sleep = options.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
@@ -1077,6 +1094,9 @@ export async function runDueNewsletters(now = new Date(), options: Omit<SendNews
   );
   const reports: SendNewsletterReport[] = [];
   for (const entry of due) {
+    // Already going out from another process (a background blast): leave it be.
+    const held = liveSendLock(entry.id);
+    if (held && held.pid !== process.pid) continue;
     const report = await sendNewsletter(entry.id, { ...options, now });
     reports.push(report);
     // Nothing went out and nothing can: the cap is spent for today.
