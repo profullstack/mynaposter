@@ -414,6 +414,7 @@ export { readEngage, writeEngage, listFollowUps, updateFollowUp, clearEngage, fo
 export { engagePlugin, ENGAGE_SCAN_EVERY_MS, ENGAGE_SEND_EVERY_MS } from "./plugins/engage-plugin.ts";
 export { replyDraft, type ReplyRequest } from "./ai/writer.ts";
 export { DEFAULT_ENGAGE, type EngageSettings } from "./store/settings.ts";
+export { DEFAULT_AUTOPILOT, type AutopilotSettings } from "./store/settings.ts";
 
 // The upvoter: finding other people posting about what we post about, and
 // voting on it, sharing some of it, and once in a while replying with a link.
@@ -611,3 +612,54 @@ export {
   type VariantProgress,
   type CleanResult,
 } from "./core/newsletter-blast.ts";
+
+// The brand: one Markdown file everything that writes reads first.
+export {
+  brandPath,
+  brandPrompt,
+  hasBrand,
+  learnBrand,
+  loadBrand,
+  parseBrand,
+  renderBrand,
+  saveBrand,
+  EMPTY_BRAND,
+  type Brand,
+  type LearnOptions,
+  type LearnResult,
+  type Pillar,
+} from "./core/brand.ts";
+// Plan items: a subject and an angle on a date, before the copy exists.
+export {
+  addPlanItems,
+  clearOpenPlan,
+  getPlanItem,
+  listPlan,
+  openPlan,
+  pendingPlan,
+  planHasAngle,
+  removePlanItem,
+  updatePlanItem,
+  type PlanItem,
+  type PlanSource,
+  type PlanStatus,
+} from "./store/plan.ts";
+export {
+  draftPlanItem,
+  generatePlan,
+  isoDay,
+  queuePlanItem,
+  type GenerateOptions,
+  type GenerateResult,
+  type QueuePlanResult,
+} from "./core/plan.ts";
+// Atomize: one long source becomes many dated angles.
+export { atomize, type AtomizeOptions, type AtomizeResult } from "./core/atomize.ts";
+// Autopilot: gap-fill to a cadence, never inside the hold window.
+export {
+  cadence,
+  runAutopilot,
+  type AutopilotOptions,
+  type AutopilotTurn,
+  type Cadence,
+} from "./core/autopilot.ts";

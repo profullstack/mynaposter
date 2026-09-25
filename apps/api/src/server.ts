@@ -240,6 +240,49 @@ app.delete("/v1/queue/:id", (context) =>
   })(context),
 );
 
+app.get("/v1/brand", guard(() => service.brand()));
+
+app.post("/v1/brand/learn", async (context) => {
+  const body = await context.req.json().catch(() => ({}));
+  return guard(() => service.brandLearn(body))(context);
+});
+
+app.get("/v1/plan", (context) => guard(() => service.plan(context.req.query("status")))(context));
+
+app.post("/v1/plan/generate", async (context) => {
+  const body = await context.req.json().catch(() => ({}));
+  return guard(() => service.planGenerate(body))(context);
+});
+
+app.post("/v1/atomize", async (context) => {
+  const body = await context.req.json().catch(() => ({}));
+  return guard(() => service.planAtomize(body))(context);
+});
+
+app.post("/v1/plan/:id/draft", async (context) => {
+  const body = (await context.req.json().catch(() => ({}))) as { force?: unknown };
+  return guard(() => service.planDraft(context.req.param("id"), Boolean(body.force)))(context);
+});
+
+app.post("/v1/plan/:id/queue", async (context) => {
+  const body = await context.req.json().catch(() => ({}));
+  return guard(() => service.planQueue(context.req.param("id"), body))(context);
+});
+
+app.delete("/v1/plan/:id", (context) => guard(() => service.planDrop(context.req.param("id")))(context));
+
+app.get("/v1/autopilot", guard(() => service.autopilot()));
+
+app.post("/v1/autopilot/run", async (context) => {
+  const body = (await context.req.json().catch(() => ({}))) as { dryRun?: unknown };
+  return guard(() => service.autopilotRun(Boolean(body.dryRun)))(context);
+});
+
+app.post("/v1/autopilot/enabled", async (context) => {
+  const body = (await context.req.json().catch(() => ({}))) as { enabled?: unknown };
+  return guard(() => service.autopilotEnabled(Boolean(body.enabled)))(context);
+});
+
 app.post("/v1/write", async (context) => {
   const body = await context.req.json().catch(() => ({}));
   return guard(async () => ({ drafts: await service.write(body) }))(context);

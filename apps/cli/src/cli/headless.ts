@@ -108,6 +108,9 @@ import { runHandoff } from "./handoff.ts";
 import { runConnect } from "./connect.ts";
 import { runSynconfig } from "./synconfig.ts";
 import { runEngage } from "./engage.ts";
+import { runBrand } from "./brand.ts";
+import { runPlan, runAtomize } from "./plan.ts";
+import { runAutopilotCommand } from "./autopilot.ts";
 import { runUpvote } from "./upvote.ts";
 import { runDid } from "./did.ts";
 import { runContacts, runEmail, runSms, runSmtp } from "./outreach.ts";
@@ -574,6 +577,27 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
     case "syncfg":
     case "sync": {
       return await runSynconfig(positional, flags);
+    }
+
+    case "brand": {
+      await ensureUnlocked();
+      return await runBrand(positional, flags);
+    }
+
+    case "plan": {
+      await ensureUnlocked();
+      return await runPlan(positional, flags);
+    }
+
+    case "atomize":
+    case "split": {
+      await ensureUnlocked();
+      return await runAtomize(positional, flags);
+    }
+
+    case "autopilot": {
+      await ensureUnlocked();
+      return await runAutopilotCommand(positional, flags);
     }
 
     case "engage":

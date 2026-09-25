@@ -64,6 +64,20 @@ machine and nothing is sent anywhere except the posts you make.
   daily email cap, and resumes from a per-recipient ledger so nobody gets an
   issue twice. Every issue carries a one-click unsubscribe and your postal
   address. See [Newsletters](#newsletters).
+- **Sound like yourself.** One Markdown file says who you are, who you are
+  talking to, the subjects you keep returning to and what never goes out.
+  `myna brand learn` writes it from the posts you have already sent, without
+  asking a single question, and every path that drafts anything reads it.
+  See [The brand](#the-brand).
+- **Plan in angles, not posts.** A plan item is a subject and an argument on a
+  date, with no copy written yet. `myna atomize <url>` splits one long thing
+  you wrote into the separate arguments inside it and dates them across the
+  weeks ahead. See [The plan](#the-plan).
+- **Fill the gaps, not the calendar.** `myna autopilot` counts what you posted
+  last week and what is booked for next week, and does nothing at all while you
+  are meeting your own cadence. When you fall short it takes the next angle off
+  the plan, drafts it, and books it no sooner than a day out, so there is always
+  time to cancel. See [Autopilot](#autopilot).
 - **Plugins.** A plugin can add a network, a command, a daemon task or a source
   of people to follow. The bundled one pulls seeds from
   [OutreachGraph](https://outreachgraph.com). See [Plugins](#plugins).
@@ -420,7 +434,9 @@ myna crawlproof <subcommand>      myna calendar <subcommand>
 myna directory <id> <url>         myna directory listings [id]
 myna skill list | show | init     myna skill add | default | rotate
 myna skill show type:<slug>       myna post --type <slug>
-myna utm [--add example.com]
+myna utm [--add example.com]      myna brand [learn|edit|set|pillar]
+myna plan [generate|draft|queue]  myna atomize <url|file>
+myna autopilot [on|off|now|set]
 ```
 
 Flags: `--to`, `--title`, `--media`, `--style`, `--json`, `--dry-run`,
@@ -688,6 +704,137 @@ Google is the first provider; the network is `gcal` so another calendar can be
 another network in the same plugin. While the OAuth client's consent screen is
 in testing, Google expires the sign-in after seven days; publish the consent
 screen and the sign-in is permanent.
+
+## The brand
+
+myna used to have one knob for this: `ai.voice`, a single sentence. That is
+enough to stop a draft sounding like a press release and nowhere near enough to
+make two drafts sound like the same person.
+
+The brand is one Markdown file in `~/.config/myna/brand.md`, with fixed
+headings, which everything that writes reads first: the writer, follow-up
+replies, upvote replies, newsletter issues, infographic copy.
+
+```bash
+myna brand learn                    # from the posts you have already sent
+myna brand                          # what it says now
+myna brand edit                     # it is Markdown, edit it
+```
+
+`learn` asks nothing. It reads your sent history, your OpenProfile and your
+site, and writes the file. A brand you have to sit an interview for is a brand
+that never gets written. It needs at least three sent posts to have anything to
+go on, and it keeps the `Links` section it finds, because the model has no
+business inventing URLs.
+
+```markdown
+# Profullstack
+
+## Audience
+
+People who run their own infrastructure and would rather read a man page.
+
+## Voice
+
+Short declaratives. Name the failure before the fix. Never open with a question.
+
+## Pillars
+
+- Terminals: a terminal beats a dashboard for anything you repeat
+- Self-hosting: you should own the credentials
+
+## Avoid
+
+- excited to announce
+- game changer
+```
+
+Every field can also be set from the command line, which is what a script
+wants:
+
+```bash
+myna brand set voice "Short declaratives. Name the failure before the fix."
+myna brand pillar add "Licensing: who it actually protects"
+myna brand avoid add "excited to announce"
+```
+
+## The plan
+
+The queue holds posts: finished text with a send time. The plan is the step
+before that, and it holds *angles*: a subject and the argument a post would
+make, on a date, with no copy written yet.
+
+That separation is the whole point. A month generated as finished posts is a
+month of copy to delete. A month generated as angles is a list you can read in
+thirty seconds and strike half of, and the writer runs later, when you have
+picked one.
+
+```bash
+myna plan                            # what is planned, and what state it is in
+myna plan generate --days 30 --per-week 5
+myna plan draft <id>                 # write the copy for one angle
+myna plan queue <id>                 # book it into the pacing queue
+myna plan drop <id>
+```
+
+`generate` works from the brand's pillars and spreads the slots evenly over the
+window. It reads what you have already sent so it does not re-argue last week,
+and it skips an angle that is already in the plan.
+
+### Atomizing something you already wrote
+
+One long piece carries five or ten separate arguments and gets read for a day.
+`myna atomize` pulls the arguments out and dates them.
+
+```bash
+myna atomize https://example.com/blog/post --angles 12 --over 30d
+myna atomize ./whitepaper.md --dry-run      # the angles, nothing written
+```
+
+It takes a URL or a local file: a post, a whitepaper, a transcript, a release
+note. The rule the model is held to is that every angle must be a claim the
+source actually makes, so nothing is invented on the way out. What lands is
+plan items, not posts, so nothing is drafted until you ask.
+
+The practice is old enough to have a name that is not ours: content
+atomization, described in 2008, long before a model could do the splitting.
+
+## Autopilot
+
+Off until you turn it on. It only ever fills a gap.
+
+```bash
+myna autopilot                       # where the cadence stands
+myna autopilot on
+myna autopilot set perWeek 5
+myna autopilot set holdHours 24
+myna autopilot now --dry-run         # what it would do, right now
+```
+
+Each turn it counts the distinct posts you sent in the last seven days and what
+is booked for the next seven. If that meets your cadence it stops there and
+does nothing. Post enough yourself and it never runs at all. Fall short and it
+takes the oldest open angle off the plan, drafts it with the brand loaded, and
+hands it to the pacing queue.
+
+Two things keep it honest:
+
+- **The hold window.** Nothing it books is ever due sooner than `holdHours`
+  away, a day by default. It is in `myna queue` and `myna cancel` takes it
+  back. An autopilot that can publish inside the next minute is one you have to
+  watch.
+- **One post a turn.** The daemon calls it hourly. Filling a week's deficit in
+  one burst is the posting pattern that gets accounts flagged, and re-reading
+  the deficit every hour means a post you write yourself at noon cancels the
+  fill that would have gone out that evening.
+
+It refuses out loud rather than silently: no brand, an empty plan, no writer
+key, every account held back by its own pacing rules. `myna autopilot` prints
+the same sentence the daemon logs, so "why has it not posted" always has an
+answer.
+
+Counting is by distinct text, not by history entry: a post that fanned out to
+six accounts is one post, not six.
 
 ## The writer
 
