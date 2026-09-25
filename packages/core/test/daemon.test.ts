@@ -37,9 +37,12 @@ test("a job that throws does not stop the ones after it", async () => {
   expect(lines).toEqual(["first  failed: nope", "second  fine"]);
 });
 
-test("posts, newsletters and the recap always run; the follow graph and plugin work only when configured", () => {
+test("posts, newsletters, the recap and the autopilot always run; the follow graph and plugin work only when configured", () => {
   const log = () => {};
-  expect(builtinJobs(log, 1000).map((job) => job.id)).toEqual(["posts", "newsletter", "recap"]);
+  // The autopilot registers whether or not it is switched on, like the recap:
+  // it reads its own setting each tick, so `myna autopilot on` takes effect
+  // without anybody restarting the daemon.
+  expect(builtinJobs(log, 1000).map((job) => job.id)).toEqual(["posts", "newsletter", "recap", "autopilot"]);
 
   const settings = loadSettings();
   settings.graph.enabled = true;
@@ -53,7 +56,7 @@ test("posts, newsletters and the recap always run; the follow graph and plugin w
   });
 
   const jobs = builtinJobs(log, 1000);
-  expect(jobs.map((job) => job.id)).toEqual(["posts", "newsletter", "recap", "graph.expand", "graph.follow", "p.t", "p.seeds.s"]);
+  expect(jobs.map((job) => job.id)).toEqual(["posts", "newsletter", "recap", "autopilot", "graph.expand", "graph.follow", "p.t", "p.seeds.s"]);
   // Six an hour means one every ten minutes, not six at once.
   expect(jobs.find((job) => job.id === "graph.follow")?.everyMs).toBe(600_000);
   expect(jobs.find((job) => job.id === "p.t")?.everyMs).toBe(5000);

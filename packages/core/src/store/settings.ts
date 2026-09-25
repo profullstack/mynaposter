@@ -87,6 +87,8 @@ export interface Settings {
   reshare: ReshareSettings;
   /** Follow-ups: who replied, reposted or followed, and what to send them back. */
   engage: EngageSettings;
+  /** Gap-fill posting: hold a cadence from the plan, never sooner than the hold window. */
+  autopilot: AutopilotSettings;
   /** The upvoter: finding posts worth a vote, and what myna may do about them. */
   upvote: UpvoteSettings;
   /** Where a DID is proved: the CoinPay origin and the OAuth client myna is registered as there. */
@@ -198,6 +200,21 @@ export const DEFAULT_RESHARE: ReshareSettings = {
   bountyUsd: 0,
   maxSharers: 10,
 };
+
+export interface AutopilotSettings {
+  /** Off until somebody turns it on. Posting on your behalf is not a default. */
+  enabled: boolean;
+  /** The cadence it holds to, counting everything you post yourself. */
+  perWeek: number;
+  /** Nothing is booked closer than this. Your window to override. */
+  holdHours: number;
+  /** Where gap-fills go: "all", a network, a comma list. Empty uses defaultTargets. */
+  to: string;
+  /** Generate more angles when the plan runs dry. */
+  refillPlan: boolean;
+  /** Keep at least this many days of plan ahead when refilling. */
+  planAheadDays: number;
+}
 
 export interface EngageSettings {
   /** Off until a person turns it on. Replying to people is not something to do by accident. */
@@ -381,6 +398,15 @@ export const DEFAULT_DID: DidSettings = {
   clientId: "cp_3aedc5cd194ff147d86341a2",
 };
 
+export const DEFAULT_AUTOPILOT: AutopilotSettings = {
+  enabled: false,
+  perWeek: 5,
+  holdHours: 24,
+  to: "",
+  refillPlan: true,
+  planAheadDays: 30,
+};
+
 export const DEFAULT_ENGAGE: EngageSettings = {
   enabled: false,
   maxPerDay: 20,
@@ -455,6 +481,7 @@ export const DEFAULT_SETTINGS: Settings = {
   profile: { ...DEFAULT_PROFILE },
   reshare: { ...DEFAULT_RESHARE },
   engage: { ...DEFAULT_ENGAGE },
+  autopilot: { ...DEFAULT_AUTOPILOT },
   upvote: { ...DEFAULT_UPVOTE },
   did: { ...DEFAULT_DID },
   outreach: { ...DEFAULT_OUTREACH },
@@ -492,6 +519,7 @@ export function loadSettings(): Settings {
     profile: { ...DEFAULT_PROFILE, ...stored.profile },
     reshare: { ...DEFAULT_RESHARE, ...stored.reshare },
     engage: { ...DEFAULT_ENGAGE, ...stored.engage },
+    autopilot: { ...DEFAULT_AUTOPILOT, ...stored.autopilot },
     did: { ...DEFAULT_DID, ...stored.did },
     outreach: { ...DEFAULT_OUTREACH, ...stored.outreach },
     newsletter: newsletterSettings(stored.newsletter),

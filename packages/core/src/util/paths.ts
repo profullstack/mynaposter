@@ -65,3 +65,8 @@ export const HANDOFFS_FILE = "handoffs.json";
 export const UPVOTE_FILE = "upvote.json";
 /** Where `myna plugins add <package>` installs to. */
 export const PLUGINS_DIR = "plugins";
+
+/** The brand: voice, audience, pillars and what we refuse to say. Markdown, editable by hand. */
+export const BRAND_FILE = "brand.md";
+/** Plan items: a topic and an angle on a date, before anyone has written the copy. */
+export const PLAN_FILE = "plan.json";

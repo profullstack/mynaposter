@@ -26,6 +26,19 @@ import {
   summarize,
   tailor,
   writerAvailable,
+  loadBrand,
+  learnBrand,
+  brandPath,
+  listPlan,
+  pendingPlan,
+  getPlanItem,
+  removePlanItem,
+  generatePlan,
+  draftPlanItem,
+  queuePlanItem,
+  atomize,
+  cadence,
+  runAutopilot,
   buildListing,
   submitListing,
   directoryStatus,
@@ -83,6 +96,135 @@ const TARGET_DESCRIPTION =
   "configured default, which is usually every connected account.";
 
 export const TOOLS = [
+  {
+    name: "myna_brand",
+    description:
+      "Read the brand: audience, positioning, voice, the subjects this person returns to, and what never goes " +
+      "out. One Markdown file on this machine that every myna writing path already loads. Read it before " +
+      "drafting anything so your copy matches what they actually sound like. Returns null when none is written " +
+      "yet, in which case myna_brand_learn writes one from their own posts.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+  },
+  {
+    name: "myna_brand_learn",
+    description:
+      "Write the brand file from evidence: the posts already sent from this machine, the OpenProfile, and " +
+      "optionally a page. Asks no questions. Overwrites the existing brand file, keeping its Links. Needs at " +
+      "least three sent posts to learn from.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        url: { type: "string", description: "A page to read as well, for a product the posts only allude to. Defaults to the OpenProfile's web address." },
+        limit: { type: "number", description: "How many sent posts to read. Default 120." },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "myna_plan",
+    description:
+      "The content plan: a subject and an angle on a date, with no copy written yet. This is the layer above " +
+      "the queue, which holds finished posts. Use it to see what is coming before drafting anything, and to " +
+      "avoid proposing an angle that is already planned.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        status: { type: "string", description: 'One of open, drafted, queued, done, dropped, or "all". Default: the open and drafted ones.' },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "myna_plan_generate",
+    description:
+      "Fill the calendar with angles from the brand's pillars, spread evenly over the window. Produces plan " +
+      "items, never posts: nothing is drafted and nothing is queued. Needs a brand with pillars (myna_brand_learn).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        days: { type: "number", description: "Days forward to spread over. Default 30." },
+        perWeek: { type: "number", description: "Slots a week. Default 5." },
+        to: { type: "string", description: "Where these should go when drafted. Default: the configured targets." },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "myna_atomize",
+    description:
+      "Split one long source into the separate arguments inside it, each dated on the plan. Takes a URL or a " +
+      "path to a local file: a blog post, a whitepaper, a transcript, a release note. Produces plan items, not " +
+      "posts. Use dryRun to see the angles without writing them to the plan.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        source: { type: "string", description: "A URL, or a path to a local file." },
+        angles: { type: "number", description: "How many angles to ask for. Default 12, capped at 40. Fewer are returned when the source carries fewer real arguments." },
+        overDays: { type: "number", description: "Spread them over this many days. Default 30." },
+        dryRun: { type: "boolean", description: "Work out the angles and write nothing." },
+        to: { type: "string", description: "Where these should go when drafted." },
+      },
+      required: ["source"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "myna_plan_draft",
+    description:
+      "Write the copy for one planned angle, with the brand loaded. Stores the draft on the plan item and does " +
+      "not queue it. myna_plan_queue books it afterwards.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "A plan item id, from myna_plan." },
+        force: { type: "boolean", description: "Rewrite a draft that already exists." },
+      },
+      required: ["id"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "myna_plan_queue",
+    description:
+      "Book a planned item into the pacing queue, drafting it first if it has no copy yet. The pacing rules " +
+      "decide the exact time: a gap per network, a daily cap, each account's skill. Nothing is published in " +
+      "this call.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "A plan item id, from myna_plan." },
+        at: { type: "string", description: "Earliest it may go, as an ISO timestamp. The pacing rules may move it later. Default: about now." },
+        to: { type: "string", description: "Override where it goes." },
+      },
+      required: ["id"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "myna_plan_drop",
+    description: "Remove a plan item. An item already queued keeps its queue entry; cancel that with myna_cancel.",
+    inputSchema: {
+      type: "object",
+      properties: { id: { type: "string", description: "A plan item id, from myna_plan." } },
+      required: ["id"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "myna_autopilot",
+    description:
+      "Where the posting cadence stands and what the autopilot would do about it. It only ever fills a gap: " +
+      "with enough posted and booked already it does nothing. Pass run to take one turn now, which books at " +
+      "most one post, never sooner than the hold window.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        run: { type: "boolean", description: "Take a turn rather than only reporting." },
+        dryRun: { type: "boolean", description: "With run: say what it would book and book nothing." },
+      },
+      additionalProperties: false,
+    },
+  },
   {
     name: "myna_accounts",
     description:
@@ -610,6 +752,173 @@ export async function callTool(name: string, args_: Record<string, unknown> = {}
 
   try {
     switch (name) {
+      case "myna_brand": {
+        const brand = loadBrand();
+        if (!brand) {
+          return text(
+            "No brand is written on this machine yet. myna_brand_learn writes one from the posts already sent, " +
+              `or a person can write ${brandPath()} by hand.`,
+          );
+        }
+        return text({
+          path: brandPath(),
+          name: brand.name,
+          audience: brand.audience,
+          positioning: brand.positioning,
+          voice: brand.voice,
+          pillars: brand.pillars,
+          avoid: brand.avoid,
+          links: brand.links,
+        });
+      }
+
+      case "myna_brand_learn": {
+        const result = await learnBrand({
+          url: typeof args.url === "string" ? args.url : undefined,
+          limit: typeof args.limit === "number" ? args.limit : undefined,
+        });
+        return text({
+          path: result.path,
+          read: result.read,
+          sources: result.sources,
+          brand: {
+            name: result.brand.name,
+            audience: result.brand.audience,
+            positioning: result.brand.positioning,
+            voice: result.brand.voice,
+            pillars: result.brand.pillars,
+            avoid: result.brand.avoid,
+          },
+        });
+      }
+
+      case "myna_plan": {
+        const wanted = typeof args.status === "string" ? (args.status as string).toLowerCase() : "";
+        const items = wanted === "all" ? listPlan() : wanted ? listPlan().filter((item) => item.status === wanted) : pendingPlan();
+        if (!items.length) {
+          return text(
+            wanted
+              ? `Nothing ${wanted} in the plan.`
+              : "Nothing planned. myna_plan_generate makes angles from the brand's pillars; myna_atomize splits a long source.",
+          );
+        }
+        return text({
+          items: items.map((item) => ({
+            id: item.id,
+            forDate: item.forDate,
+            status: item.status,
+            pillar: item.pillar,
+            angle: item.angle,
+            source: item.source?.url ?? item.source?.path,
+            drafted: Boolean(item.text),
+            queuedPostId: item.queuedPostId,
+          })),
+        });
+      }
+
+      case "myna_plan_generate": {
+        const result = await generatePlan({
+          days: typeof args.days === "number" ? args.days : undefined,
+          perWeek: typeof args.perWeek === "number" ? args.perWeek : undefined,
+          targets: typeof args.to === "string" && args.to ? [args.to] : undefined,
+        });
+        return text({
+          planned: result.items.length,
+          alreadyPlanned: result.duplicates,
+          items: result.items.map((item) => ({ id: item.id, forDate: item.forDate, pillar: item.pillar, angle: item.angle })),
+        });
+      }
+
+      case "myna_atomize": {
+        const source = typeof args.source === "string" ? args.source : "";
+        if (!source) throw new Error("myna_atomize needs a source: a URL, or a path to a local file.");
+        const result = await atomize({
+          source,
+          angles: typeof args.angles === "number" ? args.angles : undefined,
+          overDays: typeof args.overDays === "number" ? args.overDays : undefined,
+          dryRun: Boolean(args.dryRun),
+          targets: typeof args.to === "string" && args.to ? [args.to] : undefined,
+        });
+        return text({
+          title: result.title,
+          source: result.url ?? result.path,
+          dryRun: Boolean(args.dryRun),
+          planned: result.items.length,
+          alreadyPlanned: result.duplicates,
+          angles: result.items.length
+            ? result.items.map((item) => ({ id: item.id, forDate: item.forDate, pillar: item.pillar, angle: item.angle }))
+            : result.angles,
+        });
+      }
+
+      case "myna_plan_draft": {
+        const id = typeof args.id === "string" ? args.id : "";
+        const item = id ? getPlanItem(id) : undefined;
+        if (!item) throw new Error(`No plan item ${id || "(none given)"}. myna_plan lists them.`);
+        if (item.text && !args.force) {
+          return text({ id: item.id, angle: item.angle, text: item.text, note: "Already drafted. Pass force to rewrite it." });
+        }
+        const drafted = await draftPlanItem({ ...item, text: undefined });
+        return text({ id: drafted.id, angle: drafted.angle, status: drafted.status, text: drafted.text });
+      }
+
+      case "myna_plan_queue": {
+        const id = typeof args.id === "string" ? args.id : "";
+        const item = id ? getPlanItem(id) : undefined;
+        if (!item) throw new Error(`No plan item ${id || "(none given)"}. myna_plan lists them.`);
+        const at = typeof args.at === "string" ? Date.parse(args.at) : Number.NaN;
+        if (typeof args.at === "string" && Number.isNaN(at)) throw new Error(`I could not read "${args.at}" as a time. Use an ISO timestamp.`);
+        const result = await queuePlanItem(item, {
+          from: Number.isNaN(at) ? undefined : at,
+          targets: typeof args.to === "string" && args.to ? [args.to] : undefined,
+        });
+        if (!result.queued.length) {
+          return text({
+            id: item.id,
+            queued: [],
+            skipped: result.skipped,
+            note: "The pacing rules held every account back. Try a later time, or myna_pace to see the gaps.",
+          });
+        }
+        return text({
+          id: result.item.id,
+          status: result.item.status,
+          queued: result.queued.map((post) => ({ id: post.id, scheduledFor: post.scheduledFor, targets: post.targets })),
+          skipped: result.skipped,
+        });
+      }
+
+      case "myna_plan_drop": {
+        const id = typeof args.id === "string" ? args.id : "";
+        if (!id || !removePlanItem(id)) throw new Error(`No plan item ${id || "(none given)"}. myna_plan lists them.`);
+        return text(`Dropped ${id}.`);
+      }
+
+      case "myna_autopilot": {
+        const settings = loadSettings().autopilot;
+        if (!args.run) {
+          const state = cadence();
+          return text({
+            enabled: settings.enabled,
+            perWeek: settings.perWeek,
+            holdHours: settings.holdHours,
+            to: settings.to || loadSettings().defaultTargets,
+            cadence: state,
+            planOpen: pendingPlan().length,
+            wouldAct: settings.enabled && state.deficit > 0,
+          });
+        }
+        const turn = await runAutopilot({ dryRun: Boolean(args.dryRun) });
+        return text({
+          idle: turn.idle,
+          reason: turn.reason,
+          cadence: turn.cadence,
+          item: turn.item ? { id: turn.item.id, angle: turn.item.angle, status: turn.item.status } : undefined,
+          queued: turn.queued,
+          planned: turn.planned,
+        });
+      }
+
       case "myna_upvote_queue": {
         const items = listUpvotes();
         const wanted = typeof args.status === "string" ? (args.status as string).toLowerCase() : "pending";

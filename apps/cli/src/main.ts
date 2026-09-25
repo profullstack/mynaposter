@@ -84,6 +84,40 @@ Posting:
   run                               The daemon: sends due posts, runs the
                                     follow graph and every plugin's tasks
 
+Brand, plan and autopilot (the parts that run without you):
+  brand                             What myna thinks you sound like: audience,
+                                    positioning, voice, the subjects you return
+                                    to, and what never goes out. One Markdown
+                                    file that everything which writes reads first
+    brand learn [--url u]           Write it from the posts you have already
+       [--limit 120]                sent. Asks nothing: it reads your history,
+                                    your OpenProfile and your site
+    brand edit | path | show
+    brand set <key> <value>         name, audience, positioning, voice
+    brand pillar add|rm ["a: why"]  The subjects you keep returning to
+    brand avoid add|rm "<text>"     What never goes out
+  plan                              Planned angles: a subject and an argument on
+                                    a date, with no copy written yet. --all
+                                    includes the ones already booked
+    plan generate [--days 30]       Angles from the brand's pillars, spread
+       [--per-week 5] [--to all]    evenly over the window
+    plan draft <id> [--force]       Write the copy for one angle
+    plan queue <id> [--at when]     Book a drafted one into the pacing queue
+    plan drop <id> | clear
+  atomize <url or file>             One long thing becomes many dated angles:
+       [--angles 12] [--over 30d]   a post, a whitepaper, a transcript. The
+       [--dry-run] [--to all]       angles go on the plan, not into the queue,
+                                    so nothing is written until you ask
+  autopilot                         Hold a cadence, and do nothing at all while
+                                    you are holding it yourself. It counts what
+                                    you posted in the last week and what is
+                                    booked for the next, and only fills the gap
+    autopilot on | off              The daemon takes one turn an hour
+    autopilot now [--dry-run]       Take a turn right now
+    autopilot set <key> <value>     perWeek (5), holdHours (24: nothing is ever
+                                    booked sooner, so you can always cancel),
+                                    to, refillPlan, planAheadDays
+
 Following (Bluesky, Mastodon, Misskey, X, Nostr):
   follow <account> <handle>         Follow someone from one account
   follow <account> <url>/follows    Follow everyone they follow: paste their
@@ -356,6 +390,10 @@ Examples:
   myna save ~/myna.myna              # then scp it to the other machine
   myna load ~/myna.myna
   myna cloud push                    # same bundle, encrypted here, stored there
+  myna brand learn                   # the brand, from what you have already posted
+  myna atomize https://example.com/blog/post --angles 12 --over 30d
+  myna plan                          # the angles, dated, no copy yet
+  myna autopilot on && myna run      # fill the gaps, never inside 24h
 
 Credentials are encrypted at rest in ~/.config/myna. Nothing leaves this
 machine except the posts you send.

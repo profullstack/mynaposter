@@ -14,6 +14,7 @@ import { effectiveRecap, loadSettings } from "../store/settings.ts";
 import { pluginTasks, seedProviders } from "../plugins/loader.ts";
 import { pluginContext } from "../plugins/context.ts";
 import { runEvergreen } from "./evergreen.ts";
+import { runAutopilot } from "./autopilot.ts";
 import { runRecap } from "./recap.ts";
 import { canSync, syncConfigOnce } from "../store/synconfig.ts";
 import { runDueNewsletters, syncAllUnsubscribes, unsubscribePullError } from "./newsletter.ts";
@@ -117,6 +118,20 @@ export function builtinJobs(log: (line: string) => void, tickMs: number): Daemon
       const turn = await runRecap(recap);
       if (turn.idle || !turn.result) return;
       return turn.result.sent ? `sent to ${recap.to}` : `not sent: ${turn.result.error}`;
+    },
+  });
+
+  // Always registered, and the switch is read on every tick, for the same
+  // reason the recap is: `myna autopilot on` has to take effect without
+  // anybody restarting the daemon. It books at most one post an hour, and
+  // does nothing at all while you are meeting your own cadence.
+  jobs.push({
+    id: "autopilot",
+    everyMs: 3_600_000,
+    async run() {
+      const turn = await runAutopilot({ log });
+      if (turn.idle) return;
+      return turn.reason;
     },
   });
 
