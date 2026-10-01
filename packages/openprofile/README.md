@@ -82,6 +82,8 @@ mergeProfiles([a, b]);    // first document's identity wins, Accounts and Topics
 
 `normaliseUrl` lowercases the host, drops `www.`, the scheme, tracking keys, the fragment and the
 trailing slash, so `HTTPS://www.GitHub.com/Ada/?utm_source=x` and `github.com/ada` are one key.
+It never throws on a malformed percent-escape: a stray `%` is literal (so `/%draft%` and
+`/%25draft%25` are one key), and a path that will not decode as UTF-8 (`%FF`) keeps its escapes.
 
 ## Constants
 

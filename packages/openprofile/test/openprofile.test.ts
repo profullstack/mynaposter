@@ -151,6 +151,34 @@ describe("identity", () => {
     expect(normaliseUrl("bluesky:@ada.example")).toBe("bluesky:ada.example");
   });
 
+  test("normaliseUrl never throws on a malformed percent-escape", () => {
+    // The real link that 500'd p0dcasters' /api/openprofiles on 2026-10-01:
+    // an unrendered WordPress placeholder in ij.org's feed.
+    const ij = "https://ij.org/podcasts/%podcast-type%/";
+    expect(() => normaliseUrl(ij)).not.toThrow();
+    expect(normaliseUrl(ij)).toBe("ij.org/podcasts/%podcast-type%");
+    // The same URL correctly escaped is the same identity.
+    expect(normaliseUrl("https://ij.org/podcasts/%25podcast-type%25/")).toBe(normaliseUrl(ij));
+    expect(normaliseUrl("https://a.example/100%")).toBe("a.example/100%");
+    // Escapes that are not UTF-8 stay as written: a stable key, not a throw.
+    expect(normaliseUrl("https://a.example/%FF")).toBe("a.example/%ff");
+    expect(normaliseUrl("https://a.example/%E0%A4%A")).toBe("a.example/%e0%a4%25a");
+    // Valid escapes still decode.
+    expect(normaliseUrl("https://a.example/caf%C3%A9")).toBe("a.example/café");
+  });
+
+  test("a document carrying a malformed URL still keys, merges and names its network", () => {
+    const doc = parseOpenProfile(
+      "# Unpublished Opinions\n\n- Web: https://ij.org/podcasts/%podcast-type%/\n\n## Accounts\n\n- https://example.com/a%zz\n\n## Broadcast\n\n- Show: Unpublished Opinions\n- Feed: https://ij.org/feed/%podcast-type%/\n",
+    );
+    expect(() => identityKeys(doc)).not.toThrow();
+    expect(identityKeys(doc)).toContain("web:ij.org/podcasts/%podcast-type%");
+    expect(() => mergeProfiles([doc, doc])).not.toThrow();
+    expect(() => samePerson(doc, doc)).not.toThrow();
+    expect(() => networkOf("https://example.com/a%zz")).not.toThrow();
+    expect(() => mergeOverrides(null, { sections: { Accounts: "- https://example.com/%oops" } })).not.toThrow();
+  });
+
   test("identity keys and samePerson: a shared account merges, a shared name never does", () => {
     const a = parseOpenProfile(ADA);
     const b = parseOpenProfile("# Ada Lovelace\n\n- Web: https://other.example\n\n## Accounts\n\n- https://GitHub.com/ada/\n");
