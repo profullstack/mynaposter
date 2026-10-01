@@ -13,6 +13,26 @@ import { accounts, identityValue, type OpenProfileDoc } from "./parse.ts";
 const TRACKING = /^(utm_|fbclid|gclid|mc_cid|mc_eid|ref$|source$)/i;
 
 /**
+ * A URL path, percent-decoded, without ever throwing.
+ *
+ * Real feeds carry malformed escapes: ij.org links a show to
+ * `/podcasts/%podcast-type%/`, an unrendered WordPress placeholder, and a bare
+ * decodeURIComponent threw URIError and took down every caller that keyed a
+ * document by it. A "%" that does not start an escape is literal, so it is
+ * read as "%25"; that way `%podcast-type%` and `%25podcast-type%25` key the
+ * same. A path that still will not decode (escapes that are not UTF-8, such
+ * as "%FF") keeps its escapes as written, which is still a stable key.
+ */
+export function decodePath(path: string): string {
+  const repaired = path.replace(/%(?![0-9a-f]{2})/gi, "%25");
+  try {
+    return decodeURIComponent(repaired);
+  } catch {
+    return repaired;
+  }
+}
+
+/**
  * A URL as an identity key: lowercase scheme and host, `www.` dropped, tracking
  * query keys dropped, the fragment dropped, the trailing slash dropped, the
  * scheme dropped from the key so http and https meet. Non-URLs (a bare
@@ -37,7 +57,7 @@ export function normaliseUrl(input: string): string {
   for (const [k, v] of url.searchParams) if (!TRACKING.test(k)) keep.append(k, v);
   keep.sort();
   const query = keep.toString();
-  let path = decodeURIComponent(url.pathname).replace(/\/+$/, "");
+  let path = decodePath(url.pathname).replace(/\/+$/, "");
   // Profile paths are case-sensitive on some networks and not on most; the
   // ones people type by hand (handles) are compared lowercased.
   path = path.toLowerCase();
