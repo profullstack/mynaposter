@@ -27,7 +27,7 @@ body {
 a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; }
 
-code, pre:not(.hqtui) { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace; }
+code, pre:not(.hqtui):not(.hqtui-screen) { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace; }
 code { font-size: 0.9em; color: var(--accent); }
 
 /* ---------------------------------------------------------------- chrome */
@@ -87,8 +87,12 @@ p:last-child { margin-bottom: 0; }
   overflow: hidden;
   background: var(--surface);
   margin-top: 26px;
+  /* Never wider than the column: at phone width the command scrolls inside
+     its own box instead of pushing the whole page sideways. */
+  max-width: 100%;
 }
 .install code {
+  min-width: 0;
   padding: 13px 18px;
   color: var(--text);
   font-size: 14px;
@@ -96,6 +100,7 @@ p:last-child { margin-bottom: 0; }
   overflow-x: auto;
 }
 .install button {
+  flex: none;
   border: 0;
   border-left: 1px solid var(--line);
   background: transparent;
@@ -113,8 +118,11 @@ p:last-child { margin-bottom: 0; }
 .shot-wrap { margin: 56px 0; }
 .shot-wrap.tight { margin: 32px 0 0; }
 
-/* hqtui's HTML renderer emits a <pre class="hqtui">. */
-.hqtui {
+/* hqtui's HTML renderer emits a <pre class="hqtui"> (older) or
+   <pre class="hqtui-screen"> (current). Its inline overflow style is dropped
+   by the CSP, so the scroll box has to come from here. */
+.hqtui, .hqtui-screen {
+  max-width: 100%;
   border: 1px solid var(--line);
   border-radius: 12px;
   overflow-x: auto;
@@ -219,7 +227,9 @@ footer a:hover { color: var(--accent); }
   section { margin: 60px 0; }
   .top { flex-wrap: wrap; padding: 16px; gap: 10px 14px; }
   .top nav { gap: 6px 14px; font-size: 13px; flex-wrap: wrap; margin-left: 0; }
-  .hqtui { font-size: 9px; }
+  .hqtui, .hqtui-screen { font-size: 9px; }
+  /* Five columns do not fit a phone: the table scrolls inside itself. */
+  table.networks { display: block; overflow-x: auto; }
 }
 
 /* Privacy and terms pages, and the home page's "what myna does". */
