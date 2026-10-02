@@ -6,7 +6,8 @@
  * removed. The screenshots are real frames rendered through hqtui's HTML
  * renderer, not mockups.
  */
-import { mkdirSync, writeFileSync, copyFileSync, existsSync, readdirSync } from "node:fs";
+import { mkdirSync, writeFileSync, copyFileSync, existsSync, readdirSync, readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { renderPrivacyPage, renderTermsPage } from "./legal-pages.ts";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -15,6 +16,7 @@ import { NETWORKS, authSummary, cloud } from "@profullstack/myna-core";
 import { composeScreenshot, loginScreenshot } from "./screens.ts";
 import { renderHandoffPage } from "./handoff-page.ts";
 import { renderConnectPage } from "./connect-page.ts";
+import { renderDashboardPage } from "./dashboard-page.ts";
 
 const root = join(fileURLToPath(new URL(".", import.meta.url)), "..");
 const out = join(root, "public");
@@ -93,6 +95,7 @@ const page = `<!doctype html>
     <a href="#writer">Writer</a>
     <a href="https://github.com/profullstack/mynaposter">GitHub</a>
     <a href="/privacy">Privacy</a>
+    <a href="/dashboard">Dashboard</a>
   </nav>
 </header>
 
@@ -379,13 +382,24 @@ for (const provider of ["google", "facebook", "instagram"]) {
 mkdirSync(join(out, "handoff"), { recursive: true });
 writeFileSync(join(out, "handoff", "index.html"), renderHandoffPage(cloud.DEFAULT_SERVER));
 
+// The signed-in dashboard: the hand-off cards waiting on you. Served as
+// /dashboard (extensionless URLs map to .html). The API base is relative on
+// purpose: the session cookie is same-origin, Path=/api, so the page must
+// call the API on whatever host served it.
+const dashboardVersion = createHash("sha256")
+  .update(readFileSync(join(root, "assets", "dashboard.js")))
+  .update(readFileSync(join(root, "assets", "dashboard.css")))
+  .digest("hex")
+  .slice(0, 10);
+writeFileSync(join(out, "dashboard.html"), renderDashboardPage("/api", dashboardVersion));
+
 // OpenConnection (https://logicsrc.com/openconnection): where a person makes
 // the setup token an app such as DefPromo asks for, and revokes an app.
 writeFileSync(join(out, "connect.html"), renderConnectPage(cloud.DEFAULT_SERVER));
 
 writeFileSync(
   join(out, "robots.txt"),
-  "User-agent: *\nAllow: /\nDisallow: /oauth/\nDisallow: /api/v1/\nDisallow: /handoff/\n\nSitemap: https://mynaposter.com/sitemap.xml\n",
+  "User-agent: *\nAllow: /\nDisallow: /oauth/\nDisallow: /api/v1/\nDisallow: /handoff/\nDisallow: /dashboard\n\nSitemap: https://mynaposter.com/sitemap.xml\n",
 );
 
 writeFileSync(
@@ -467,6 +481,8 @@ for (const asset of [
   "atproto.js",
   "atproto.css",
   "handoff.css",
+  "dashboard.js",
+  "dashboard.css",
   "connect.js",
   "connect.css",
   ...readdirSync(join(root, "assets", "icons")).map((name) => `icons/${name}`),

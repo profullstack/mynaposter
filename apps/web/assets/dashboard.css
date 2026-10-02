@@ -1,0 +1,65 @@
+/* mynaposter.com/dashboard. Sits on site.css and uses its tokens; the site is dark. */
+.top nav .who { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 40vw; }
+.top nav .linkish { font: inherit; background: none; border: 0; padding: 0; color: var(--accent); cursor: pointer; }
+.top nav .linkish:hover { text-decoration: underline; }
+
+main.dash { max-width: 46rem; padding: 8px 16px 80px; }
+main.dash h1 { font-size: clamp(26px, 5vw, 34px); margin-bottom: 8px; }
+main.dash h2 { font-size: 20px; margin-bottom: 6px; }
+main.dash h2.later { margin-top: 48px; }
+main.dash .fineprint { margin-top: 4px; }
+main.dash code { word-break: break-word; }
+
+main.dash .panel { margin-top: 24px; padding: 20px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
+main.dash form { display: grid; gap: 6px; margin-top: 16px; max-width: 26rem; }
+main.dash label { font-size: 14px; color: var(--muted); margin-top: 8px; }
+main.dash input[type="email"], main.dash input[type="password"] {
+  font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; width: 100%;
+}
+
+main.dash button, main.dash .button-link {
+  font: inherit; font-size: 15px; font-weight: 600; line-height: 1.2; border-radius: 8px; padding: 10px 14px; cursor: pointer;
+  border: 1px solid transparent; background: var(--accent); color: var(--bg); text-decoration: none; display: inline-block;
+}
+main.dash button.quiet, main.dash .button-link { background: transparent; color: var(--text); border-color: var(--line); }
+main.dash button:hover, main.dash .button-link:hover { text-decoration: none; filter: brightness(1.1); }
+main.dash button:disabled { opacity: .6; cursor: default; }
+main.dash :is(button, a, input, textarea, summary):focus-visible, .top nav .linkish:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+main.dash .actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 12px; }
+main.dash .note { font-size: 14px; color: var(--muted); min-height: 1.3em; margin: 6px 0 0; }
+main.dash form .note { color: var(--warm); }
+
+main.dash .board-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 16px; margin-top: 24px; }
+main.dash .board-tools { display: flex; align-items: center; gap: 14px; }
+main.dash .toggle { display: inline-flex; align-items: center; gap: 6px; margin: 0; font-size: 14px; color: var(--text); cursor: pointer; }
+main.dash .toggle input { width: 18px; height: 18px; accent-color: var(--accent); }
+
+main.dash .cards { list-style: none; display: grid; gap: 10px; margin-top: 12px; }
+main.dash .hcard { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; min-width: 0; }
+main.dash .hcard.done { opacity: .65; }
+main.dash summary { display: block; padding: 14px 16px; cursor: pointer; list-style: none; border-radius: 10px; }
+main.dash summary::-webkit-details-marker { display: none; }
+main.dash summary .place { display: block; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
+main.dash summary .place::before { content: "\25B8"; display: inline-block; width: 18px; color: var(--muted); }
+main.dash details[open] summary .place::before { content: "\25BE"; }
+main.dash summary .line { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px 16px; padding-left: 18px; }
+main.dash summary .title { font-weight: 600; overflow-wrap: anywhere; min-width: 0; flex: 1 1 16rem; }
+main.dash summary .date { font-size: 13px; color: var(--muted); white-space: nowrap; }
+main.dash .hcard.done .title { text-decoration: line-through; text-decoration-color: var(--muted); }
+main.dash .body { padding: 0 16px 16px calc(16px + 18px); display: grid; gap: 4px; min-width: 0; }
+main.dash .block-head { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; color: var(--muted); margin-top: 4px; }
+main.dash textarea {
+  display: block; width: 100%; resize: vertical; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 8px;
+  font: 14px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; padding: 10px 12px;
+}
+main.dash .steps { margin: 8px 0 0 20px; font-size: 14px; color: var(--muted); }
+main.dash .card-link { font-size: 14px; }
+
+main.dash .empty { margin-top: 16px; padding: 24px 20px; border: 1px dashed var(--line); border-radius: 10px; }
+
+@media (max-width: 640px) {
+  .top { padding: 16px; gap: 14px; }
+  main.dash .actions > * { flex: 1 1 auto; text-align: center; }
+  main.dash .actions .note { flex-basis: 100%; text-align: left; }
+}

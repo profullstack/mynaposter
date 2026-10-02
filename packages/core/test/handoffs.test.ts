@@ -11,7 +11,7 @@ import { test, expect, beforeEach, afterEach } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { addHandoff, attachCloud, getHandoff, handoffUrl, listHandoffs, markHandoff, normaliseHandoff, removeHandoff } from "../src/store/handoffs.ts";
+import { addHandoff, attachCloud, dashboardUrl, getHandoff, handoffUrl, listHandoffs, markHandoff, normaliseHandoff, removeHandoff } from "../src/store/handoffs.ts";
 import { buildRecap, recapSubject, renderRecapText } from "../src/core/recap.ts";
 
 let dir = "";
@@ -64,6 +64,10 @@ test("open cards first, newest first; done ones only when asked; found by id, cl
 
 test("the card link is the site, not the API", () => {
   expect(handoffUrl("AbCdEfGhIjKlMnOpQrStUv")).toBe("https://mynaposter.com/handoff/AbCdEfGhIjKlMnOpQrStUv");
+});
+
+test("the dashboard lives on the site the API is served under", () => {
+  expect(dashboardUrl()).toBe("https://mynaposter.com/dashboard");
 });
 
 test("the recap says what is waiting on you, with the link", () => {

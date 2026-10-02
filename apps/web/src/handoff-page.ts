@@ -23,7 +23,7 @@ export function renderHandoffPage(apiBase: string): string {
 <meta name="robots" content="noindex, nofollow">
 <link rel="stylesheet" href="/site.css"><link rel="stylesheet" href="/handoff.css"><link rel="icon" href="/favicon.svg" type="image/svg+xml">
 </head>
-<body><header class="top"><a class="wordmark" href="/"><img src="/brand/myna-mark.svg" alt="" width="28" height="28">myna</a></header>
+<body><header class="top"><a class="wordmark" href="/"><img src="/brand/myna-mark.svg" alt="" width="28" height="28">myna</a><nav><a href="/dashboard">Dashboard</a></nav></header>
 <main class="handoff" data-api="${apiBase}">
 <p id="status" class="fineprint">Reading the card&hellip;</p>
 <article id="card" hidden>
