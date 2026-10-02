@@ -17,6 +17,7 @@ import { composeScreenshot, loginScreenshot } from "./screens.ts";
 import { renderHandoffPage } from "./handoff-page.ts";
 import { renderConnectPage } from "./connect-page.ts";
 import { renderDashboardPage } from "./dashboard-page.ts";
+import { versionAssets, hashFile } from "./asset-version.ts";
 
 const root = join(fileURLToPath(new URL(".", import.meta.url)), "..");
 const out = join(root, "public");
@@ -496,6 +497,23 @@ for (const asset of [
 ]) {
   const source = join(root, "assets", asset);
   if (existsSync(source)) copyFileSync(source, join(out, asset));
+}
+
+// Every page's own CSS and JS get ?v=<hash>: the server marks them immutable
+// for a year, so an unversioned site.css or handoff.js would never update.
+{
+  const versionOf = (path: string): string | null => {
+    const file = join(out, path);
+    return existsSync(file) ? hashFile(readFileSync(file)) : null;
+  };
+  const walk = (dir: string): void => {
+    for (const entry of readdirSync(dir, { withFileTypes: true })) {
+      const path = join(dir, entry.name);
+      if (entry.isDirectory()) walk(path);
+      else if (entry.name.endsWith(".html")) writeFileSync(path, versionAssets(readFileSync(path, "utf8"), versionOf));
+    }
+  };
+  walk(out);
 }
 
 console.log(`Built ${out} — ${NETWORKS.length} networks, ${passwordNetworks.length} password, ${oauthNetworks.length} oauth`);
