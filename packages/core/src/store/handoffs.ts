@@ -176,6 +176,8 @@ const auth = (): Record<string, string> => ({ authorization: `Bearer ${requireSe
 /** `https://mynaposter.com/api` serves the site at `https://mynaposter.com`. */
 export const siteUrl = (): string => base().replace(/\/api$/, "");
 export const handoffUrl = (cloudId: string): string => `${siteUrl()}/handoff/${encodeURIComponent(cloudId)}`;
+/** Where a signed-in person sees every card on the web: `https://mynaposter.com/dashboard`. */
+export const dashboardUrl = (): string => `${siteUrl()}/dashboard`;
 
 function unwrap<T>(reply: Reply<T>, fallback: string): T {
   if (!reply.ok) throw new Error(reply.error ?? fallback);

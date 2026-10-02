@@ -25,6 +25,7 @@ import {
 import * as service from "./service.ts";
 import { handleMcpBody } from "./mcp.ts";
 import * as cloud from "./cloud.ts";
+import { sessionRoutes, tokenFrom } from "./session.ts";
 import * as reshare from "./reshare.ts";
 import * as atproto from "./atproto.ts";
 import * as handoff from "./handoff.ts";
@@ -166,6 +167,8 @@ app.get("/", (context) =>
       "POST /api/mcp",
       "POST /v1/cloud/signup",
       "POST /v1/cloud/login",
+      "POST /v1/cloud/session {email, password}   browser sign-in, HttpOnly cookie, reads only",
+      "DELETE /v1/cloud/session",
       "GET  /v1/cloud/me",
       "PUT  /v1/cloud/backup",
       "GET  /v1/cloud/backup",
@@ -349,10 +352,9 @@ cloudRoutes.use("*", async (context, next) => {
 });
 
 /** Resolve the caller, or answer 401. */
-async function requireUser(context: { req: { header(name: string): string | undefined } }) {
-  const header = context.req.header("authorization") ?? "";
-  const token = header.startsWith("Bearer ") ? header.slice(7) : "";
-  return cloud.whoami(token);
+async function requireUser(context: { req: { method: string; header(name: string): string | undefined } }) {
+  // The bearer header, or on a read the dashboard's session cookie.
+  return cloud.whoami(tokenFrom(context.req));
 }
 
 const body = async (context: { req: { json(): Promise<unknown> } }) =>
@@ -418,6 +420,9 @@ cloudRoutes.delete("/backup", async (context) => {
   if (!user) return context.json({ ok: false, error: "Unauthorized" }, 401);
   return context.json({ ok: await cloud.deleteBackup(user.id) });
 });
+
+// The dashboard's browser sign-in: an HttpOnly cookie, honoured on reads only.
+cloudRoutes.route("/session", sessionRoutes);
 
 app.route("/v1/cloud", cloudRoutes);
 

@@ -10,7 +10,8 @@
  *
  * A card is kept here. When this machine is signed in to myna cloud it is
  * published too, and the command prints mynaposter.com/handoff/<id>: open it
- * on a phone, copy, paste, mark done.
+ * on a phone, copy, paste, mark done. Every published card is also listed at
+ * mynaposter.com/dashboard, which `list` prints when signed in.
  */
 import { readFileSync } from "node:fs";
 import { handoffs, type Handoff } from "@profullstack/myna-core";
@@ -54,11 +55,14 @@ export async function runHandoff(positional: string[], flags: Flags): Promise<nu
         out(JSON.stringify(cards, null, 2));
         return 0;
       }
+      // Signed in to myna cloud, the same cards are on the web, phone included.
+      const web = handoffs.cloudSignedIn() ? `\nOn the web: ${handoffs.dashboardUrl()}` : "";
       if (!cards.length) {
-        out(flags.all ? "No hand-offs yet." : "Nothing waiting on you. myna handoff list --all shows the done ones.");
+        out((flags.all ? "No hand-offs yet." : "Nothing waiting on you. myna handoff list --all shows the done ones.") + web);
         return 0;
       }
       for (const card of cards) out(line(card));
+      if (web) out(web);
       return 0;
     }
 

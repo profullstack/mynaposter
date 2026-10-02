@@ -60,7 +60,8 @@ export async function signup(email: string, password: string): Promise<{ user: C
   return { user, token: await mintToken(user.id) };
 }
 
-export async function login(email: string, password: string): Promise<{ user: CloudUser; token: string }> {
+/** Sign in. `name` labels the token: "cli" for a terminal, "web" for the dashboard's cookie. */
+export async function login(email: string, password: string, name = "cli"): Promise<{ user: CloudUser; token: string }> {
   const address = normalizeEmail(email);
   const rows = await db()`
     select id, email, password_hash, password_salt, password_params
@@ -82,7 +83,7 @@ export async function login(email: string, password: string): Promise<{ user: Cl
     throw wrong;
   }
 
-  return { user: { id: row.id, email: row.email }, token: await mintToken(row.id) };
+  return { user: { id: row.id, email: row.email }, token: await mintToken(row.id, name) };
 }
 
 /** Resolve a bearer token to its owner, or null. */
