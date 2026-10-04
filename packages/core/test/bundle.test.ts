@@ -2,7 +2,8 @@ import { test, expect, beforeEach, afterEach } from "bun:test";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { seal, open, describe as describeBundle, type BundlePayload } from "../src/store/bundle.ts";
+import { hostname } from "node:os";
+import { seal, open, savedBy, describe as describeBundle, type BundlePayload } from "../src/store/bundle.ts";
 
 let dir = "";
 beforeEach(() => {
@@ -75,4 +76,16 @@ test("the header describes the bundle without the passphrase", () => {
   const sealed = seal(payload(), "correct horse battery");
   expect(describeBundle(sealed)).toContain("1 account");
   expect(describeBundle(sealed)).toContain("alice@laptop");
+});
+
+test("savedBy names the real host even when HOSTNAME is not exported (zsh)", () => {
+  const before = process.env.HOSTNAME;
+  delete process.env.HOSTNAME;
+  try {
+    const by = savedBy();
+    expect(by).not.toContain("a machine");
+    expect(by.endsWith(`@${hostname()}`)).toBe(true);
+  } finally {
+    if (before !== undefined) process.env.HOSTNAME = before;
+  }
 });

@@ -16,6 +16,7 @@
  *   at once. There is no `--plaintext` escape hatch for that reason.
  */
 import { randomBytes, scryptSync, createCipheriv, createDecipheriv } from "node:crypto";
+import { hostname, userInfo } from "node:os";
 import type { Account } from "../net/types.ts";
 import { listAccounts, saveAccount } from "./accounts.ts";
 import { listQueue, enqueue, type QueuedPost } from "./queue.ts";
@@ -54,6 +55,20 @@ function deriveKey(passphrase: string, salt: Buffer): Buffer {
   });
 }
 
+/**
+ * user@host, from the OS rather than the environment: zsh never exports
+ * HOSTNAME, so the old env lookup printed "anthony@a machine".
+ */
+export function savedBy(): string {
+  let user = process.env.USER || process.env.USERNAME || "";
+  try {
+    user ||= userInfo().username;
+  } catch {
+    // No passwd entry (some containers); fall through to "someone".
+  }
+  return `${user || "someone"}@${hostname() || "unknown-host"}`;
+}
+
 /** Everything this install knows, ready to be sealed. */
 export function collect(options: { history?: boolean } = {}): BundlePayload {
   void options;
@@ -62,7 +77,7 @@ export function collect(options: { history?: boolean } = {}): BundlePayload {
     queue: listQueue().filter((post) => post.status === "pending"),
     settings: loadSettings(),
     savedAt: new Date().toISOString(),
-    savedBy: `${process.env.USER ?? "someone"}@${process.env.HOSTNAME ?? "a machine"}`,
+    savedBy: savedBy(),
   };
 }
 
