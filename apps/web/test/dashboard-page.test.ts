@@ -22,7 +22,7 @@ test("the shell is CSP-clean, not indexed, and has every piece the script drives
   expect(html).toContain('data-api="https://mynaposter.com/api"');
   expect(html).toContain('<meta name="robots" content="noindex, nofollow">');
   expect(html).not.toMatch(/<script>|<style>|\son[a-z]+=/);
-  for (const id of ["status", "signin", "signin-form", "email", "password", "signin-note", "board", "board-title", "cards", "empty", "show-done", "refresh", "who", "signout"]) {
+  for (const id of ["status", "signin", "signin-form", "email", "password", "signin-note", "board", "board-title", "cards", "empty", "show-done", "refresh", "who", "signout", "forgot-link", "forgot", "forgot-form", "forgot-email", "forgot-note", "forgot-back", "reset", "reset-form", "new-password", "new-password-again", "reset-note"]) {
     expect(html).toContain(`id="${id}"`);
   }
 });

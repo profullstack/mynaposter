@@ -43,8 +43,32 @@ export function renderDashboardPage(apiBase: string, version = ""): string {
     <input id="email" name="email" type="email" autocomplete="username" required>
     <label for="password">Password</label>
     <input id="password" name="password" type="password" autocomplete="current-password" required>
-    <div class="actions"><button id="signin-button" type="submit">Sign in</button></div>
+    <div class="actions"><button id="signin-button" type="submit">Sign in</button><button id="forgot-link" type="button" class="linkish">Forgot password?</button></div>
     <p id="signin-note" class="note" role="alert"></p>
+  </form>
+</section>
+
+<section id="forgot" class="panel" hidden aria-labelledby="forgot-title">
+  <h1 id="forgot-title">Reset your password</h1>
+  <p class="fineprint">Enter the email on your myna cloud account and we will mail you a link to set a new password. The link works once, for an hour.</p>
+  <form id="forgot-form" novalidate>
+    <label for="forgot-email">Email</label>
+    <input id="forgot-email" name="email" type="email" autocomplete="username" required>
+    <div class="actions"><button id="forgot-button" type="submit">Mail me a link</button><button id="forgot-back" type="button" class="linkish">Back to sign in</button></div>
+    <p id="forgot-note" class="note" role="status" aria-live="polite"></p>
+  </form>
+</section>
+
+<section id="reset" class="panel" hidden aria-labelledby="reset-title">
+  <h1 id="reset-title">Set a new password</h1>
+  <p class="fineprint">At least 10 characters. Every other session and CLI token on the account is signed out, so run <code>myna cloud login</code> again on your machines.</p>
+  <form id="reset-form" novalidate>
+    <label for="new-password">New password</label>
+    <input id="new-password" name="password" type="password" autocomplete="new-password" minlength="10" required>
+    <label for="new-password-again">New password, again</label>
+    <input id="new-password-again" name="password-again" type="password" autocomplete="new-password" minlength="10" required>
+    <div class="actions"><button id="reset-button" type="submit">Set password and sign in</button></div>
+    <p id="reset-note" class="note" role="alert"></p>
   </form>
 </section>
 

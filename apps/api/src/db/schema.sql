@@ -320,3 +320,17 @@ create table if not exists cloud_mail_sends (
 );
 
 create index if not exists cloud_mail_sends_user_idx on cloud_mail_sends(user_id, at);
+
+-- Forgot password. One row per reset mail; the token is stored hashed, lives
+-- an hour and works once. Rows within the last hour also cap how many mails
+-- one address can be sent.
+create table if not exists password_resets (
+  id          uuid primary key default gen_random_uuid(),
+  user_id     uuid not null references users(id) on delete cascade,
+  token_hash  text not null unique,
+  created_at  timestamptz not null default now(),
+  expires_at  timestamptz not null,
+  used_at     timestamptz
+);
+
+create index if not exists password_resets_user_idx on password_resets(user_id, created_at);

@@ -20,6 +20,27 @@
   const empty = byId("empty");
   const showDone = byId("show-done");
   const refresh = byId("refresh");
+  const forgot = byId("forgot");
+  const forgotForm = byId("forgot-form");
+  const forgotNote = byId("forgot-note");
+  const reset = byId("reset");
+  const resetForm = byId("reset-form");
+  const resetNote = byId("reset-note");
+
+  // A reset link is /dashboard#reset=<token>: the token rides in the fragment
+  // so no server log sees it. Read it once and take it out of the address bar.
+  let resetToken = "";
+  const takeResetToken = () => {
+    if (!location.hash.startsWith("#reset=")) return false;
+    try {
+      resetToken = decodeURIComponent(location.hash.slice(7));
+    } catch {
+      resetToken = location.hash.slice(7);
+    }
+    history.replaceState(null, "", location.pathname + location.search);
+    return true;
+  };
+  takeResetToken();
 
   let cards = [];
 
@@ -51,6 +72,8 @@
     board.hidden = true;
     who.hidden = true;
     signout.hidden = true;
+    forgot.hidden = true;
+    reset.hidden = true;
     signin.hidden = false;
     signinNote.textContent = message || "";
     cards = [];
@@ -61,6 +84,8 @@
   async function paintSignedIn(email) {
     status.hidden = true;
     signin.hidden = true;
+    forgot.hidden = true;
+    reset.hidden = true;
     board.hidden = false;
     who.textContent = email;
     who.hidden = false;
@@ -233,6 +258,79 @@
     }
   });
 
+  byId("forgot-link").addEventListener("click", () => {
+    signin.hidden = true;
+    forgot.hidden = false;
+    forgotNote.textContent = "";
+    byId("forgot-email").value = byId("email").value.trim();
+    byId("forgot-email").focus();
+  });
+
+  byId("forgot-back").addEventListener("click", () => paintSignedOut());
+
+  forgotForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const email = byId("forgot-email").value.trim();
+    if (!email) {
+      forgotNote.textContent = "Your email, please.";
+      return;
+    }
+    const button = byId("forgot-button");
+    button.disabled = true;
+    forgotNote.textContent = "";
+    try {
+      await call("/v1/cloud/password/forgot", { body: { email }, quiet401: true });
+      forgotNote.textContent = "If " + email + " has a myna cloud account, a reset link is on its way. Check your inbox (and spam) in a minute.";
+    } catch (error) {
+      forgotNote.textContent = error.message;
+    } finally {
+      button.disabled = false;
+    }
+  });
+
+  function paintReset() {
+    status.hidden = true;
+    signin.hidden = true;
+    forgot.hidden = true;
+    board.hidden = true;
+    reset.hidden = false;
+    byId("new-password").focus();
+  }
+
+  resetForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const password = byId("new-password").value;
+    const again = byId("new-password-again").value;
+    if (password.length < 10) {
+      resetNote.textContent = "Use a password of at least 10 characters.";
+      return;
+    }
+    if (password !== again) {
+      resetNote.textContent = "The two passwords do not match.";
+      return;
+    }
+    const button = byId("reset-button");
+    button.disabled = true;
+    resetNote.textContent = "";
+    try {
+      const data = await call("/v1/cloud/password/reset", { body: { token: resetToken, password }, quiet401: true });
+      resetToken = "";
+      byId("new-password").value = "";
+      byId("new-password-again").value = "";
+      await paintSignedIn(data.email);
+      boardNote.textContent = "Password changed. You are signed in here; sign in again everywhere else.";
+    } catch (error) {
+      resetNote.textContent = error.message;
+    } finally {
+      button.disabled = false;
+    }
+  });
+
+  // The link opened in a tab already on /dashboard changes only the hash, not the page.
+  window.addEventListener("hashchange", () => {
+    if (takeResetToken()) paintReset();
+  });
+
   signout.addEventListener("click", async () => {
     try {
       await call("/v1/cloud/session", { method: "DELETE", quiet401: true });
@@ -246,6 +344,10 @@
   refresh.addEventListener("click", load);
 
   (async () => {
+    if (resetToken) {
+      paintReset();
+      return;
+    }
     try {
       const me = await call("/v1/cloud/me", { quiet401: true });
       await paintSignedIn(me.email);

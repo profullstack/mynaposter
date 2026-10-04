@@ -25,7 +25,8 @@ import {
 import * as service from "./service.ts";
 import { handleMcpBody } from "./mcp.ts";
 import * as cloud from "./cloud.ts";
-import { sessionRoutes, tokenFrom } from "./session.ts";
+import { sessionRoutes, sessionCookie, tokenFrom } from "./session.ts";
+import * as passwordReset from "./password-reset.ts";
 import * as reshare from "./reshare.ts";
 import * as atproto from "./atproto.ts";
 import * as handoff from "./handoff.ts";
@@ -169,6 +170,8 @@ app.get("/", (context) =>
       "POST /v1/cloud/login",
       "POST /v1/cloud/session {email, password}   browser sign-in, HttpOnly cookie, reads only",
       "DELETE /v1/cloud/session",
+      "POST /v1/cloud/password/forgot {email}   mail a reset link (same answer either way)",
+      "POST /v1/cloud/password/reset {token, password}   set it, revoke old tokens, set the cookie",
       "GET  /v1/cloud/me",
       "PUT  /v1/cloud/backup",
       "GET  /v1/cloud/backup",
@@ -419,6 +422,25 @@ cloudRoutes.delete("/backup", async (context) => {
   const user = await requireUser(context);
   if (!user) return context.json({ ok: false, error: "Unauthorized" }, 401);
   return context.json({ ok: await cloud.deleteBackup(user.id) });
+});
+
+// Forgot password: a one-time link by mail, then a new password and a fresh session.
+cloudRoutes.post("/password/forgot", async (context) => {
+  const input = await body(context);
+  const reply = await passwordReset.forgotPassword(String(input.email ?? ""));
+  return context.json(reply.body, reply.status);
+});
+
+cloudRoutes.post("/password/reset", async (context) => {
+  const input = await body(context);
+  try {
+    const { user, token } = await passwordReset.resetPassword(String(input.token ?? ""), String(input.password ?? ""));
+    context.header("set-cookie", sessionCookie(token));
+    context.header("cache-control", "no-store");
+    return context.json({ ok: true, email: user.email });
+  } catch (error) {
+    return context.json({ ok: false, error: (error as Error).message }, 400);
+  }
 });
 
 // The dashboard's browser sign-in: an HttpOnly cookie, honoured on reads only.
