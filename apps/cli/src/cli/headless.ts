@@ -41,8 +41,7 @@ import {
   recordRotation,
   loadRotation,
   saveRotation,
-  bookingsPerAccount,
-  planLimitsFor,
+  slotsFor,
   type RotateMode,
   needsPassphrase,
   openBrowser,
@@ -685,17 +684,26 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
         if (mode !== "cycle" && mode !== "random") throw new Error(`--rotate is cycle (the default) or random, not "${mode}".`);
         const state = loadRotation();
         const now = Date.now();
+        // Ask the planner when each target would really take this post, with
+        // the same pacing flags the post will be sent with.
+        const slots = slotsFor(accounts, { text, type: typeof flags.type === "string" ? flags.type : undefined }, {
+          now,
+          force: Boolean(flags.now),
+          front: Boolean(flags.front || flags.skipQueue),
+        });
         const pick = pickRotation({
           accounts,
           mode,
           state,
           now,
-          bookings: bookingsPerAccount(listHistory(), listQueue()),
-          maxPerDay: (account) => planLimitsFor(account, settings).maxPerDay,
+          slot: (account) => slots.get(account.id) ?? Number.POSITIVE_INFINITY,
         });
         rotation = { pick, mode, state, now };
         accounts = [pick.account];
-        out(`rotate ${pick.account.id}  (${mode}, ${pick.why === "room" ? "has room today" : "every target is at its cap; frees up first"}${pick.upNext ? `; next: ${pick.upNext.id}` : ""})`);
+        const when = pick.why === "room"
+          ? "goes now"
+          : Number.isFinite(pick.at) ? `no target can take it now; earliest is ${describeWhen(new Date(pick.at))}` : "every target already has this text";
+        out(`rotate ${pick.account.id}  (${mode}, ${when}${pick.upNext ? `; next: ${pick.upNext.id}` : ""})`);
       }
 
       if (flags.dryRun) {

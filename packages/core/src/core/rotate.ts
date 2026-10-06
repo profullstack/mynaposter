@@ -15,7 +15,6 @@
 import type { Account } from "../net/types.ts";
 import { readJson, writeJson } from "../util/json.ts";
 import { ROTATION_FILE } from "../util/paths.ts";
-import { nextUnderCap } from "./pacing.ts";
 
 export type RotateMode = "cycle" | "random";
 
@@ -51,16 +50,22 @@ export interface PickInput {
   mode: RotateMode;
   state: RotationState;
   now: number;
-  /** When each account posted or is booked to (pacing's bookingsPerAccount). */
-  bookings: Map<string, number[]>;
-  /** The account's daily cap, if it has one. */
-  maxPerDay: (account: Account) => number | undefined;
+  /**
+   * When this post would go out on the account, per the planner itself
+   * (poster's slotsFor: gaps, daily caps, the queue). Asking the planner is
+   * the point: 0.44.0 counted past posts only, called an account with a full
+   * day of queued posts "free", and the planner then held the post to the
+   * next day.
+   */
+  slot: (account: Account) => number;
   random?: () => number;
 }
 
 export interface PickResult {
   account: Account;
   why: "room" | "cap";
+  /** When it will go out (now, or the planner's later slot). */
+  at: number;
   group: string;
   /** The cursor to store for the group after this pick (cycle mode). */
   nextCursor: number;
@@ -73,13 +78,11 @@ export function pickRotation(input: PickInput): PickResult {
   const order = [...new Map(input.accounts.map((a) => [a.id, a])).values()].sort((a, b) => a.id.localeCompare(b.id));
   if (!order.length) throw new Error("--rotate needs at least one target account.");
   const group = order.map((a) => a.id).join(",");
-  const freeAt = (account: Account) => {
-    const max = input.maxPerDay(account);
-    return max ? nextUnderCap(input.now, input.bookings.get(account.id) ?? [], max) : input.now;
-  };
+  const slots = new Map(order.map((a) => [a.id, input.slot(a)]));
+  const at = (account: Account) => slots.get(account.id) ?? Number.POSITIVE_INFINITY;
   const start = ((input.state.cursor[group] ?? 0) % order.length + order.length) % order.length;
   const turn = order.map((_, i) => order[(start + i) % order.length]);
-  const withRoom = turn.filter((a) => freeAt(a) <= input.now);
+  const withRoom = turn.filter((a) => at(a) <= input.now);
 
   let account: Account;
   let why: "room" | "cap";
@@ -88,11 +91,12 @@ export function pickRotation(input: PickInput): PickResult {
     account = input.mode === "random" ? withRoom[Math.floor((input.random ?? Math.random)() * withRoom.length)] : withRoom[0];
   } else {
     why = "cap";
-    // Every account is full today: the one that frees up first, ties in turn order.
-    account = turn.reduce((best, a) => (freeAt(a) < freeAt(best) ? a : best), turn[0]);
+    // Nobody can take it now: whoever the planner would send it on first,
+    // ties in turn order.
+    account = turn.reduce((best, a) => (at(a) < at(best) ? a : best), turn[0]);
   }
   const nextCursor = (order.indexOf(account) + 1) % order.length;
-  return { account, why, group, nextCursor, upNext: order.length > 1 ? order[nextCursor] : undefined };
+  return { account, why, at: Math.max(input.now, at(account)), group, nextCursor, upNext: order.length > 1 ? order[nextCursor] : undefined };
 }
 
 /** Record a pick and advance the group's turn. */

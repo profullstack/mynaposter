@@ -22,7 +22,7 @@ test("--rotate narrows a post to one target and says who is next; bad modes are 
       cwd: root, env, encoding: "utf8", input: "Rotated message.\n", timeout: 10000,
     });
     expect(result.status).toBe(0);
-    expect(result.stdout).toContain("rotate bluesky:fixture  (cycle, has room today; next: mastodon:fixture)");
+    expect(result.stdout).toContain("rotate bluesky:fixture  (cycle, goes now; next: mastodon:fixture)");
     expect(result.stdout).toContain("Would post to 1 account");
     expect(result.stdout).toContain("Rotated message.");
     expect(result.stdout).not.toContain("  mastodon:fixture\n");

@@ -281,6 +281,42 @@ export interface PacedOutcome {
  * network's gap, for the daemon to send. The same text to an account that
  * already had it inside the repost gap is refused. See pacing.ts.
  */
+/**
+ * When this post would go out on each account if it were sent to that account
+ * alone: the planner's own answer (gaps, daily caps, the type's cap, the
+ * queue, --front), so `--rotate` never picks an account the planner would
+ * then hold to tomorrow. Infinity means the planner would skip it (a repeat).
+ */
+export function slotsFor(accounts: Account[], options: ComposeOptions, paced: PacedOptions = {}): Map<string, number> {
+  const settings = loadSettings();
+  const rules = pacingRules(settings.pacing);
+  const accountNetwork = (id: string) => getAccount(id)?.network;
+  const queue = listQueue();
+  const history = listHistory();
+  const type = options.type ?? defaultTypeFor(accounts);
+  const typeCap = typeCapFor(type);
+  const now = paced.now ?? Date.now();
+  const slots = new Map<string, number>();
+  for (const account of accounts) {
+    const plan = planTargets({
+      accounts: [account],
+      text: options.text,
+      now,
+      from: paced.from,
+      force: paced.force,
+      front: paced.front,
+      history,
+      queue,
+      rules,
+      accountNetwork,
+      limitsFor: (a) => planLimitsFor(a, settings),
+      typeLimit: typeCap ? { type, maxPerDay: typeCap, bookings: bookingsForType(type, history, queue) } : undefined,
+    });
+    slots.set(account.id, plan.now.length ? now : (plan.later[0]?.at ?? Number.POSITIVE_INFINITY));
+  }
+  return slots;
+}
+
 export async function postPaced(accounts: Account[], options: ComposeOptions, paced: PacedOptions = {}): Promise<PacedOutcome> {
   if (!accounts.length) throw new Error("No targets. Run /login <network> first, or check your --to value.");
   const settings = loadSettings();
