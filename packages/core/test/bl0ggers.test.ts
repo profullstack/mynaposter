@@ -276,6 +276,14 @@ test("authorize URL and site normalisation", () => {
   expect(normalizeSite("http://localhost:3000/")).toBe("http://localhost:3000");
 });
 
+test("--broadcast is sent only when given, so bl0ggers' default applies otherwise", () => {
+  const body = (extra?: Record<string, string>) =>
+    postBody(account, { title: "Issue", text: "Body", extra: { channel: "newsletter", ...extra } });
+  expect(body({ broadcast: "true" }).broadcast).toBe(true);
+  expect(body({ broadcast: "false" }).broadcast).toBe(false);
+  expect("broadcast" in body()).toBe(false);
+});
+
 test("a non-default site names the account slug@host", async () => {
   const partial = await bl0ggers.login({ token: "blg_good", site: "http://localhost:3000" }, quietCtx(async () => {}));
   expect(partial.handle).toBe("riot-notes@localhost:3000");

@@ -343,7 +343,10 @@ browser on the same machine; over SSH, use `--token`.
 Per-post flags: `--channel blog|newsletter|podcast` (else the account's
 default, else bl0ggers picks), `--slug`, `--description` (the excerpt),
 `--tags`, `--image-url`, `--audio-url`, `--canonical-url` (a guest post),
-`--draft true`. A paused publication saves posts as drafts. Every post carries
+`--draft true`, `--broadcast true|false` (email the post to confirmed
+subscribers when it goes live, at most once per post; bl0ggers defaults it on
+for `--channel newsletter` and off otherwise, and myna sends it only when you
+pass it). A paused publication saves posts as drafts. Every post carries
 an `external_id` (the queue entry for a scheduled post, else a hash of the
 account and title, or `--external-id`), so a retried send updates the post it
 already wrote instead of publishing it twice.

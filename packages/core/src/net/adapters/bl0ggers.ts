@@ -343,6 +343,10 @@ export function postBody(account: Account, input: PostInput): Record<string, unk
   if (audio) body.audio_url = audio;
   if (extra.canonicalUrl?.trim()) body.canonical_url = extra.canonicalUrl.trim();
   if (tags.length) body.tags = tags;
+  // Email the issue to confirmed subscribers when it goes live. Left out
+  // unless asked, so bl0ggers' default applies: on for a newsletter, off
+  // for everything else.
+  if (extra.broadcast?.trim()) body.broadcast = truthy(extra.broadcast);
   return body;
 }
 
