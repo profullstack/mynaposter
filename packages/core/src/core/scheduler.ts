@@ -149,7 +149,10 @@ export async function runDuePosts(now = new Date()): Promise<RunResult[]> {
           title: post.title,
           media: post.mediaPaths?.length ? loadAllMedia(post.mediaPaths) : undefined,
           thread: post.thread ?? loadSettings().threadByDefault,
-          extra: post.extra,
+          // The entry id rides along (never stored) so a network that can
+          // dedupe on a client id (bl0ggers' external_id) makes a retry of
+          // this entry update the post it already wrote, not add a second.
+          extra: { ...post.extra, queueId: post.id },
           type: post.type,
         },
         // Booked at the tick, so the next gap is measured from when the

@@ -10,7 +10,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { NO_CAPS, type Network, type Profile } from "../src/net/types.ts";
-import { registerNetwork } from "../src/net/registry.ts";
+import { registerNetwork, unregisterNetwork } from "../src/net/registry.ts";
 import { resetAccountCache, saveAccount } from "../src/store/accounts.ts";
 import { loadSettings, saveSettings } from "../src/store/settings.ts";
 import {
@@ -69,6 +69,9 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
   delete process.env.MYNA_HOME;
   resetAccountCache();
+  // NETWORKS outlives this file; a leftover "fake" fails follow-refs.test.ts
+  // whenever this file happens to run before it.
+  unregisterNetwork("fake");
 });
 
 test("seeds upsert by network and handle", () => {
