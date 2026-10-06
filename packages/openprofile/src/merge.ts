@@ -15,7 +15,7 @@
  * not say.
  */
 
-import { accounts, bullets, normaliseSection, parseOpenProfile, sectionKeys, sections, type IdentityEntry, type OpenProfileDoc, type Section } from "./parse.ts";
+import { accounts, bullets, canonicalKey, normaliseSection, parseOpenProfile, sectionKeys, sections, type IdentityEntry, type OpenProfileDoc, type Section } from "./parse.ts";
 import { normaliseUrl } from "./identity.ts";
 
 /** The owner's overlay. Every field optional; `null` removes; the string `none` removes a section. */
@@ -64,8 +64,8 @@ export function applyOverrides(generated: OpenProfileDoc, overrides: Overrides |
   if (overrides.headline !== undefined) doc.headline = overrides.headline?.trim() || null;
   if (overrides.prose !== undefined) doc.prose = overrides.prose?.trim() ?? "";
   for (const [key, value] of Object.entries(overrides.identity ?? {})) {
-    const k = key.toLowerCase();
-    const at = doc.identity.findIndex((e) => e.key.toLowerCase() === k);
+    const k = canonicalKey(key);
+    const at = doc.identity.findIndex((e) => canonicalKey(e.key) === k);
     if (value === null || value.trim() === "") {
       if (at >= 0) doc.identity.splice(at, 1);
     } else if (at >= 0) doc.identity[at] = { key: doc.identity[at]!.key, value: value.trim() };
@@ -105,7 +105,7 @@ export function overridesFromDocument(markdown: string, generated?: OpenProfileD
   for (const e of doc.identity) overrides.identity[e.key] = e.value;
   if (generated) {
     for (const e of generated.identity) {
-      if (!doc.identity.some((x) => x.key.toLowerCase() === e.key.toLowerCase())) overrides.identity[e.key] = null;
+      if (!doc.identity.some((x) => canonicalKey(x.key) === canonicalKey(e.key))) overrides.identity[e.key] = null;
     }
   }
   // A file may carry the same section twice (rule 4 allows two Broadcast
@@ -171,7 +171,7 @@ export function mergeProfiles(docs: readonly OpenProfileDoc[]): OpenProfileDoc {
     headline ??= d.headline;
     if (!prose) prose = d.prose;
     for (const e of d.identity) {
-      if (!identity.some((x) => x.key.toLowerCase() === e.key.toLowerCase())) identity.push({ ...e });
+      if (!identity.some((x) => canonicalKey(x.key) === canonicalKey(e.key))) identity.push({ ...e });
     }
   }
   const out: Section[] = [];

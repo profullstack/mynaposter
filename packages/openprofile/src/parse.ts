@@ -225,21 +225,64 @@ export function parseOpenProfile(markdown: string): OpenProfileDoc {
   return doc;
 }
 
-/** The identity block as a map; the first of a repeated key wins, keys match case-insensitively. */
+/**
+ * Identity keys that are another name for a canonical one (OpenProfile 0.4):
+ * `Website`, `Homepage` and `Site` are `Web`. Lookups, overlays and merges
+ * compare canonical keys; the document keeps the key as written.
+ */
+export const IDENTITY_ALIASES: Readonly<Record<string, string>> = {
+  website: "web",
+  homepage: "web",
+  "home page": "web",
+  site: "web",
+  pronoun: "pronouns",
+};
+
+/** A key's canonical, lowercase form: `Website` -> `web`. */
+export function canonicalKey(key: string): string {
+  const k = key.trim().toLowerCase();
+  return IDENTITY_ALIASES[k] ?? k;
+}
+
+/** The identity block as a map by canonical key; the first of a repeated key wins. */
 export function identityMap(doc: OpenProfileDoc): Record<string, string> {
   const out: Record<string, string> = {};
   for (const { key, value } of doc.identity) {
-    const k = key.toLowerCase();
+    const k = canonicalKey(key);
     if (!(k in out)) out[k] = value;
   }
   return out;
 }
 
-/** One identity value by key, case-insensitively. */
+/** One identity value by key, case-insensitively and through aliases (`Web` finds `Website`). */
 export function identityValue(doc: OpenProfileDoc, key: string): string | null {
-  const k = key.toLowerCase();
-  for (const e of doc.identity) if (e.key.toLowerCase() === k) return e.value;
+  const k = canonicalKey(key);
+  for (const e of doc.identity) if (canonicalKey(e.key) === k) return e.value;
   return null;
+}
+
+/** `Web`: the home page, whichever alias it was written under. */
+export function web(doc: OpenProfileDoc): string | null {
+  return identityValue(doc, "Web")?.trim() || null;
+}
+
+/** `Pronouns`, as written (`she/her`, `they/them`, `any`). Null means unstated: never guess. */
+export function pronouns(doc: OpenProfileDoc): string | null {
+  return identityValue(doc, "Pronouns")?.trim() || null;
+}
+
+/**
+ * `Emoji`: the person's mark, the first grapheme of the value. A shortcode
+ * (`:telescope:`) is passed to `resolve` (e.g. an OpenEmoji lookup) and
+ * returned as written when there is no resolver or it does not know it.
+ */
+export function emoji(doc: OpenProfileDoc, resolve?: (shortcode: string) => string | null | undefined): string | null {
+  const raw = identityValue(doc, "Emoji")?.trim();
+  if (!raw) return null;
+  const code = /^:([a-z0-9_+-]+):/i.exec(raw);
+  if (code) return resolve?.(code[1]!) || code[0];
+  const first = new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(raw)[Symbol.iterator]().next();
+  return first.done ? null : first.value.segment;
 }
 
 /** Rule 2: `bot` means agent; `org` and `company` mean organization. Absent is null, not a guess. */
