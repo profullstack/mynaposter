@@ -77,6 +77,8 @@ export function renderOpenProfile(doc: OpenProfileDoc): string {
   return `${out.join("\n")}\n`;
 }
 
+const WRITE_AS: Readonly<Record<string, string>> = { website: "Web", homepage: "Web", "home page": "Web", site: "Web", pronoun: "Pronouns" };
+
 /** A document from parts, for generators; every field optional, empty ones dropped. */
 export function makeOpenProfile(parts: {
   name: string;
@@ -89,7 +91,8 @@ export function makeOpenProfile(parts: {
     ? parts.identity.filter((e) => e.value.trim() !== "")
     : Object.entries(parts.identity ?? {})
         .filter(([, v]) => v !== null && v !== undefined && String(v).trim() !== "")
-        .map(([key, v]) => ({ key, value: String(v).trim() }));
+        // Writers use the canonical spelling: a generator's `Website` is written `Web`.
+        .map(([key, v]) => ({ key: WRITE_AS[key.trim().toLowerCase()] ?? key, value: String(v).trim() }));
   return {
     name: parts.name,
     identity,

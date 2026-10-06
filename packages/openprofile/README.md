@@ -13,7 +13,7 @@ npm i @profullstack/openprofile
 ## Read
 
 ```ts
-import { parseOpenProfile, accounts, topics, kindOf, broadcasts, guest } from "@profullstack/openprofile";
+import { parseOpenProfile, accounts, topics, kindOf, emoji, pronouns, web, broadcasts, guest } from "@profullstack/openprofile";
 
 const doc = parseOpenProfile(markdown);
 doc.name;                 // the `#` heading, or null
@@ -23,9 +23,16 @@ doc.sections;             // [{ title: "Find me", name: "accounts", body: "- ...
 accounts(doc);            // [{ url, label }] the URL is the identity
 topics(doc);              // ["computing history", "mathematics"]
 kindOf(doc);              // "person" | "agent" | "organization" | null
+emoji(doc);               // "🔭": the person's mark, first grapheme; emoji(doc, resolve) for :shortcodes:
+pronouns(doc);            // "she/her" as written, or null (never inferred)
+web(doc);                 // the home page, written as Web, Website, Homepage or Site
 broadcasts(doc);          // one keyed object per show, `###` groups split apart
 guest(doc);               // the Guest keys, or null
 ```
+
+`Emoji`, `Pronouns` and `Web` are default fields since OpenProfile 0.4. `identityValue`,
+`identityMap`, overlays, merges and de-duplication treat `Website`, `Homepage` and `Site` as
+`Web` (`canonicalKey`, `IDENTITY_ALIASES`), and `makeOpenProfile` writes them as `Web`.
 
 Nothing is required and nothing is dropped. An unknown identity key, an unknown section and a
 second prose paragraph all survive a parse and a render. Section titles are kept verbatim and
