@@ -50,9 +50,25 @@ export interface Newsletter {
    * mail ("an account at <service>; our Terms say..."), not that they subscribed.
    */
   service?: string | null;
+  /**
+   * Where the issue went up on the web once it went out: account id → the
+   * post. Written by `publishNewsletter`, so an issue is published once per
+   * account however many daemon turns see it.
+   */
+  published?: Record<string, PublishedCopy>;
   createdAt: string;
   updatedAt: string;
   sentAt: string | null;
+}
+
+export interface PublishedCopy {
+  at: string;
+  ok: boolean;
+  url?: string;
+  postId?: string;
+  /** Why the last try failed; the daemon tries again on a later turn. */
+  error?: string;
+  attempts: number;
 }
 
 export type DeliveryState = "pending" | "sent" | "failed";
