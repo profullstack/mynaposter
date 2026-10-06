@@ -34,6 +34,7 @@ import * as handoff from "./handoff.ts";
 import * as newsletter from "./newsletter.ts";
 import * as hostedMail from "./mail.ts";
 import * as oc from "./openconnection.ts";
+import * as porkbunCallback from "./porkbun-callback.ts";
 import { store as synconfigStore } from "./synconfig.ts";
 import { handleGet as synconfigGet, handlePut as synconfigPut, handleRevisions as synconfigRevisions } from "@profullstack/synconfig/server";
 import { VERSION } from "@profullstack/myna-core";
@@ -62,6 +63,9 @@ app.use("/v1/*", async (context, next) => {
   // this instance, while those belong to an end user with an account. Running
   // both would mean nobody could sign up without the operator's token.
   const path = new URL(context.req.url).pathname;
+  // Porkbun cannot send the operator token (its webhook URLs refuse credentials);
+  // its deliveries authenticate by HMAC in porkbun-callback.ts instead.
+  if (context.req.method === "POST" && /^\/v1\/callbacks\/porkbun(\/[^/]+)?\/?$/.test(path)) return next();
   if (path.startsWith("/v1/cloud") || path.startsWith("/v1/reshare") || path.startsWith("/v1/atproto") || path.startsWith("/v1/handoff") || path.startsWith("/v1/newsletter") || path.startsWith("/v1/mail") || path.startsWith("/v1/synconfig") || path.startsWith("/v1/syncfg") || path.startsWith("/v1/openconnection")) return next();
 
   const expected = process.env.MYNA_API_TOKEN;
@@ -900,6 +904,27 @@ ocPersonRoutes.delete("/apps/:id", async (context) => {
 });
 
 app.route("/v1/openconnection", ocPersonRoutes);
+
+// Porkbun webhooks: optional route segment, optional signing secret. See porkbun-callback.ts.
+const porkbunHook = async (context: { req: { param: (k: string) => string | undefined; text: () => Promise<string>; header: (k: string) => string | undefined }; json: (b: unknown, s?: never) => Response }) => {
+  const result = await porkbunCallback.receive({
+    route: context.req.param("route"),
+    rawBody: await context.req.text(),
+    headers: {
+      "x-porkbun-signature": context.req.header("x-porkbun-signature"),
+      "x-porkbun-webhook-timestamp": context.req.header("x-porkbun-webhook-timestamp"),
+    },
+  });
+  return context.json(result.body, result.status as never);
+};
+app.post("/v1/callbacks/porkbun", porkbunHook as never);
+app.post("/v1/callbacks/porkbun/:route", porkbunHook as never);
+// Reading what arrived is the operator's, through the /v1 token check above.
+app.get("/v1/callbacks/porkbun/events", async (context) => {
+  if (!hasDatabase()) return context.json({ ok: false, error: "no database configured" }, 503);
+  const events = await porkbunCallback.listEvents(Number(context.req.query("limit") ?? 50), context.req.query("route") || undefined);
+  return context.json({ ok: true, events });
+});
 
 type OcEnv = { Variables: { connection: oc.Connection } };
 const ocRoutes = new Hono<OcEnv>();
