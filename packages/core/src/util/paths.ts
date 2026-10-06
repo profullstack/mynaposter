@@ -65,6 +65,8 @@ export const HANDOFFS_FILE = "handoffs.json";
 export const UPVOTE_FILE = "upvote.json";
 /** Asks: people asking for a thing, the ideas they add up to, our replies and the stats on both. */
 export const ASKS_FILE = "asks.json";
+/** `myna post --rotate`: whose turn it is per target group, and every pick made. */
+export const ROTATION_FILE = "rotation.json";
 /** Where `myna plugins add <package>` installs to. */
 export const PLUGINS_DIR = "plugins";
 
