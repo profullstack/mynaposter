@@ -356,7 +356,7 @@ export const bl0ggers: Network = {
     note:
       "Signs in through your browser: pick the publication on bl0ggers and approve myna. One account per publication; " +
       "log in again for another. With no browser on this machine, pass --token blg_... (the publication's API key) instead.",
-    docsUrl: "https://bl0ggers.com/cli/authorize",
+    docsUrl: "https://bl0ggers.com/skill.md",
     fields: [
       {
         key: "channel",
