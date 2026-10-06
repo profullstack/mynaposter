@@ -338,6 +338,12 @@ export interface NewsletterSettings {
   footerLinks: NewsletterCta[];
   /** Logo, name and accent colour. With a name or a logo set, issues go out in the branded layout. */
   brand: NewsletterBrand;
+  /**
+   * Where an issue to a list also goes up on the web once it is sent: list →
+   * account ids, e.g. `{"profullstack-users": ["bl0ggers:chovy"]}`. Each is
+   * posted once, by the daemon, with the issue id as its idempotency key.
+   */
+  publishTo: Record<string, string[]>;
 }
 
 /** A call to action in a newsletter: the button text and where it goes. */
@@ -375,13 +381,26 @@ export const DEFAULT_NEWSLETTER: NewsletterSettings = {
   ctaSets: { default: DEFAULT_CTAS },
   footerLinks: DEFAULT_FOOTER_LINKS,
   brand: DEFAULT_BRAND,
+  publishTo: {},
 };
 
 /** Stored over the defaults, with the CTA sets copied so an edit never reaches the defaults. */
 function newsletterSettings(stored: Partial<NewsletterSettings> | undefined): NewsletterSettings {
   const sets = stored?.ctaSets && typeof stored.ctaSets === "object" ? stored.ctaSets : DEFAULT_NEWSLETTER.ctaSets;
   const footerLinks = Array.isArray(stored?.footerLinks) ? stored.footerLinks : DEFAULT_FOOTER_LINKS;
-  return { ...DEFAULT_NEWSLETTER, ...stored, ctaSets: structuredClone(sets), footerLinks: structuredClone(footerLinks), brand: { ...DEFAULT_BRAND, ...stored?.brand } };
+  return { ...DEFAULT_NEWSLETTER, ...stored, ctaSets: structuredClone(sets), footerLinks: structuredClone(footerLinks), brand: { ...DEFAULT_BRAND, ...stored?.brand }, publishTo: publishToMap(stored?.publishTo) };
+}
+
+/** list → account ids, with anything that is not a list of strings dropped. */
+function publishToMap(stored: unknown): Record<string, string[]> {
+  if (!stored || typeof stored !== "object" || Array.isArray(stored)) return {};
+  const out: Record<string, string[]> = {};
+  for (const [list, ids] of Object.entries(stored as Record<string, unknown>)) {
+    if (!Array.isArray(ids)) continue;
+    const clean = ids.filter((id): id is string => typeof id === "string" && id.trim() !== "").map((id) => id.trim());
+    if (clean.length) out[list.trim().toLowerCase()] = clean;
+  }
+  return out;
 }
 
 export interface SynconfigSettings {

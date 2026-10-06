@@ -22,6 +22,8 @@
  *   myna newsletter track set <trackingId> [--secret <hex>] | track status [--check] | track off
  *   myna newsletter stats <id> [--json]     opens, clicks, CTR, unsubscribes per variant
  *   myna newsletter cta list | add "<label>" <url> | rm "<label>"   [--set default]
+ *   myna newsletter publish <id> [--to bl0ggers:slug,...] [--broadcast true|false] [--force]
+ *   myna newsletter publish-to [<list> <account,...>|none]   where a list's issues go up on the web once sent
  *
  * Subscribers are contacts on a list, so `myna contacts` sees them too, and
  * `myna email --list` still mails the same list without any of this.
@@ -46,6 +48,7 @@ import {
   loadSettings,
   newsletterTracking,
   parseWhen,
+  publishNewsletter,
   readNewsletters,
   readSubscriberFile,
   removeNewsletter,
@@ -296,6 +299,8 @@ export async function runNewsletter(positional: string[], flags: Flags): Promise
       out(`Delivered: ${t.sent} sent, ${t.failed} failed, ${t.pending} uncertain`);
       if (n.smtp) out(`Via:       ${n.smtp}`);
       if (n.replyTo) out(`Reply-To:  ${n.replyTo}`);
+      for (const [account, copy] of Object.entries(n.published ?? {}))
+        out(`On web:    ${account} ${copy.ok ? (copy.url ?? "published") : `FAILED x${copy.attempts}: ${copy.error}`}`);
       out(flags.body ? `\n${n.body}` : `Body:      ${n.body.length} chars of Markdown (--body prints it)`);
       return 0;
     }
@@ -474,7 +479,40 @@ export async function runNewsletter(positional: string[], flags: Flags): Promise
       return 0;
     }
 
+    case "publish": {
+      if (!rest[0]) throw new Error("Usage: myna newsletter publish <id> [--to bl0ggers:slug,...] [--broadcast true|false] [--force]");
+      const broadcast = str(flags, "broadcast");
+      if (broadcast !== undefined && !/^(true|false)$/i.test(broadcast)) throw new Error("--broadcast takes true or false.");
+      const results = await publishNewsletter(rest[0], {
+        to: list(str(flags, "to")),
+        broadcast: broadcast === undefined ? undefined : /^true$/i.test(broadcast),
+        force: Boolean(flags.force),
+      });
+      for (const result of results)
+        out(`${result.account}: ${result.ok ? `${result.skipped ? `${result.skipped}, ` : ""}${result.url ?? "published"}` : `FAILED, ${result.error}`}`);
+      return results.every((result) => result.ok) ? 0 : 1;
+    }
+
+    case "publish-to": {
+      const settings = loadSettings();
+      if (rest[0]) {
+        const listName = rest[0].trim().toLowerCase();
+        const accounts = rest[1] === "none" ? [] : list(rest[1]);
+        if (!accounts.length && rest[1] !== "none") throw new Error("Usage: myna newsletter publish-to <list> <account,...>|none");
+        const next = { ...settings.newsletter.publishTo };
+        if (accounts.length) next[listName] = accounts;
+        else delete next[listName];
+        saveSettings({ ...settings, newsletter: { ...settings.newsletter, publishTo: next } });
+        out(accounts.length ? `Issues to ${listName} go up on ${accounts.join(", ")} once sent.` : `Issues to ${listName} are not published anywhere.`);
+        return 0;
+      }
+      const entries = Object.entries(settings.newsletter.publishTo);
+      if (!entries.length) out("No list publishes its issues. myna newsletter publish-to <list> <account> sets one.");
+      for (const [listName, accounts] of entries) out(`${listName} → ${accounts.join(", ")}`);
+      return 0;
+    }
+
     default:
-      throw new Error(`Unknown: myna newsletter ${sub}. Try blast, status, create, list, show, edit, rm, send, stats, subscribe, unsubscribe, subscribers, import, sync, track or cta.`);
+      throw new Error(`Unknown: myna newsletter ${sub}. Try blast, status, create, list, show, edit, rm, send, publish, publish-to, stats, subscribe, unsubscribe, subscribers, import, sync, track or cta.`);
   }
 }

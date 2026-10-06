@@ -19,6 +19,7 @@ import { runRecap } from "./recap.ts";
 import { canSync, syncConfigOnce } from "../store/synconfig.ts";
 import { runDueNewsletters, syncAllUnsubscribes, unsubscribePullError } from "./newsletter.ts";
 import { readNewsletters } from "../store/newsletters.ts";
+import { publishDueNewsletters } from "./newsletter-publish.ts";
 
 export interface DaemonJob {
   id: string;
@@ -80,6 +81,18 @@ export function builtinJobs(log: (line: string) => void, tickMs: number): Daemon
       const lines = reports
         .filter((report) => report.sent.length || report.failed.length)
         .map((report) => `${report.id}: ${report.sent.length} sent, ${report.failed.length} failed, ${report.remaining} left (${report.status})`);
+      if (lines.length) return lines.join("; ");
+    },
+  });
+
+  jobs.push({
+    id: "newsletter-publish",
+    // An issue that has gone out also goes up on the web (settings
+    // newsletter.publishTo), once per account; a failed post is retried here.
+    everyMs: 600_000,
+    async run() {
+      if (!Object.keys(loadSettings().newsletter.publishTo).length) return;
+      const lines = await publishDueNewsletters(new Date());
       if (lines.length) return lines.join("; ");
     },
   });

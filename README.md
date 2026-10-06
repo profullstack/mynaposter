@@ -1232,6 +1232,13 @@ myna config newsletter.brand.accent "#e5383b"
 myna config newsletter.brand.tagline "Agentic engineering"
 ```
 
+**On the web too.** Name accounts for a list and every issue to it also goes up as a post once it has gone out: the daemon publishes it on its next turn, once per account, with `myna:newsletter:<id>` as the idempotency key. A bl0ggers publication takes it on its newsletter channel (`/issues`), and an issue sent within the last two days is mailed to that publication's own subscribers too; an older one is filed quietly. `{{cta}}` becomes a plain link to the set's first call to action. A failed post is retried for five turns, then waits for a hand.
+
+```
+myna newsletter publish-to profullstack-users bl0ggers:chovy   # set (none clears it; no args lists)
+myna newsletter publish profullstack-002 --broadcast false     # by hand, e.g. back issues
+```
+
 ### One command: `myna newsletter blast`
 
 The import, create, test copy and list send above, as two short commands. The

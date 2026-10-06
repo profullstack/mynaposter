@@ -536,7 +536,16 @@ export {
   type Delivery,
   type DeliveryState,
   type NewslettersFile,
+  type PublishedCopy,
 } from "./store/newsletters.ts";
+export {
+  publishNewsletter,
+  publishDueNewsletters,
+  publishTargets,
+  webBody,
+  type PublishOptions,
+  type PublishResult,
+} from "./core/newsletter-publish.ts";
 export {
   composeNewsletter,
   sendNewsletter,
