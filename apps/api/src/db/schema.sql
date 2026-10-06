@@ -334,3 +334,18 @@ create table if not exists password_resets (
 );
 
 create index if not exists password_resets_user_idx on password_resets(user_id, created_at);
+
+-- Porkbun webhooks (POST /v1/callbacks/porkbun[/<route>]). One row per event
+-- id: Porkbun may deliver an event twice, and the id (a UUIDv7) is how it says
+-- so. verified is false when the route had no signing secret configured.
+create table if not exists porkbun_events (
+  id          text primary key,
+  route       text,
+  event       text not null,
+  created_at  timestamptz,
+  received_at timestamptz not null default now(),
+  verified    boolean not null default false,
+  payload     jsonb not null
+);
+
+create index if not exists porkbun_events_received_idx on porkbun_events(received_at desc);
