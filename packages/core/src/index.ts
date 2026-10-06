@@ -465,6 +465,68 @@ export { upvotePlugin, UPVOTE_SCAN_EVERY_MS, UPVOTE_RUN_EVERY_MS } from "./plugi
 export { linkDropDraft, type LinkDropRequest } from "./ai/writer.ts";
 export { DEFAULT_UPVOTE, type UpvoteSettings } from "./store/settings.ts";
 
+// Asks: people on Reddit asking for a site that does X, Y and Z; the ideas
+// they add up to; reply cards a person pastes; and the stats on both.
+export {
+  scanAsks,
+  classifyAsk,
+  extractWants,
+  titleWant,
+  pacedFetch,
+  askTerms,
+  similarity,
+  assignIdea,
+  matchProduct,
+  summarizeIdea,
+  rankIdeas,
+  flagIdeas,
+  subsOf,
+  readSub,
+  archivePosts,
+  tagLink,
+  askTemplateReply,
+  replyToAsk,
+  syncReplies,
+  setAskStatus,
+  setIdea,
+  mergeIdeas,
+  refreshAskStats,
+  replyTotals,
+  type AskVerdict,
+  type IdeaSummary,
+  type Fetcher,
+  type FeedPost,
+  type AskScanOptions,
+  type AskScanResult,
+  type AskDrafter,
+  type AskReplyOptions,
+  type AskReplyResult,
+  type AskStatsOptions,
+  type AskStatsResult,
+} from "./core/asks.ts";
+export {
+  readAsks,
+  writeAsks,
+  listAsks,
+  listIdeas,
+  listProducts,
+  saveProduct,
+  removeProduct,
+  clearAsks,
+  findIn,
+  type Ask,
+  type AskStatus,
+  type AskStats,
+  type AskProduct,
+  type Idea,
+  type IdeaStatus,
+  type AsksFile,
+} from "./store/asks.ts";
+export { asksPlugin, ASKS_SCAN_EVERY_MS, ASKS_STATS_EVERY_MS } from "./plugins/asks-plugin.ts";
+export * as asksApi from "./core/asks-api.ts";
+export { askReplyDraft, askJudge, type AskReplyRequest, type AskJudgeInput, type AskJudgement } from "./ai/writer.ts";
+export { DEFAULT_ASKS, type AsksSettings } from "./store/settings.ts";
+
 // DIDs: proved at CoinPay, attached to accounts as owner or operator.
 export { loginWithCoinPay, loginWithCoinPayCli, assignDid, unassignDid, didStatus, resolveDidTargets, didFromUserInfo, coinpayCliSessionPath, DEFAULT_DID_SERVER, type DidRole, type DidStatus, type DidLoginOptions } from "./core/did.ts";
 export { didSession, saveDidSession, clearDidSession, requireDidSession, isDid, type DidSession } from "./store/did.ts";

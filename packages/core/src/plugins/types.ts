@@ -134,9 +134,16 @@ export interface FollowedEvent {
  * collects people can do the same without the upvoter knowing it exists.
  */
 export interface DiscoveredEvent {
-  /** The account that found them, and the network they were found on. */
-  account: Account;
+  /**
+   * The account that found them, and the network they were found on. No
+   * account for an ask: Reddit is read, never logged in to.
+   */
+  account?: Account;
   network: string;
+  /** Which part of myna found them. Absent means the upvoter, which predates the field. */
+  source?: "upvote" | "asks";
+  /** What a CRM should record as how they came in, when the finder knows better than `matched`. */
+  via?: string;
   /** Who, as the network names them. */
   handle: string;
   displayName?: string;
@@ -148,7 +155,7 @@ export interface DiscoveredEvent {
   score: number;
   /** Which of our topics they matched on, strongest first. */
   matched: string[];
-  /** What myna intends to do about it: vote, repost or reply. */
+  /** What myna intends to do about it: vote, repost or reply; `ask` for somebody who asked for a thing. */
   action: string;
 }
 

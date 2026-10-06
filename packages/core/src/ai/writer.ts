@@ -584,3 +584,115 @@ export async function linkDropDraft(request: LinkDropRequest): Promise<string> {
   if (!text.includes(request.link)) return "";
   return limit && text.length > limit ? "" : text;
 }
+
+/**
+ * The system prompt for answering somebody who asked for a thing.
+ *
+ * Different from a link drop in one way that matters: they asked. A person
+ * wrote "is there a site that does X, Y and Z" and a direct answer is what the
+ * thread is for. It is still a guest's comment, and Reddit's rule on
+ * self-promotion is disclosure, so a reply that names our product says we
+ * work on it, every time.
+ */
+const ASK_SYSTEM = `You are answering a Reddit post where someone asked for a site, app or tool that does specific things. You are a guest in their thread.
+
+Rules, all of them load-bearing:
+- Answer what they asked. Name which of the things they listed the product does, by their own words. Never claim it does something you were not told it does; if it covers only some of what they want, say which part it does not.
+- If you name the product, say plainly that you work on it ("I work on this", "disclosure: I made it"). No exceptions.
+- When there is no product to offer, do not invent one. Say you have not found one that does all of it, and ask the one question that would tell a builder what matters most to them (which of the things they listed they would drop, or what they use today).
+- Two to four sentences. Plain and specific. No headings, no lists unless they used one.
+- No em dashes. No hashtags. No emoji. No exclamation marks. No "great question", no "hope this helps", no "check out", no call to action.
+- Decline (empty text) if their post is not actually asking for a tool, or if the product does not do the main thing they asked for.
+
+Return JSON: {"text": "<the reply>"} or {"text": ""} to decline.`;
+
+export interface AskReplyRequest {
+  title: string;
+  text: string;
+  /** What they want it to do, as their phrases. */
+  wants: string[];
+  /** Ours, when one answers it. */
+  product?: { name: string; url: string; about?: string };
+  voice?: string;
+}
+
+/**
+ * Draft an answer to somebody asking for a thing, or decline with "".
+ *
+ * With a product, a draft that dropped the link is a refusal: the reply exists
+ * to point at it, and one that names it without the link is worse than none.
+ */
+export async function askReplyDraft(request: AskReplyRequest): Promise<string> {
+  const { ai } = loadSettings();
+  const prompt = [
+    `Voice: ${request.voice ?? ai.voice}`,
+    "",
+    `Their post title: ${request.title}`,
+    request.text ? `Their post:\n${request.text.slice(0, 3000)}` : "",
+    request.wants.length ? `What they want, as they put it: ${request.wants.join("; ")}` : "",
+    "",
+    request.product
+      ? `The product you may name, and must disclose you work on: ${request.product.name} at ${request.product.url}` +
+        (request.product.about ? `\nWhat it does: ${request.product.about}` : "")
+      : "There is no product to offer. Do not name one.",
+  ]
+    .filter((line) => line !== "")
+    .join("\n");
+
+  const raw = await providerComplete(`${ASK_SYSTEM}${brandPrompt()}`, prompt, 800);
+  const text = extractJson<{ text: string }>(raw).text.trim();
+  if (!text) return "";
+  if (request.product && !text.includes(request.product.url)) return "";
+  return text;
+}
+
+const JUDGE_SYSTEM = `You read Reddit posts and decide whether each one is a person asking for a site, app, tool or service that does specific things. You are building a list of things people want that a small team could build.
+
+An ask: "is there an app that tracks X and alerts me", "looking for a tool to do Y", "I wish someone made Z", "how do you keep track of W" when they clearly want a tool for it.
+Not an ask: someone promoting what they built, asking for business advice, hiring, looking for a person or a vendor (an accountant, a 3PL, a cofounder), opinions, rants, surveys, or asking whether their own idea is good.
+
+For each post return:
+- ask: true or false.
+- wants: when it is an ask, the specific things they want it to do, 1 to 6 short phrases in their words (3-8 words each), most important first. Never pad with generic wishes like "easy to use" unless they said it.
+- label: when it is an ask, a 2-6 word name for the thing, generic enough that other people asking for the same thing would share it ("habit tracker with streaks", "multi-currency payment processor").
+
+Return exactly one result for every post, in the order given, including the ones that are not asks (ask: false). Never leave a post out.
+Return only JSON: {"results": [{"id": "<id>", "ask": true, "wants": ["..."], "label": "..."}]}.`;
+
+export interface AskJudgeInput {
+  id: string;
+  title: string;
+  text: string;
+}
+
+export interface AskJudgement {
+  id: string;
+  ask: boolean;
+  wants: string[];
+  label: string;
+}
+
+/**
+ * Confirm a batch of candidate asks, and name what each wants.
+ *
+ * The patterns that find candidates are cheap and loose; this is the second
+ * look that throws out the founder pitching their own tool in the shape of a
+ * question, and that names the thing well enough for asks about the same
+ * thing to land in the same idea.
+ */
+export async function askJudge(posts: AskJudgeInput[]): Promise<AskJudgement[]> {
+  if (!posts.length) return [];
+  const prompt = posts
+    .map((post) => `--- id: ${post.id}\ntitle: ${post.title}\n${post.text.replace(/\s+/g, " ").slice(0, 1200)}`)
+    .join("\n\n");
+  const raw = await providerComplete(JUDGE_SYSTEM, prompt, 3000);
+  const parsed = extractJson<{ results?: Array<Partial<AskJudgement>> }>(raw);
+  return (parsed.results ?? [])
+    .filter((entry) => typeof entry.id === "string" || typeof entry.id === "number")
+    .map((entry) => ({
+      id: String(entry.id).trim().replace(/^t3_/, ""),
+      ask: entry.ask === true,
+      wants: Array.isArray(entry.wants) ? entry.wants.map(String).map((want) => want.trim()).filter(Boolean).slice(0, 6) : [],
+      label: typeof entry.label === "string" ? entry.label.trim().slice(0, 80) : "",
+    }));
+}

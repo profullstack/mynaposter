@@ -60,6 +60,7 @@ const OUTREACHGRAPH_NETWORK: Record<string, string> = {
   pixelfed: "mastodon",
   x: "x",
   nostr: "nostr",
+  reddit: "reddit",
 };
 
 interface PersonRow {
@@ -454,13 +455,14 @@ const plugin: MynaPlugin = {
    * offer to reach them with rather than having to work it out from a bio.
    */
   async afterDiscover(event: DiscoveredEvent, ctx: PluginContext) {
-    if (!ctx.settings().upvote.leads) return;
+    const settings = ctx.settings();
+    if (event.source === "asks" ? !settings.asks.leads : !settings.upvote.leads) return;
     if (!secretsOf(ctx)) return "not signed in to OutreachGraph; run: myna outreachgraph login";
 
     // The topics they matched on are the reason they are a lead, so they are
     // what `via` records. The post itself stands in for a bio: it is the only
     // thing we have actually read of theirs, and it is what they chose to say.
-    const via = `upvote:${event.matched.slice(0, 3).join(",") || "topic"}`;
+    const via = event.via ?? `upvote:${event.matched.slice(0, 3).join(",") || "topic"}`;
     const person = personFrom(
       {
         handle: event.handle,

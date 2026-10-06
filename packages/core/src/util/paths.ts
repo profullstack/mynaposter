@@ -63,6 +63,8 @@ export const RECAP_FILE = "recap.json";
 export const HANDOFFS_FILE = "handoffs.json";
 /** The upvoter: what was found worth a vote, what was done about it, and what has been seen before. */
 export const UPVOTE_FILE = "upvote.json";
+/** Asks: people asking for a thing, the ideas they add up to, our replies and the stats on both. */
+export const ASKS_FILE = "asks.json";
 /** Where `myna plugins add <package>` installs to. */
 export const PLUGINS_DIR = "plugins";
 

@@ -26,6 +26,8 @@ test("a profile becomes a person on the network OutreachGraph calls it, ids only
   // The Fediverse is one network to OutreachGraph.
   expect(personFrom({ handle: "ada@misskey.io" }, "misskey")?.network).toBe("mastodon");
   expect(personFrom({ handle: "npub1abc", id: "npub1abc" }, "nostr")).toMatchObject({ network: "nostr", platformUserId: "npub1abc" });
+  // Asks hands Reddit askers over; OutreachGraph files them as reddit people.
+  expect(personFrom({ handle: "renter42" }, "reddit", "ask:rent splitter")).toMatchObject({ network: "reddit", handle: "renter42", via: "ask:rent splitter" });
   // Networks OutreachGraph has no name for are not sent.
   expect(personFrom({ handle: "acme" }, "agenticjobs")).toBeUndefined();
   expect(personFrom({ handle: "  " }, "bluesky")).toBeUndefined();

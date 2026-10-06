@@ -112,6 +112,7 @@ import { runBrand } from "./brand.ts";
 import { runPlan, runAtomize } from "./plan.ts";
 import { runAutopilotCommand } from "./autopilot.ts";
 import { runUpvote } from "./upvote.ts";
+import { runAsks } from "./asks.ts";
 import { runDid } from "./did.ts";
 import { runContacts, runEmail, runSms, runSmtp } from "./outreach.ts";
 import { runNewsletter } from "./newsletter.ts";
@@ -612,6 +613,13 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
     case "amplify": {
       await ensureUnlocked();
       return await runUpvote(positional, flags);
+    }
+
+    case "asks":
+    case "ask": {
+      // The writer's key and the OutreachGraph login are in the vault.
+      await ensureUnlocked();
+      return await runAsks(positional, flags);
     }
 
     case "did": {

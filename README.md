@@ -58,6 +58,10 @@ machine and nothing is sent anywhere except the posts you make.
   subject, and amplifies them: a vote on what is genuinely on topic, a share of
   some of it, and once in a while a reply carrying one of your links. See
   [The upvoter](#the-upvoter).
+- **Find what people are asking for.** `myna asks` reads the subreddits where
+  people post "is there a site that does X, Y and Z?", counts how many
+  different people want the same thing, drafts the answer onto a card you
+  paste, and tracks the thread and your reply. See [Asks](#asks).
 - **Run a newsletter.** `myna newsletter` writes issues in Markdown, keeps
   subscribers on a contacts list, sends through your own SMTP server or a mail
   API (Resend, Postmark, SES and others), or through myna cloud, under the
@@ -1013,6 +1017,25 @@ Nothing is cast in the same breath it is found, one author gets one action per
 cooldown, and Reddit ships as manual only because its API terms forbid
 automated voting. Off by default. The whole thing is in
 [docs/upvote.md](docs/upvote.md).
+
+## Asks
+
+People post "is there a site that does X, Y and Z?" every day. `myna asks`
+reads those posts from RSS Amplifier's subreddit mirrors, falling back to the
+Arctic Shift archive, because Reddit blocks servers. It keeps the posts that
+are really somebody asking for a tool, groups them into ideas, and flags an
+idea BUILD once five different people have asked for it.
+
+```bash
+myna asks on                 # the daemon reads the subs every 30 min, stats every 6 h
+myna asks ideas              # what people keep asking for, most wanted first
+myna asks reply <id>         # the answer, on a hand-off card to paste
+myna asks stats --refresh    # thread score and comments, your reply's score and answers
+```
+
+A reply names one of your products, with a disclosure and a UTM-tagged link,
+only when it answers what was asked (`myna asks product add`). Nothing is ever
+posted to Reddit from here. The full story is in [docs/asks.md](docs/asks.md).
 
 ## Hand-offs
 
