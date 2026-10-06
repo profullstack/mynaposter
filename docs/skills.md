@@ -107,7 +107,7 @@ so it can tighten the cap and never loosen it.
 
 ## The templates
 
-**blog** (`gitblog`, `htmlblog`): `maxPerDay: 4`, `contentPolicy:
+**blog** (`gitblog`, `htmlblog`, `bl0ggers`): `maxPerDay: 4`, `contentPolicy:
 major-features-only`. Major feature announcements and launches only; no
 bug-fix stories, no small updates, no re-sends; one post may bundle several
 related features; the blog is the canonical original and every mirror points

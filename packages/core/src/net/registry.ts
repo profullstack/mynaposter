@@ -15,6 +15,7 @@ import { devto, hashnode, ghost, wordpress, microblog, tumblr } from "./adapters
 import { tsbb } from "./adapters/tsbb.ts";
 import { agenticjobs } from "./adapters/agenticjobs.ts";
 import { gitblog, htmlblog } from "./adapters/ownblogs.ts";
+import { bl0ggers } from "./adapters/bl0ggers.ts";
 
 export const NETWORKS: Network[] = [
   // The ones people ask for first.
@@ -53,6 +54,8 @@ export const NETWORKS: Network[] = [
   // Blogs you host yourself: a repository, or a directory of pages.
   gitblog,
   htmlblog,
+  // Hosted publications: one account per bl0ggers publication.
+  bl0ggers,
 ];
 
 const BY_ID = new Map(NETWORKS.map((network) => [network.id, network]));
@@ -126,6 +129,8 @@ const ALIASES: Record<string, string> = {
   github: "gitblog",
   html: "htmlblog",
   static: "htmlblog",
+  bloggers: "bl0ggers",
+  "bl0ggers.com": "bl0ggers",
 };
 
 export function getNetwork(id: string): Network | undefined {

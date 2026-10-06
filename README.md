@@ -142,6 +142,7 @@ part most tools are vague about, so to be plain:
 | **One click in a browser, no setup** | Mastodon, Pleroma, Akkoma, GoToSocial, Pixelfed. myna registers itself on the instance and opens an Authorize page. Nothing to type but the instance, and no developer account anywhere |
 | **App keys** | Tumblr |
 | **Browser sign-in (OAuth)** | X, Facebook, Instagram, Threads, LinkedIn, Pinterest, TikTok, YouTube |
+| **Browser sign-in, no setup** | bl0ggers (PKCE over a loopback port: pick the publication, approve, done; `--token blg_...` for headless boxes) |
 
 Two of those rows are browser sign-ins for opposite reasons. Mastodon and its
 relatives let *any* client register itself, so the browser flow needs no setup
@@ -191,7 +192,7 @@ Two more things worth knowing before you plan a posting workflow:
 
 ## Supported networks
 
-30 in total.
+31 in total.
 
 **Major** X, Facebook, Instagram, Threads, Bluesky, Reddit, LinkedIn, Pinterest,
 TikTok, YouTube
@@ -199,7 +200,7 @@ TikTok, YouTube
 Misskey (and Sharkey, Firefish), Pixelfed, Lemmy, Nostr, tsbb, agenticjobs
 **Chat** Telegram, Discord, Slack, Matrix, Mattermost
 **Long-form** dev.to, Hashnode, Ghost, WordPress, Micro.blog, Tumblr (named in `--to`, never part of `all`)
-**Your own blogs** Git blog, HTML blog
+**Your own blogs** Git blog, HTML blog, bl0ggers (one account per publication)
 **Your calendar** Google Calendar (an event is a post; see [Calendar](#calendar-what-myna-is-going-to-say-on-the-calendar-you-already-look-at))
 
 `myna networks` prints the current list with each one's login method and limit.
@@ -273,7 +274,7 @@ myna post --to htmlblog --description "One line for the feed" < post.md
 ```
 
 Both are **never part of `all`**, and neither is any long-form network (dev.to,
-Hashnode, Ghost, WordPress, Micro.blog, Tumblr). A social post fanned out by
+Hashnode, Ghost, WordPress, Micro.blog, Tumblr) or bl0ggers. A social post fanned out by
 accident is an embarrassment; an article fanned out by accident is a
 publication (and on your own blog, a commit), so those only post when named in
 `--to`. One post can name several: `--to htmlblog,devto` writes the page and
@@ -302,6 +303,7 @@ different every time:
 | Tumblr | `source_url`, the attribution link it has instead |
 | gitblog | `canonical:` in the post's frontmatter, for the site template to render |
 | htmlblog | `<link rel="canonical">` in the page head |
+| bl0ggers | `canonical_url` |
 
 WordPress and Micro.blog are left out on purpose. WordPress core has no
 canonical field (it belongs to an SEO plugin's post meta) and Micropub defines
@@ -313,6 +315,41 @@ Pass `--canonical-url` only when the original really is elsewhere. When
 profullstack/cli-tools' `blog-post` writes the page, it applies its own
 `siteUrl` and myna forwards the flag only when you set one — that needs
 cli-tools 0.28.0 or newer.
+
+### bl0ggers publications
+
+A [bl0ggers.com](https://bl0ggers.com) publication is a blog, a newsletter and a
+podcast under one name, and each publication has its own API key, so in myna
+**one account is one publication**: `bl0ggers:<slug>`. Log in once per
+publication.
+
+```bash
+myna login bl0ggers                         # browser: pick a publication, approve myna
+myna login bl0ggers --channel newsletter    # same, with that account's default channel
+myna login bl0ggers --token blg_...         # headless/agent: the key is checked, then stored
+myna post --to bl0ggers:riot-notes --title "Release 1.2" --tags "release, cli" < post.md
+myna post --to bl0ggers:riot-notes --channel newsletter --title "October" < issue.md
+myna post --to bl0ggers:riot-notes --title "..." --canonical-url https://example.com/post < post.md
+```
+
+The browser sign-in is authorization code + PKCE (S256): myna listens on
+`127.0.0.1` at a random port, opens bl0ggers' authorize page, checks the
+`state` that comes back, and exchanges the code with its verifier for the
+publication's key. The key goes into the encrypted vault like every other
+credential; the publication's URL is recorded so links to it get
+[campaign tags](#campaign-tags-on-your-links). A loopback redirect needs the
+browser on the same machine; over SSH, use `--token`.
+
+Per-post flags: `--channel blog|newsletter|podcast` (else the account's
+default, else bl0ggers picks), `--slug`, `--description` (the excerpt),
+`--tags`, `--image-url`, `--audio-url`, `--canonical-url` (a guest post),
+`--draft true`, `--broadcast true|false` (email the post to confirmed
+subscribers when it goes live, at most once per post; bl0ggers defaults it on
+for `--channel newsletter` and off otherwise, and myna sends it only when you
+pass it). A paused publication saves posts as drafts. Every post carries
+an `external_id` (the queue entry for a scheduled post, else a hash of the
+account and title, or `--external-id`), so a retried send updates the post it
+already wrote instead of publishing it twice.
 
 ### YouTube: search, then comment
 

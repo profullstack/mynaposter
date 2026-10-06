@@ -57,6 +57,8 @@ export const TEMPLATE_VERSION = "2";
 const KIND_BY_NETWORK: Record<string, SkillKind> = {
   gitblog: "blog",
   htmlblog: "blog",
+  // A bl0ggers publication is a blog you own, with the blog's caps.
+  bl0ggers: "blog",
   youtube: "youtube",
   // Tumblr is filed under "minor" but takes a whole article and a source URL.
   tumblr: "longform",
