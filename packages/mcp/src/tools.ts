@@ -81,6 +81,7 @@ import {
   topicIndex,
   queriesFor,
   saveSettings,
+  asksApi,
 } from "@profullstack/myna-core";
 
 export interface ToolResult {
@@ -697,6 +698,97 @@ export const TOOLS = [
     },
   },
   {
+    name: "myna_asks",
+    description:
+      "People on Reddit asking for a site, app or tool that does specific things, found by myna in the subreddits " +
+      "it watches. Without arguments: the overview (on or off, totals, and the ideas most asked for). With status " +
+      "or sub: the asks themselves, each with what they want, the thread's numbers and our reply if any. With id: " +
+      "one ask in full. Reading changes nothing.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "One ask, by its Reddit post id." },
+        status: { type: "string", description: 'Filter: "new", "drafted", "replied", "skipped" or "all".' },
+        sub: { type: "string", description: "Only this subreddit." },
+        limit: { type: "number", description: "At most this many (default 50)." },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "myna_asks_ideas",
+    description:
+      "What people keep asking for, grouped into ideas and ranked by how many different people asked inside the " +
+      "window. An idea is flagged \"build\" once asks.buildAt people have asked. With id: one idea and every ask in it.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "One idea." },
+        all: { type: "boolean", description: "Include ignored and shipped ideas." },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "myna_asks_scan",
+    description:
+      "Read the watched subreddits now (RSS Amplifier's mirrors, else the Arctic Shift archive), keep the posts that " +
+      "are somebody asking for a tool, and file them under ideas. Posts nothing. Safe to call; takes a minute.",
+    inputSchema: {
+      type: "object",
+      properties: { subs: { type: "array", items: { type: "string" }, description: "Only these subreddits this time." } },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "myna_asks_reply",
+    description:
+      "Draft the answer to one ask and put it on a hand-off card for a person to paste on Reddit. Names one of our " +
+      "products, with a disclosure, only when it answers what they asked. Posts nothing: Reddit replies are always " +
+      "pasted by a person. Returns the text and the card link.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "The ask." },
+        text: { type: "string", description: "The reply to use instead of a draft." },
+        force: { type: "boolean", description: "Make a new card even if one is already waiting." },
+      },
+      required: ["id"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "myna_asks_stats",
+    description:
+      "What our replies did: each thread's score and comments, our comment's score and the answers it got. " +
+      "refresh re-reads the threads from the archive first.",
+    inputSchema: {
+      type: "object",
+      properties: { refresh: { type: "boolean", description: "Re-read the threads now." } },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "myna_asks_set",
+    description:
+      "Turn asks on or off, set an ask's status (skip one, or say it was replied to outside myna), or move an idea " +
+      "(building, shipped, ignored, watching), rename it, note it, or merge it into another.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        enabled: { type: "boolean" },
+        id: { type: "string", description: "An ask, with status." },
+        status: { type: "string", description: "new, drafted, replied or skipped." },
+        idea: { type: "string", description: "An idea, with idea_status, label, note or merge_into." },
+        idea_status: { type: "string", description: "watching, build, building, shipped or ignored." },
+        label: { type: "string" },
+        note: { type: "string" },
+        merge_into: { type: "string", description: "Fold idea into this one." },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
     name: "myna_upvote_set",
     description:
       "Turn the upvoter on or off, drop one queued action, or rewrite the reply a queued action carries. " +
@@ -1018,6 +1110,58 @@ export async function callTool(name: string, args_: Record<string, unknown> = {}
             error: item.error,
           })),
         });
+      }
+
+      case "myna_asks": {
+        if (typeof args.id === "string") return text(asksApi.asksShow(args.id as string));
+        if (typeof args.status === "string" || typeof args.sub === "string") {
+          return text(
+            asksApi.asksList({
+              ...(typeof args.status === "string" ? { status: args.status as string } : {}),
+              ...(typeof args.sub === "string" ? { sub: args.sub as string } : {}),
+              ...(typeof args.limit === "number" ? { limit: args.limit as number } : {}),
+            }),
+          );
+        }
+        return text(asksApi.asksOverview());
+      }
+
+      case "myna_asks_ideas": {
+        if (typeof args.id === "string") return text(asksApi.asksIdea(args.id as string));
+        return text(asksApi.asksIdeas({ all: Boolean(args.all) }));
+      }
+
+      case "myna_asks_scan": {
+        const subs = Array.isArray(args.subs) ? (args.subs as unknown[]).filter((sub): sub is string => typeof sub === "string") : [];
+        return text(await asksApi.asksScan(subs));
+      }
+
+      case "myna_asks_reply": {
+        return text(
+          await asksApi.asksReply(String(args.id ?? ""), {
+            ...(typeof args.text === "string" ? { text: args.text as string } : {}),
+            force: Boolean(args.force),
+          }),
+        );
+      }
+
+      case "myna_asks_stats": {
+        return text(await asksApi.asksStats({ refresh: Boolean(args.refresh) }));
+      }
+
+      case "myna_asks_set": {
+        return text(
+          asksApi.asksSet({
+            ...(typeof args.enabled === "boolean" ? { enabled: args.enabled as boolean } : {}),
+            ...(typeof args.id === "string" ? { id: args.id as string } : {}),
+            ...(typeof args.status === "string" ? { status: args.status as string } : {}),
+            ...(typeof args.idea === "string" ? { idea: args.idea as string } : {}),
+            ...(typeof args.idea_status === "string" ? { ideaStatus: args.idea_status as string } : {}),
+            ...(typeof args.label === "string" ? { label: args.label as string } : {}),
+            ...(typeof args.note === "string" ? { note: args.note as string } : {}),
+            ...(typeof args.merge_into === "string" ? { mergeInto: args.merge_into as string } : {}),
+          }),
+        );
       }
 
       case "myna_upvote_set": {

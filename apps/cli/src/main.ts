@@ -287,6 +287,25 @@ Follow-ups (the people who replied, reposted or followed you):
                                     linkPerDay, repostRatio, networks, manualOnly
   upvote log                        What was cast
 
+  asks                              People on Reddit asking for a site or app
+                                    that does X, Y and Z: what is new, and the
+                                    ideas most asked for
+  asks on | off                     Let the daemon read the subreddits every 30
+                                    minutes and re-read stats every 6 hours
+  asks scan [--sub a,b]             Read the subreddits now (RSS Amplifier,
+                                    else the Arctic Shift archive)
+  asks list [--status …] | show <id>
+  asks reply <id> [--text "…"]      Draft the answer onto a hand-off card to
+                                    paste; names our product when one fits
+  asks skip <id> | replied <id>
+  asks ideas | idea <id> [--status building|shipped|ignored] [--merge <id>]
+                                    What people keep asking for; BUILD once
+                                    asks.buildAt different people asked
+  asks stats [--refresh]            Thread score and comments, our reply's
+                                    score and the answers it got
+  asks product add <name> <url> [--keywords "a, b"] [--about "…"]
+  asks subs [add|rm <sub>] | set <key> <value>
+
 Directories (submitting the product, not a post):
   directory                         The directories myna can submit to, and
                                     which of them this machine is signed in to

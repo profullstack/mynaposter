@@ -91,6 +91,8 @@ export interface Settings {
   autopilot: AutopilotSettings;
   /** The upvoter: finding posts worth a vote, and what myna may do about them. */
   upvote: UpvoteSettings;
+  /** Asks: people on Reddit asking for a site or app that does X, Y and Z, and what we did about it. */
+  asks: AsksSettings;
   /** Where a DID is proved: the CoinPay origin and the OAuth client myna is registered as there. */
   did: DidSettings;
   /** Direct mail and texts: the most that go out in a rolling day. */
@@ -291,6 +293,43 @@ export interface UpvoteSettings {
   leads: boolean;
 }
 
+/**
+ * Asks: people asking, in public, for a site or an app that does X, Y and Z.
+ *
+ * Read from RSS Amplifier's subreddit mirrors (`<feedBase>/r/<sub>.json`)
+ * because Reddit blocks this box outright; thread stats come from the Arctic
+ * Shift archive for the same reason. Replies are never sent from here: each one
+ * is a hand-off card a person pastes, which is the only honest Reddit adapter.
+ */
+export interface AsksSettings {
+  /** Off until a person turns it on: the daemon then scans every half hour and refreshes stats every six. */
+  enabled: boolean;
+  /** Comma list of subreddits to read, without the `r/`. */
+  subs: string;
+  /** Where the subreddit feeds are read from. */
+  feedBase: string;
+  /** The Reddit archive the thread and reply stats come from. */
+  statsBase: string;
+  /** Read the archive for a subreddit RSS Amplifier has not crawled yet, rather than nothing. */
+  fallback: boolean;
+  /** 0-1. How sure the detector must be that a post is somebody asking for a thing. */
+  minScore: number;
+  /** Distinct people asking for the same idea, inside `windowDays`, before it is flagged "build". */
+  buildAt: number;
+  /** How far back an ask counts toward an idea's demand. */
+  windowDays: number;
+  /** How long after it was posted a thread keeps getting its stats refreshed. */
+  trackDays: number;
+  /** Threads refreshed per stats run, oldest refresh first. The archive is a free service. */
+  statsPerRun: number;
+  /** Our Reddit username, without `u/`, so stats can find the reply we pasted and count answers to it. */
+  redditUser: string;
+  /** Hand each asker to the plugins that collect people (OutreachGraph) as a lead. */
+  leads: boolean;
+  /** Draft replies with the writer when one is configured; the template otherwise. */
+  useWriter: boolean;
+}
+
 export interface DidSettings {
   server: string;
   /** A public OAuth client (PKCE, loopback redirect) registered at the server with the `did` scope. */
@@ -443,6 +482,22 @@ export const DEFAULT_UPVOTE: UpvoteSettings = {
   leads: true,
 };
 
+export const DEFAULT_ASKS: AsksSettings = {
+  enabled: false,
+  subs: "SomebodyMakeThis,AppIdeas,Lightbulb,software,webapps,macapps,androidapps,iosapps,selfhosted,productivity,SaaS,SideProject,Entrepreneur,smallbusiness,nocode,webdev",
+  feedBase: "https://rssamplifier.com",
+  statsBase: "https://arctic-shift.photon-reddit.com",
+  fallback: true,
+  minScore: 0.5,
+  buildAt: 5,
+  windowDays: 60,
+  trackDays: 30,
+  statsPerRun: 40,
+  redditUser: "",
+  leads: true,
+  useWriter: true,
+};
+
 export const DEFAULT_SETTINGS: Settings = {
   defaultTargets: "all",
   signature: "",
@@ -483,6 +538,7 @@ export const DEFAULT_SETTINGS: Settings = {
   engage: { ...DEFAULT_ENGAGE },
   autopilot: { ...DEFAULT_AUTOPILOT },
   upvote: { ...DEFAULT_UPVOTE },
+  asks: { ...DEFAULT_ASKS },
   did: { ...DEFAULT_DID },
   outreach: { ...DEFAULT_OUTREACH },
   newsletter: newsletterSettings(undefined),
@@ -520,6 +576,7 @@ export function loadSettings(): Settings {
     reshare: { ...DEFAULT_RESHARE, ...stored.reshare },
     engage: { ...DEFAULT_ENGAGE, ...stored.engage },
     autopilot: { ...DEFAULT_AUTOPILOT, ...stored.autopilot },
+    asks: { ...DEFAULT_ASKS, ...stored.asks },
     did: { ...DEFAULT_DID, ...stored.did },
     outreach: { ...DEFAULT_OUTREACH, ...stored.outreach },
     newsletter: newsletterSettings(stored.newsletter),

@@ -21,6 +21,7 @@ import {
   variations,
   suggestPlaces,
   type ProjectBrief,
+  asksApi,
 } from "@profullstack/myna-core";
 import * as service from "./service.ts";
 import { handleMcpBody } from "./mcp.ts";
@@ -336,6 +337,65 @@ app.post("/v1/upvote/enabled", async (context) => {
 app.patch("/v1/upvote/:id", async (context) => {
   const body = (await context.req.json().catch(() => ({}))) as { skip?: boolean; reply?: string };
   return guard(() => service.upvoteEdit(context.req.param("id"), body))(context);
+});
+
+/**
+ * Asks: people on Reddit asking for a site that does X, Y and Z. Same shape
+ * as `myna asks`. Nothing here posts to Reddit: a reply is a hand-off card.
+ */
+app.get("/v1/asks", (context) =>
+  guard(() =>
+    asksApi.asksList({
+      status: context.req.query("status"),
+      sub: context.req.query("sub"),
+      idea: context.req.query("idea"),
+      ...(context.req.query("limit") ? { limit: Number(context.req.query("limit")) } : {}),
+    }),
+  )(context),
+);
+
+app.get("/v1/asks/overview", guard(() => asksApi.asksOverview()));
+
+app.get("/v1/asks/ideas", (context) => guard(() => asksApi.asksIdeas({ all: context.req.query("all") === "1" }))(context));
+
+app.get("/v1/asks/ideas/:id", (context) => guard(() => asksApi.asksIdea(context.req.param("id")))(context));
+
+app.get("/v1/asks/stats", (context) => guard(async () => await asksApi.asksStats({ refresh: context.req.query("refresh") === "1" }))(context));
+
+app.post("/v1/asks/scan", async (context) => {
+  const body = (await context.req.json().catch(() => ({}))) as { subs?: string[] | string };
+  const subs = Array.isArray(body.subs) ? body.subs : typeof body.subs === "string" ? body.subs.split(",") : [];
+  return guard(async () => await asksApi.asksScan(subs.map((sub) => String(sub).trim()).filter(Boolean)))(context);
+});
+
+app.get("/v1/asks/:id", (context) => guard(() => asksApi.asksShow(context.req.param("id")))(context));
+
+app.post("/v1/asks/:id/reply", async (context) => {
+  const body = (await context.req.json().catch(() => ({}))) as { text?: string; force?: boolean };
+  return guard(async () => await asksApi.asksReply(context.req.param("id"), body))(context);
+});
+
+app.patch("/v1/asks/:id", async (context) => {
+  const body = (await context.req.json().catch(() => ({}))) as { status?: string };
+  return guard(() => asksApi.asksSet({ id: context.req.param("id"), ...(body.status ? { status: body.status } : {}) }))(context);
+});
+
+app.patch("/v1/asks/ideas/:id", async (context) => {
+  const body = (await context.req.json().catch(() => ({}))) as { status?: string; label?: string; note?: string; mergeInto?: string };
+  return guard(() =>
+    asksApi.asksSet({
+      idea: context.req.param("id"),
+      ...(body.status ? { ideaStatus: body.status } : {}),
+      ...(body.label ? { label: body.label } : {}),
+      ...(typeof body.note === "string" ? { note: body.note } : {}),
+      ...(body.mergeInto ? { mergeInto: body.mergeInto } : {}),
+    }),
+  )(context);
+});
+
+app.post("/v1/asks/enabled", async (context) => {
+  const body = (await context.req.json().catch(() => ({}))) as { enabled?: boolean };
+  return guard(() => asksApi.asksSet({ enabled: Boolean(body.enabled) }))(context);
 });
 
 /**
