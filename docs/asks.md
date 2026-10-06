@@ -32,7 +32,9 @@ reddit.com.
 The archive is free and says "slow down" when two requests arrive back to back,
 so requests to it are spaced 2.5 s apart and retried once when it complains.
 
-The default subs are where these posts actually appear: SomebodyMakeThis,
+The default subs are where these posts actually appear: the r/Ask* tech subs
+(AskProgramming, AskProgrammers, AskTechnology, AskNetsec, AskElectronics,
+AskEngineers), then SomebodyMakeThis,
 AppIdeas, Lightbulb, software, webapps, macapps, androidapps, iosapps,
 selfhosted, productivity, SaaS, SideProject, Entrepreneur, smallbusiness,
 nocode and webdev. `myna asks subs add <sub>` and `myna asks subs rm <sub>`

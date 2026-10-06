@@ -484,7 +484,7 @@ export const DEFAULT_UPVOTE: UpvoteSettings = {
 
 export const DEFAULT_ASKS: AsksSettings = {
   enabled: false,
-  subs: "SomebodyMakeThis,AppIdeas,Lightbulb,software,webapps,macapps,androidapps,iosapps,selfhosted,productivity,SaaS,SideProject,Entrepreneur,smallbusiness,nocode,webdev",
+  subs: "AskProgramming,AskProgrammers,AskTechnology,AskNetsec,AskElectronics,AskEngineers,SomebodyMakeThis,AppIdeas,Lightbulb,software,webapps,macapps,androidapps,iosapps,selfhosted,productivity,SaaS,SideProject,Entrepreneur,smallbusiness,nocode,webdev",
   feedBase: "https://rssamplifier.com",
   statsBase: "https://arctic-shift.photon-reddit.com",
   fallback: true,

@@ -656,6 +656,7 @@ For each post return:
 - wants: when it is an ask, the specific things they want it to do, 1 to 6 short phrases in their words (3-8 words each), most important first. Never pad with generic wishes like "easy to use" unless they said it.
 - label: when it is an ask, a 2-6 word name for the thing, generic enough that other people asking for the same thing would share it ("habit tracker with streaks", "multi-currency payment processor").
 
+Return exactly one result for every post, in the order given, including the ones that are not asks (ask: false). Never leave a post out.
 Return only JSON: {"results": [{"id": "<id>", "ask": true, "wants": ["..."], "label": "..."}]}.`;
 
 export interface AskJudgeInput {
