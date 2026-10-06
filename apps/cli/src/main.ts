@@ -43,6 +43,11 @@ Posting:
                                     at once, past the daily cap: it is for a
                                     post you asked for by hand. Automated
                                     promotion never passes it
+       [--rotate[=random]]          One of the targets per post, taking
+                                    turns (or at random), skipping accounts
+                                    at their daily cap; every pick is kept
+  rotation [--limit 20]             Whose turn is next per target group,
+                                    posts per account, and the last picks
   schedule <when> [text]            Queue a post: "in 2h", "tomorrow 9am"
   pace [--gap 2h] [--drip 48h]      The pacing rules: one post per network
        [--repost 7d]                per gap, several accounts spread over

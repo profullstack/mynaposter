@@ -37,6 +37,13 @@ import {
   listQueue,
   loadAllMedia,
   loadSettings,
+  pickRotation,
+  recordRotation,
+  loadRotation,
+  saveRotation,
+  bookingsPerAccount,
+  planLimitsFor,
+  type RotateMode,
   needsPassphrase,
   openBrowser,
   postToAll,
@@ -182,6 +189,13 @@ export function parseFlags(argv: string[]): { positional: string[]; flags: Flags
       flags.type = true;
       continue;
     }
+    // `--rotate` is a switch (round-robin); `--rotate=random` or
+    // `--rotate=cycle` picks the mode. It never takes the next argument,
+    // which is the post's text or target.
+    if (name === "rotate" && inlineValue === undefined) {
+      flags.rotate = "cycle";
+      continue;
+    }
     const value = inlineValue ?? argv[++i];
     if (value === undefined) throw new Error(`--${rawName} needs a value`);
     if (name === "media") (flags.media ??= []).push(value);
@@ -197,7 +211,7 @@ const OWN_FLAGS = new Set([
   "to", "title", "media", "json", "yes", "style", "at", "thread", "dryRun", "limit", "output",
   "keepSvg", "server", "overwrite", "settings", "once", "interval", "refresh", "theme", "force", "weight", "source", "network",
   "now", "gap", "drip", "repost", "every", "cooldown", "off", "on", "port", "open", "noOpen",
-  "days", "send", "command", "check", "version", "allowDuplicate", "from", "type",
+  "days", "send", "command", "check", "version", "allowDuplicate", "from", "type", "rotate",
 ]);
 
 /**
@@ -657,10 +671,32 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
 
     case "post": {
       await ensureUnlocked();
-      const { accounts, text } = await resolvePostArgs(positional, flags);
+      const resolved = await resolvePostArgs(positional, flags);
+      const text = resolved.text;
+      let accounts = resolved.accounts;
       // `--at` is myna's own flag for `schedule`; on a post it is handed to the
       // network, since a calendar entry needs a time.
       const extra = flags.at ? { ...extraFrom(flags), at: flags.at } : extraFrom(flags);
+
+      // --rotate: one of the targets, taking turns (see core/rotate.ts).
+      let rotation: { pick: ReturnType<typeof pickRotation>; mode: RotateMode; state: ReturnType<typeof loadRotation>; now: number } | undefined;
+      if (flags.rotate !== undefined) {
+        const mode = flags.rotate === true ? "cycle" : String(flags.rotate);
+        if (mode !== "cycle" && mode !== "random") throw new Error(`--rotate is cycle (the default) or random, not "${mode}".`);
+        const state = loadRotation();
+        const now = Date.now();
+        const pick = pickRotation({
+          accounts,
+          mode,
+          state,
+          now,
+          bookings: bookingsPerAccount(listHistory(), listQueue()),
+          maxPerDay: (account) => planLimitsFor(account, settings).maxPerDay,
+        });
+        rotation = { pick, mode, state, now };
+        accounts = [pick.account];
+        out(`rotate ${pick.account.id}  (${mode}, ${pick.why === "room" ? "has room today" : "every target is at its cap; frees up first"}${pick.upNext ? `; next: ${pick.upNext.id}` : ""})`);
+      }
 
       if (flags.dryRun) {
         out(`Would post to ${accounts.length} account${accounts.length === 1 ? "" : "s"} as a ${typeof flags.type === "string" ? flags.type : defaultTypeFor(accounts)}:`);
@@ -683,6 +719,10 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
         type: typeof flags.type === "string" ? flags.type : undefined,
       }, { force: Boolean(flags.now), front: Boolean(flags.front || flags.skipQueue), mediaPaths: flags.media });
       const results = paced.results;
+      // The turn is spent once the post went out or is queued, not when it failed.
+      if (rotation && (results.some((r) => r.ok) || paced.queued.length)) {
+        saveRotation(recordRotation(rotation.state, rotation.pick, rotation.mode, text, rotation.now));
+      }
 
       if (flags.json) {
         out(JSON.stringify({
@@ -727,6 +767,34 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
         }
       }
       return results.every((result) => result.ok) ? 0 : 1;
+    }
+
+    case "rotation": {
+      // myna rotation [--limit 20] [--json]   whose turn it is, and who got what
+      const state = loadRotation();
+      const limit = Math.max(1, Number(flags.limit) || 20);
+      if (flags.json) {
+        out(JSON.stringify({ cursor: state.cursor, picks: state.picks.slice(-limit) }, null, 2));
+        return 0;
+      }
+      if (!state.picks.length) {
+        out("No rotated posts yet. Post with: myna post <targets> --rotate   (or --rotate=random)");
+        return 0;
+      }
+      out("Next up, per target group:");
+      for (const [group, index] of Object.entries(state.cursor)) {
+        const ids = group.split(",");
+        out(`  ${ids[index % ids.length]}  (of ${ids.join(", ")})`);
+      }
+      const counts = new Map<string, number>();
+      for (const pick of state.picks) counts.set(pick.account, (counts.get(pick.account) ?? 0) + 1);
+      out("\nPosts per account (all recorded picks):");
+      for (const [account, n] of [...counts].sort((a, b) => b[1] - a[1])) out(`  ${String(n).padStart(4)}  ${account}`);
+      out(`\nLast ${Math.min(limit, state.picks.length)}:`);
+      for (const pick of state.picks.slice(-limit)) {
+        out(`  ${describeWhen(new Date(pick.at))}  ${pick.account}  ${pick.mode}${pick.why === "cap" ? " (all capped)" : ""}  ${pick.text}`);
+      }
+      return 0;
     }
 
     case "pace": {

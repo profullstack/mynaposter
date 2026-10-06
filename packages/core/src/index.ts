@@ -156,6 +156,17 @@ export {
   type AccountLimits,
 } from "./core/pacing.ts";
 export {
+  pickRotation,
+  recordRotation,
+  loadRotation,
+  saveRotation,
+  rotationGroup,
+  type RotateMode,
+  type RotationPick,
+  type RotationState,
+  type PickResult,
+} from "./core/rotate.ts";
+export {
   TEMPLATE_VERSION,
   DEFAULT_SKILL_SLUG,
   skillKindFor,
