@@ -800,7 +800,9 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
       for (const [account, n] of [...counts].sort((a, b) => b[1] - a[1])) out(`  ${String(n).padStart(4)}  ${account}`);
       out(`\nLast ${Math.min(limit, state.picks.length)}:`);
       for (const pick of state.picks.slice(-limit)) {
-        out(`  ${describeWhen(new Date(pick.at))}  ${pick.account}  ${pick.mode}${pick.why === "cap" ? " (all capped)" : ""}  ${pick.text}`);
+        // A past moment: describeWhen is for the future and calls these "now".
+        const when = new Date(pick.at).toLocaleString(undefined, { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+        out(`  ${when}  ${pick.account}  ${pick.mode}${pick.why === "cap" ? " (all capped)" : ""}  ${pick.text}`);
       }
       return 0;
     }
