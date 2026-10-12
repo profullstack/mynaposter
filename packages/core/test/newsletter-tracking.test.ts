@@ -185,7 +185,7 @@ test("without {{cta}} the CTA goes last before the footer; with no CTA a stray m
   const base = { subject: "S", list: "moshcode-users", replyTo: null };
   const opts = { link: "https://example.com/u/t", address: "1 Main St", from: "news@profullstack.com", token: "t" };
   const appended = composeNewsletter({ ...base, body: "Just text, see https://moshcode.com" }, { ...opts, cta: DEFAULT_CTAS[0] });
-  expect(appended.text.indexOf("Book a demo: https://profullstack.com/book")).toBeGreaterThan(appended.text.indexOf("Just text"));
+  expect(appended.text.indexOf("Book a demo: https://profullstack.com/diagnostic")).toBeGreaterThan(appended.text.indexOf("Just text"));
   expect(appended.text.indexOf("Book a demo")).toBeLessThan(appended.text.indexOf("Unsubscribe"));
   expect(appended.text).toContain("see https://moshcode.com");
   expect(appended.html).not.toContain("<img");
@@ -328,8 +328,8 @@ test("stats join events to variants by msgId: human opens, all opens, human clic
     { type: "open", m: "a1", at },
     { type: "open", m: "a2", machine: true, at },
     { type: "open", m: "b1", at },
-    { type: "click", m: "b1", url: "https://profullstack.com/book", at },
-    { type: "click", m: "b1", url: "https://profullstack.com/book", at },
+    { type: "click", m: "b1", url: "https://profullstack.com/diagnostic", at },
+    { type: "click", m: "b1", url: "https://profullstack.com/diagnostic", at },
     { type: "click", m: "a2", machine: true, at },
     { type: "unsubscribe", m: "b2", at },
     { type: "open", m: "test-copy", at },
@@ -364,7 +364,7 @@ test("settings: tracking off by default, the default CTA set, copied rather than
   expect(settings.newsletter.paceMs).toBe(1000);
   expect(settings.newsletter.ctaSets.default?.map((cta) => cta.label)).toEqual(["Book a demo", "Schedule a call", "See our plans", "Support us", "Get the Power Key"]);
   expect(settings.newsletter.footerLinks.map((l) => l.url)).toEqual([
-    "https://profullstack.com/book",
+    "https://profullstack.com/diagnostic",
     "https://profullstack.com/contact",
     "https://profullstack.com/plans",
     "https://profullstack.com/shop",
@@ -547,7 +547,7 @@ test("the standard footer: company, every link (signed when tracked), the produc
   );
   const html = message.html as string;
   expect(html).toContain('<a href="https://profullstack.com" style="color:#1f2328;text-decoration:none">Profullstack, Inc.</a>');
-  for (const [label, path] of [["Book a demo", "book"], ["Schedule a call", "contact"], ["Plans", "plans"], ["Shop", "shop"], ["Support us", "support-us"]]) {
+  for (const [label, path] of [["Book a demo", "diagnostic"], ["Schedule a call", "contact"], ["Plans", "plans"], ["Shop", "shop"], ["Support us", "support-us"]]) {
     expect(html).toContain(`href="https://profullstack.com/${path}"`);
     expect(html).toContain(`>${label}</a>`);
     expect(message.text).toContain(`${label}: https://profullstack.com/${path}`);
