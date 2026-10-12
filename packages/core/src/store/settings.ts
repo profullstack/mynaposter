@@ -392,7 +392,7 @@ export interface NewsletterCta {
 }
 
 export const DEFAULT_CTAS: NewsletterCta[] = [
-  { label: "Book a demo", url: "https://profullstack.com/book" },
+  { label: "Book a demo", url: "https://profullstack.com/diagnostic" },
   { label: "Schedule a call", url: "https://profullstack.com/contact" },
   { label: "See our plans", url: "https://profullstack.com/plans" },
   { label: "Support us", url: "https://profullstack.com/support-us" },
@@ -404,7 +404,7 @@ export const DEFAULT_CTAS: NewsletterCta[] = [
  * got: the standard Profullstack row.
  */
 export const DEFAULT_FOOTER_LINKS: NewsletterCta[] = [
-  { label: "Book a demo", url: "https://profullstack.com/book" },
+  { label: "Book a demo", url: "https://profullstack.com/diagnostic" },
   { label: "Schedule a call", url: "https://profullstack.com/contact" },
   { label: "Plans", url: "https://profullstack.com/plans" },
   { label: "Shop", url: "https://profullstack.com/shop" },
