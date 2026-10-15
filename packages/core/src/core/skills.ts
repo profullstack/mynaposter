@@ -287,7 +287,8 @@ export function profileUrlFor(account: Pick<Account, "network" | "handle" | "met
     case "x":
       return `https://x.com/${handle}`;
     case "devto":
-      return `https://dev.to/${handle}`;
+      // Another Forem's account is `user@host`, with the address on meta.
+      return meta.instance ? `${meta.instance}/${handle.split("@")[0]}` : `https://dev.to/${handle}`;
     case "threads":
       return `https://www.threads.net/@${handle}`;
     case "instagram":

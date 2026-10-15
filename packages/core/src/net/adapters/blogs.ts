@@ -18,29 +18,50 @@ import { ghostToken, oauth1Header } from "../../util/crypto/sign.ts";
 
 const firstLine = (text: string): string => text.split("\n")[0].replace(/^#+\s*/, "").slice(0, 200);
 
+const DEVTO = "https://dev.to";
+
+/**
+ * dev.to is one Forem; forem.com, community.codenewbie.org and every other
+ * Forem serve the same API at their own address. The base is kept on the
+ * account, and an account anywhere but dev.to is named `user@host`, so the
+ * same username on two Forems are two accounts and not one overwriting the
+ * other.
+ */
+const foremBase = (account: { meta: Record<string, string> }): string => account.meta.instance || DEVTO;
+
 export const devto: Network = {
   id: "devto",
   name: "dev.to",
   category: "blog",
-  blurb: "Forem. Publishes a Markdown article.",
+  blurb: "Forem: dev.to, forem.com, CodeNewbie or any Forem. Publishes a Markdown article.",
   auth: {
     kind: "token",
-    note: "dev.to → Settings → Extensions → DEV Community API Keys → Generate API Key.",
+    note: "Settings → Extensions → DEV Community API Keys → Generate API Key, on whichever Forem you post to.",
     docsUrl: "https://dev.to/settings/extensions",
-    fields: [{ key: "apiKey", label: "API key", secret: true }],
+    fields: [
+      { key: "apiKey", label: "API key", secret: true },
+      { key: "instance", label: "Forem address", optional: true, default: DEVTO, help: "Blank for dev.to. Others: https://forem.com, https://community.codenewbie.org" },
+    ],
   },
   caps: { charLimit: 0, mediaLimit: 0, threads: false, delete: false, timeline: true, notifications: false, stats: true, needsTitle: true, explicitTarget: true },
 
   async login(input) {
-    const me = await getJson<{ username: string; name: string }>("https://dev.to/api/users/me", {
+    const instance = input.instance?.trim() ? normalizeInstance(input.instance) : DEVTO;
+    const me = await getJson<{ username: string; name: string }>(`${instance}/api/users/me`, {
       headers: { "api-key": input.apiKey },
     });
-    return { handle: me.username, displayName: me.name, creds: { apiKey: input.apiKey }, meta: {} };
+    const elsewhere = instance !== DEVTO;
+    return {
+      handle: elsewhere ? `${me.username}@${new URL(instance).host}` : me.username,
+      displayName: me.name,
+      creds: { apiKey: input.apiKey },
+      meta: elsewhere ? { instance } : ({} as Record<string, string>),
+    };
   },
 
   async post(account, input) {
     const created = await postJson<{ id: number; url: string }>(
-      "https://dev.to/api/articles",
+      `${foremBase(account)}/api/articles`,
       {
         article: {
           title: input.title || firstLine(input.text),
@@ -56,7 +77,7 @@ export const devto: Network = {
   },
 
   async timeline(account, limit) {
-    const articles = await getJson<Record<string, any>[]>(`https://dev.to/api/articles/me?per_page=${limit}`, {
+    const articles = await getJson<Record<string, any>[]>(`${foremBase(account)}/api/articles/me?per_page=${limit}`, {
       headers: { "api-key": account.creds.apiKey },
     });
     return articles.map((article): TimelineItem => ({
@@ -72,7 +93,7 @@ export const devto: Network = {
   },
 
   async stats(account, id) {
-    const article = await getJson<Record<string, any>>(`https://dev.to/api/articles/${id}`, {
+    const article = await getJson<Record<string, any>>(`${foremBase(account)}/api/articles/${id}`, {
       headers: { "api-key": account.creds.apiKey },
     });
     return { likes: article.public_reactions_count, replies: article.comments_count, views: article.page_views_count };

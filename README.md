@@ -140,7 +140,8 @@ part most tools are vague about, so to be plain:
 | How you log in | Networks |
 |---|---|
 | **Real username and password** | Bluesky (app password), Lemmy, Matrix, Mattermost, WordPress (application password), Reddit (script app) |
-| **A token you paste** | Telegram, Discord, Slack, Misskey, Nostr, dev.to, Hashnode, Ghost, Micro.blog |
+| **A token you paste** | Telegram, Discord, Slack, Misskey, Nostr, dev.to (and any Forem), Hashnode, Ghost, Micro.blog, MoltExchange, ugig.net |
+| **A token you paste, or none: myna registers the agent** | Moltbook, The Colony, 4claw |
 | **Approving a short code** | tsbb, agenticjobs (device flow: the board shows a code, you approve it in a browser) |
 | **Nothing — files on this machine** | Git blog (a repository, committed through GitHub with your token or `gh`), HTML blog (a directory of pages) |
 | **One click in a browser, no setup** | Mastodon, Pleroma, Akkoma, GoToSocial, Pixelfed. myna registers itself on the instance and opens an Authorize page. Nothing to type but the instance, and no developer account anywhere |
@@ -196,18 +197,50 @@ Two more things worth knowing before you plan a posting workflow:
 
 ## Supported networks
 
-31 in total.
+36 in total.
 
 **Major** X, Facebook, Instagram, Threads, Bluesky, Reddit, LinkedIn, Pinterest,
 TikTok, YouTube
 **Fediverse and self-hosted** Mastodon (and Pleroma, Akkoma, GoToSocial),
 Misskey (and Sharkey, Firefish), Pixelfed, Lemmy, Nostr, tsbb, agenticjobs
+**Built for AI agents** Moltbook, The Colony, 4claw, MoltExchange (named in `--to`, never part of `all`), ugig.net
 **Chat** Telegram, Discord, Slack, Matrix, Mattermost
-**Long-form** dev.to, Hashnode, Ghost, WordPress, Micro.blog, Tumblr (named in `--to`, never part of `all`)
+**Long-form** dev.to (and forem.com, CodeNewbie, any Forem), Hashnode, Ghost, WordPress, Micro.blog, Tumblr (named in `--to`, never part of `all`)
 **Your own blogs** Git blog, HTML blog, bl0ggers (one account per publication)
 **Your calendar** Google Calendar (an event is a post; see [Calendar](#calendar-what-myna-is-going-to-say-on-the-calendar-you-already-look-at))
 
 `myna networks` prints the current list with each one's login method and limit.
+
+### Networks for AI agents
+
+Moltbook, The Colony and 4claw issue keys over their own API, so `myna login`
+with no key registers the agent and stores the key it is given (shown once, by
+them and by myna). MoltExchange and Moltbook then want a person to verify the
+agent in a browser before it can post; login prints the link.
+
+```bash
+myna login colony --username riotcoder --bio "Profullstack's agent"   # registers, active at once
+myna login 4claw --name riotcoder --board singularity
+myna login moltbook --name riotcoder                # opens the claim link; verify needs a post on X
+myna login moltexchange --apiKey molt_...           # register at api.moltexchange.ai first
+myna login ugig --apiKey ugig_live_...
+myna post --to moltbook --submolt general --title "..." "body"
+myna post --to colony --colony findings --postType finding --title "..." "body"
+myna post --to 4claw --board singularity --title "..." "body"
+myna post --to moltexchange --exchange openclaw --title "How do you ...?" "details"
+```
+
+A Moltbook post comes back with an obfuscated arithmetic challenge and stays
+hidden until it is answered; myna reads it with a rule-based parser, asks the
+configured model only when the parser declines, and never submits a guess.
+
+Any other Forem is the dev.to network with an address: `myna login devto
+--instance https://community.codenewbie.org`. The account is
+`devto:you@community.codenewbie.org`, separate from `devto:you`.
+
+Places with no posting API (Hacker News, Stacker News, Indie Hackers, Medium,
+HackerNoon, Quora) are [hand-off cards](#hand-offs): the text, the page to open,
+and a done button.
 
 ### The job board
 
