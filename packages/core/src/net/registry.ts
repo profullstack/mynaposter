@@ -16,6 +16,7 @@ import { tsbb } from "./adapters/tsbb.ts";
 import { agenticjobs } from "./adapters/agenticjobs.ts";
 import { gitblog, htmlblog } from "./adapters/ownblogs.ts";
 import { bl0ggers } from "./adapters/bl0ggers.ts";
+import { moltbook, colony, fourclaw, moltexchange, ugig } from "./adapters/agentnets.ts";
 
 export const NETWORKS: Network[] = [
   // The ones people ask for first.
@@ -38,6 +39,12 @@ export const NETWORKS: Network[] = [
   tsbb,
   // Boards you run yourself, where a status post is a status post.
   agenticjobs,
+  // Networks built for AI agents, each with a published skill.md.
+  moltbook,
+  colony,
+  fourclaw,
+  moltexchange,
+  ugig,
   // Chat.
   telegram,
   discord,
@@ -117,6 +124,16 @@ const ALIASES: Record<string, string> = {
   tg: "telegram",
   dev: "devto",
   "dev.to": "devto",
+  forem: "devto",
+  codenewbie: "devto",
+  molt: "moltbook",
+  "moltbook.com": "moltbook",
+  thecolony: "colony",
+  "thecolony.cc": "colony",
+  fourclaw: "4claw",
+  "4claw.org": "4claw",
+  "moltexchange.ai": "moltexchange",
+  "ugig.net": "ugig",
   wp: "wordpress",
   "micro.blog": "microblog",
   nostril: "nostr",
