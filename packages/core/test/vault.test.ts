@@ -92,3 +92,18 @@ test("resolveTargets understands ids, networks and all", async () => {
   expect(store.resolveTargets("bluesky,bluesky:alice.bsky.social")).toHaveLength(1);
   expect(() => store.resolveTargets("nosuchthing")).toThrow(/No connected account/);
 });
+
+test("a long-running process sees, and keeps, an account another process added", async () => {
+  // The daemon has the vault open, then `myna login` adds an account from another process.
+  const daemon = await fresh();
+  daemon.saveAccount(sample("bluesky:alice.bsky.social"));
+  const login = await fresh();
+  login.saveAccount(sample("bluesky:riotcoder.social.w3bs.org"));
+
+  expect(daemon.getAccount("bluesky:riotcoder.social.w3bs.org")?.handle).toBe("riotcoder.social.w3bs.org");
+
+  // The daemon refreshing alice's session must not write its old list back.
+  daemon.saveAccount({ ...sample("bluesky:alice.bsky.social"), creds: { accessJwt: "refreshed" } });
+  const ids = (await fresh()).listAccounts().map((account: { id: string }) => account.id);
+  expect(ids).toEqual(["bluesky:alice.bsky.social", "bluesky:riotcoder.social.w3bs.org"]);
+});
