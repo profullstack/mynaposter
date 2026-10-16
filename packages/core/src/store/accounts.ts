@@ -5,10 +5,17 @@
  * vault is read into one module-level cache, so a second module opening it
  * would hold a second copy and the last writer would silently drop the other's
  * changes. Everything that persists into the vault goes through this file.
+ *
+ * The cache is also checked against the file on every use. The daemon runs for
+ * days: with a cache read once at start, an account added by `myna login` was
+ * invisible to it, and the next session refresh it saved wrote the old list
+ * back over the new one, deleting the account.
  */
 import type { Account } from "../net/types.ts";
 import type { DirectoryAccount } from "../directories/types.ts";
+import { statSync } from "node:fs";
 import { readVault, writeVault, vaultExists, vaultMode } from "../util/crypto/vault.ts";
+import { configPath, VAULT_FILE } from "../util/paths.ts";
 import { getNetwork } from "../net/registry.ts";
 
 interface VaultPayload {
@@ -29,6 +36,8 @@ interface VaultPayload {
 }
 
 let cache: VaultPayload | null = null;
+/** mtime and size of vault.json when `cache` was read or written; "" when there is no file. */
+let cacheStamp = "";
 let passphrase: string | undefined;
 
 /** Supply the passphrase for a passphrase-mode vault. */
@@ -47,14 +56,29 @@ export function needsPassphrase(): boolean {
   return vaultExists() && vaultMode() === "passphrase" && !passphrase && !process.env.MYNA_PASSPHRASE;
 }
 
+function vaultStamp(): string {
+  try {
+    const stat = statSync(configPath(VAULT_FILE));
+    return `${stat.mtimeMs}:${stat.size}`;
+  } catch {
+    return "";
+  }
+}
+
+/** The vault as it is on disk now: re-read whenever another process has written it since. */
 function load(): VaultPayload {
-  if (!cache) cache = readVault<VaultPayload>({ accounts: [] }, passphrase);
+  const stamp = vaultStamp();
+  if (!cache || stamp !== cacheStamp) {
+    cache = readVault<VaultPayload>({ accounts: [] }, passphrase);
+    cacheStamp = stamp;
+  }
   return cache;
 }
 
 function save(payload: VaultPayload): void {
-  cache = payload;
   writeVault(payload, passphrase);
+  cache = payload;
+  cacheStamp = vaultStamp();
 }
 
 export function listAccounts(): Account[] {
@@ -156,4 +180,5 @@ export function resolveTargets(spec: string): Account[] {
 /** Drop the in-memory copy — used after a rekey or in tests. */
 export function resetAccountCache(): void {
   cache = null;
+  cacheStamp = "";
 }
