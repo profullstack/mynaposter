@@ -54,6 +54,12 @@ import {
   effectiveRecap,
   runRecap,
   loadRecapState,
+  buildLinks,
+  renderLinksText,
+  renderLinksHtml,
+  effectiveLinks,
+  runLinks,
+  loadLinksState,
   DEFAULT_EVERGREEN,
   getAccount,
   removeAccount,
@@ -1008,6 +1014,73 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
       }
 
       out(renderRecapText(recap));
+      return 0;
+    }
+
+    case "links": {
+      // myna links                     a link to every post live in the last day
+      // myna links --days 3            a wider window
+      // myna links --html links.html   write the HTML mail to a file to look at
+      // myna links --send              send it now (it stamps, so the daemon skips tonight's)
+      // myna links on [--to me@x.com] [--at 22:00]
+      // myna links off | status
+      //
+      // No vault, like the recap: it reads history.json only.
+      const cfg = { ...settings.links };
+      const action = positional[0];
+      let changed = false;
+      if (action === "on" || action === "off") {
+        cfg.enabled = action === "on";
+        changed = true;
+      }
+      if (typeof flags.to === "string") { cfg.to = flags.to; changed = true; }
+      if (typeof flags.at === "string") {
+        if (!/^\d{1,2}:\d{2}$/.test(flags.at)) throw new Error("--at wants a time of day like 22:00.");
+        cfg.at = flags.at;
+        changed = true;
+      }
+      if (typeof flags.command === "string") { cfg.command = flags.command; changed = true; }
+      const next = { ...settings, links: cfg };
+      const effective = effectiveLinks(next);
+      if (action === "on" && !effective.to) {
+        throw new Error("Where to? There is no recap or profile address to fall back on. Try: myna links on --to you@example.com");
+      }
+      if (changed) saveSettings(next);
+
+      if (action === "status" || action === "on" || action === "off") {
+        const state = loadLinksState();
+        const source = effective.toSource === "recap" ? " (the recap's address)" : "";
+        out(`links  ${effective.enabled ? "on" : "off"}` + (effective.to ? `  to ${effective.to}${source}` : "  no address") + `  at ${effective.at}  via ${effective.command}`);
+        out(state.lastSentAt ? `last sent ${new Date(state.lastSentAt).toLocaleString("en-US", { weekday: "short", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}` : "never sent");
+        if (effective.enabled) out("The daemon (myna run) sends it nightly; myna links --send sends one now; myna links off stops it.");
+        else out("Turn the nightly live-links email on with: myna links on");
+        return 0;
+      }
+
+      const days = Number(flags.days ?? 1);
+      if (!Number.isFinite(days) || days <= 0) throw new Error("--days wants a positive number.");
+      const report = buildLinks({ since: new Date(Date.now() - days * 24 * 3_600_000) });
+      if (flags.json) {
+        out(JSON.stringify(report, null, 2));
+        return 0;
+      }
+      if (typeof flags.html === "string") {
+        const html = renderLinksHtml(report, undefined, { host: hostname() });
+        if (flags.html === "-") process.stdout.write(html);
+        else {
+          writeFileSync(flags.html, html);
+          out(`Wrote ${flags.html}`);
+        }
+        return 0;
+      }
+      if (flags.send) {
+        if (!effective.to) throw new Error("Where to? Try: myna links on --to you@example.com");
+        const turn = await runLinks(effective, { force: true });
+        const result = turn.result!;
+        out(result.sent ? `Sent "${result.subject}" (${result.count} link${result.count === 1 ? "" : "s"}) to ${effective.to}.` : `Not sent: ${result.error}`);
+        return result.sent ? 0 : 1;
+      }
+      out(renderLinksText(report));
       return 0;
     }
 

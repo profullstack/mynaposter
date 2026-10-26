@@ -106,7 +106,7 @@ export {
   type EngagementRecord,
 } from "./core/analytics.ts";
 export { refreshEngagement, type RefreshResult } from "./core/refresh.ts";
-export { loadSettings, saveSettings, effectiveRecap, DEFAULT_SETTINGS, type Settings, type CustomDirectorySetting, type SkillSettings } from "./store/settings.ts";
+export { loadSettings, saveSettings, effectiveRecap, effectiveLinks, DEFAULT_SETTINGS, type Settings, type CustomDirectorySetting, type SkillSettings } from "./store/settings.ts";
 export {
   collect,
   seal,
@@ -235,6 +235,7 @@ export {
   renderRecapHtml,
   resolveRecapSettings,
   recapAddress,
+  mailReport,
   RECAP_DAYS,
   RECAP_SETTINGS_VERSION,
   recapSubject,
@@ -256,6 +257,20 @@ export {
   type RecapPrev,
   type SendRecapResult,
 } from "./core/recap.ts";
+export {
+  buildLinks,
+  linksSubject,
+  renderLinksText,
+  renderLinksHtml,
+  runLinks,
+  loadLinksState,
+  headline,
+  DEFAULT_LINKS,
+  LINKS_MAX_WINDOW_MS,
+  type LinksSettings,
+  type LinksReport,
+  type LivePost,
+} from "./core/links.ts";
 export { runAfterPost, runAfterSchedule, runAfterCancel, runAfterDiscover, postedEvent, scheduledEvent, type HookOutcome } from "./plugins/hooks.ts";
 export { renderMarkdown, renderInline, firstParagraph, slugify, escapeHtml } from "./util/markdown.ts";
 export { loadMedia, loadAllMedia } from "./core/media.ts";

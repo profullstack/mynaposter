@@ -10,12 +10,13 @@
 import { runDuePosts } from "./scheduler.ts";
 import { summarize } from "./poster.ts";
 import { addSeeds, expandSeeds, followNext } from "./graph.ts";
-import { effectiveRecap, loadSettings } from "../store/settings.ts";
+import { effectiveLinks, effectiveRecap, loadSettings } from "../store/settings.ts";
 import { pluginTasks, seedProviders } from "../plugins/loader.ts";
 import { pluginContext } from "../plugins/context.ts";
 import { runEvergreen } from "./evergreen.ts";
 import { runAutopilot } from "./autopilot.ts";
 import { runRecap } from "./recap.ts";
+import { runLinks } from "./links.ts";
 import { canSync, syncConfigOnce } from "../store/synconfig.ts";
 import { runDueNewsletters, syncAllUnsubscribes, unsubscribePullError } from "./newsletter.ts";
 import { readNewsletters } from "../store/newsletters.ts";
@@ -131,6 +132,20 @@ export function builtinJobs(log: (line: string) => void, tickMs: number): Daemon
       const turn = await runRecap(recap);
       if (turn.idle || !turn.result) return;
       return turn.result.sent ? `sent to ${recap.to}` : `not sent: ${turn.result.error}`;
+    },
+  });
+
+  // The live-links report, read the same way: off by default, and `myna links
+  // on` takes effect on the next tick without a restart.
+  jobs.push({
+    id: "links",
+    everyMs: 600_000,
+    async run() {
+      const links = effectiveLinks();
+      if (!links.enabled) return;
+      const turn = await runLinks(links);
+      if (turn.idle || !turn.result) return;
+      return turn.result.sent ? `sent ${turn.result.count} link(s) to ${links.to}` : `not sent: ${turn.result.error}`;
     },
   });
 

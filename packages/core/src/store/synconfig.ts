@@ -31,6 +31,7 @@ export const MYNA_SYNC_POLICY: SyncPolicy = {
     "graph.json",
     "handoffs.json",
     "recap.json",
+    "links.json",
     "engagement.json",
     "engage.json",
     "contacts.json",
