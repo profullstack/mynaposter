@@ -18,6 +18,7 @@ import { renderHandoffPage } from "./handoff-page.ts";
 import { renderConnectPage } from "./connect-page.ts";
 import { renderDashboardPage } from "./dashboard-page.ts";
 import { versionAssets, hashFile } from "./asset-version.ts";
+import { footerHtml, descriptor } from "@profullstack/footer";
 
 const root = join(fileURLToPath(new URL(".", import.meta.url)), "..");
 const out = join(root, "public");
@@ -52,6 +53,26 @@ const networkRows = NETWORKS.map(
 
 const shot = (view: Parameters<typeof renderToHtml>[0], width: number, height: number) =>
   renderToHtml(view, { width, height, fontSize: 13, padding: 14, theme: "dark" });
+
+/**
+ * The Profullstack footer: our links, the << Profullstack >> webring row and the
+ * built.indie + pwamart badges, baked into the HTML (the ring verifier reads the
+ * page and never runs script). The site is built when the container starts, so it
+ * takes the @latest template from the CDN then (bundled copy if offline). The CSP
+ * is style-src 'self', so css:false and the .pfs-footer rules live in site.css.
+ */
+const SITE = "https://mynaposter.com/";
+const siteFooter = await footerHtml({
+  site: SITE,
+  links: [
+    { label: "Privacy Policy", href: "/privacy" },
+    { label: "Terms of Service", href: "/terms" },
+    { label: "Source", href: "https://github.com/profullstack/mynaposter" },
+    { label: "Built with HQTUI", href: "https://hqtui.com" },
+  ],
+  tagline: "MIT licensed",
+  css: false,
+});
 
 const page = `<!doctype html>
 <html lang="en">
@@ -307,15 +328,7 @@ ${networkRows}
 
 </main>
 
-<footer>
-  <p>
-    <a href="/privacy">Privacy Policy</a> &middot;
-    <a href="/terms">Terms of Service</a> &middot;
-    <a href="https://github.com/profullstack/mynaposter">Source</a> &middot;
-    <a href="https://hqtui.com">Built with HQTUI</a> &middot;
-    MIT &middot; <a href="https://profullstack.com">Profullstack</a>
-  </p>
-</footer>
+${siteFooter}
 
 <script src="/site.js"></script>
 </body>
@@ -323,6 +336,8 @@ ${networkRows}
 `;
 
 writeFileSync(join(out, "index.html"), page);
+mkdirSync(join(out, ".well-known"), { recursive: true });
+writeFileSync(join(out, ".well-known", "openwebring.json"), JSON.stringify(descriptor({ site: SITE, name: "myna" }), null, 2));
 // Required by Google's OAuth verification (and by everyone else): linked from the home page.
 writeFileSync(join(out, "privacy.html"), renderPrivacyPage());
 writeFileSync(join(out, "terms.html"), renderTermsPage());
