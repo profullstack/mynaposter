@@ -72,7 +72,21 @@ async function uploadMedia(account: Account, item: { data: Uint8Array; mime: str
     headers: auth(account),
     body: form as never,
   });
-  return ((await response.json()) as { id: string }).id;
+  const media = (await response.json()) as { id: string; url: string | null };
+  // Video (and large images) are processed after the upload: the instance
+  // answers 202 with url null, and a status that attaches it before it is
+  // ready is refused. Wait for it, up to two minutes.
+  if (response.status === 202 || media.url === null) {
+    for (let i = 0; i < 60; i++) {
+      await new Promise((r) => setTimeout(r, 2000));
+      const check = await fetch(`${base(account)}/api/v1/media/${media.id}`, { headers: auth(account) });
+      if (check.status === 200) {
+        const ready = (await check.json()) as { url: string | null };
+        if (ready.url) break;
+      }
+    }
+  }
+  return media.id;
 }
 
 function make(id: string, name: string, blurb: string, charLimit: number): Network {
