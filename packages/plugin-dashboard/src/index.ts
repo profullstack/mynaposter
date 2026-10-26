@@ -27,6 +27,7 @@
  * Reading never moves a rotation cursor; only a send does that.
  */
 import {
+  brainStatus,
   findSkillTarget,
   listAccounts,
   listDirectoryAccounts,
@@ -336,6 +337,14 @@ export function handle(request: Request, sources?: SkillSources): Response {
       return json(snapshot());
     } catch (error) {
       // A locked vault is the usual cause: the page says so rather than dying.
+      return json({ error: (error as Error).message }, 503);
+    }
+  }
+  if (pathname === "/brain" || pathname === "/brain.json") {
+    // Read-only: where the brain comes from, its HEAD, its files, and what the writer loads.
+    try {
+      return json(brainStatus());
+    } catch (error) {
       return json({ error: (error as Error).message }, 503);
     }
   }

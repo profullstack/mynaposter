@@ -2,7 +2,8 @@
  * myna's settings, synced with myna cloud through @profullstack/synconfig.
  *
  * What goes: settings.json (every `myna config` key, the profile, the
- * pacing, the graph), openprofile.md when hand-written, and the skills
+ * pacing, the graph, the linked brain's source), openprofile.md when
+ * hand-written, brand.md, and the skills
  * (the rules per network, account and post type). What never goes: the
  * vault and its key, the cloud session, the queue, the history, the graph
  * ledger, hand-offs, contacts, and every other piece of state that belongs
@@ -19,6 +20,7 @@ export const MYNA_SYNC_POLICY: SyncPolicy = {
   files: [
     { path: "settings.json", json: true, label: "settings" },
     { path: "openprofile.md", label: "OpenProfile" },
+    { path: "brand.md", label: "brand" },
   ],
   dirs: [{ path: "skills", suffixes: [".md"], label: "skills" }],
   never: [

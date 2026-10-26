@@ -36,6 +36,15 @@ The account directory is the handle as one path segment: `/`, `\`, `:` and
 spaces become `-`, and a leading `@` is dropped. `myna skill path <account>`
 prints the exact path, and `myna skill list` prints the segment.
 
+## A team brain as a second tree
+
+When a brain repo is linked (`myna brain link`, see [brain.md](brain.md)), its
+`skills/` is read as a second tree with the same layout. A file you wrote here
+wins; the brain's file is used where yours is missing, and also where yours is
+still the untouched template myna generated. `myna skill show` ends with a
+`source:` line saying which tree each layer came from, and `--json` carries
+`source` and `sources`. Limits still merge with the stricter value winning.
+
 ## Three layers, and a fourth dimension
 
 1. **The built-in template**, one per kind of network, in

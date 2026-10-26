@@ -23,9 +23,12 @@ import type { HistoryEntry } from "../store/history.ts";
 import type { QueuedPost } from "../store/queue.ts";
 import {
   DEFAULT_SKILL_SLUG,
+  brainHasSkill,
   listTypeSlugs,
   parseSkill,
+  readLayeredSkill,
   readSkillFile,
+  serializeSkill,
   removeSkillFile,
   safeSlug,
   typeSkillPath,
@@ -304,7 +307,9 @@ function asTypeSkill(file: SkillFile, slug: string): TypeSkill {
 export function ensureTypeSkill(type: string, options: { force?: boolean } = {}): { path: string; written: boolean } {
   const slug = safeSlug(type);
   const path = typeSkillPath(slug);
-  if (readSkillFile(path) && !options.force) return { path, written: false };
+  const existing = readSkillFile(path);
+  if (existing && !options.force) return { path, written: false };
+  if (!existing && !options.force && brainHasSkill(path)) return { path, written: false };
   const { frontmatter, body } = typeTemplate(slug);
   writeSkillFile(path, frontmatter, body);
   return { path, written: true };
@@ -324,7 +329,8 @@ export function initTypeSkills(options: { force?: boolean } = {}): { written: st
 export function readTypeSkill(type: string, options: { materialise?: boolean } = {}): TypeSkill | undefined {
   const slug = safeSlug(type);
   if (options.materialise && TYPE_TEMPLATES[slug]) ensureTypeSkill(slug);
-  const file = readSkillFile(typeSkillPath(slug));
+  const template = TYPE_TEMPLATES[slug] ? typeTemplate(slug) : undefined;
+  const file = readLayeredSkill(typeSkillPath(slug), (local) => Boolean(template) && local.raw.trim() === serializeSkill(template!.frontmatter, template!.body).trim());
   if (file) return asTypeSkill(file, slug);
   if (!TYPE_TEMPLATES[slug]) return undefined;
   const { frontmatter, body } = typeTemplate(slug);

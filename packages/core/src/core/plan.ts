@@ -18,7 +18,7 @@ import { addPlanItems, planHasAngle, updatePlanItem, type PlanItem } from "../st
 import { listHistory } from "../store/history.ts";
 import { draft } from "../ai/writer.ts";
 import { extractJson, providerComplete, writerAvailable } from "../ai/writer.ts";
-import { brandPrompt, loadBrand, type Brand } from "./brand.ts";
+import { writerContext, loadBrand, type Brand } from "./brand.ts";
 import { postPaced } from "./poster.ts";
 import type { QueuedPost } from "../store/queue.ts";
 
@@ -100,7 +100,7 @@ export async function generatePlan(options: GenerateOptions = {}): Promise<Gener
     .join("\n");
 
   log(`planning ${wanted} angle${wanted === 1 ? "" : "s"} across ${brand.pillars.length} pillars`);
-  const raw = await providerComplete(`${PLAN_SYSTEM}${brandPrompt(brand)}`, prompt, 3000);
+  const raw = await providerComplete(`${PLAN_SYSTEM}${writerContext(brand)}`, prompt, 3000);
   const planned = extractJson<{ angles: PlannedAngle[] }>(raw).angles ?? [];
 
   const fresh = planned.filter((entry) => entry?.angle?.trim() && !planHasAngle(entry.angle));

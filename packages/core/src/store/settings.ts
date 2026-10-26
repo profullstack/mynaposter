@@ -112,6 +112,20 @@ export interface Settings {
    * every other credential.
    */
   directories: CustomDirectorySetting[];
+  /** The linked brain repo (`myna brain link`). Absent means none: the writer reads brand.md only. */
+  brain?: BrainSettings;
+}
+
+/** A linked brain: where it comes from and where it sits on this machine. */
+export interface BrainSettings {
+  /** A git URL, or an absolute local path. */
+  source: string;
+  /** The working copy. For a git source this is the clone under the config dir. */
+  dir: string;
+  /** Also read knowledge/<product>/*.md, which overrides same-named root files. */
+  product?: string;
+  /** ISO time of the last successful pull, or of the link/clone. */
+  lastPull?: string;
 }
 
 /**

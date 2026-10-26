@@ -121,6 +121,7 @@ import { runConnect } from "./connect.ts";
 import { runSynconfig } from "./synconfig.ts";
 import { runEngage } from "./engage.ts";
 import { runBrand } from "./brand.ts";
+import { runBrain } from "./brain.ts";
 import { runPlan, runAtomize } from "./plan.ts";
 import { runAutopilotCommand } from "./autopilot.ts";
 import { runUpvote } from "./upvote.ts";
@@ -183,6 +184,8 @@ export function parseFlags(argv: string[]): { positional: string[]; flags: Flags
       "body", "draft", "retryFailed", "retryUncertain",
       // newsletter blast --go / --clean, send --background, status --watch
       "go", "clean", "background", "watch",
+      // brain show --show-prompt
+      "showPrompt",
     ]);
     if (BOOLS.has(name)) {
       flags[name === "noThread" ? "thread" : name] = name !== "noThread";
@@ -602,6 +605,11 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
     case "brand": {
       await ensureUnlocked();
       return await runBrand(positional, flags);
+    }
+
+    case "brain": {
+      // Files and git only; the vault is not involved.
+      return await runBrain(positional, flags);
     }
 
     case "plan": {

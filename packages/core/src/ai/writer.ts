@@ -8,7 +8,7 @@
 import { loadSettings } from "../store/settings.ts";
 import { getNetwork, requireNetwork } from "../net/registry.ts";
 import { fetchPage, type PageSummary } from "./extract.ts";
-import { brandPrompt } from "../core/brand.ts";
+import { writerContext } from "../core/brand.ts";
 import { complete as completeAnthropic, hasCredentials as hasAnthropic } from "./anthropic.ts";
 import { completeOpenAI, completeOllama } from "./openai.ts";
 
@@ -238,7 +238,7 @@ export async function draft(request: DraftRequest): Promise<Draft[]> {
     shape,
   ].join("\n");
 
-  const raw = await providerComplete(`${SYSTEM}${brandPrompt()}`, prompt);
+  const raw = await providerComplete(`${SYSTEM}${writerContext()}`, prompt);
   const parsed = extractJson<Draft[]>(raw);
   const drafts = Array.isArray(parsed) ? parsed : [parsed];
 
@@ -289,7 +289,7 @@ export async function infographicCopy(request: DraftRequest): Promise<Infographi
     "Between 3 and 6 points. Every figure must come from the source; never invent one.",
   ].join("\n");
 
-  const raw = await providerComplete(`${SYSTEM}${brandPrompt()}`, prompt, 2000);
+  const raw = await providerComplete(`${SYSTEM}${writerContext()}`, prompt, 2000);
   const copy = extractJson<InfographicCopy>(raw);
 
   return {
@@ -317,7 +317,7 @@ export async function revise(text: string, instruction: string, network?: string
     .filter(Boolean)
     .join("\n");
 
-  const raw = await providerComplete(`${SYSTEM}${brandPrompt()}`, prompt, 2000);
+  const raw = await providerComplete(`${SYSTEM}${writerContext()}`, prompt, 2000);
   return extractJson<Draft>(raw).text.trim();
 }
 
@@ -507,7 +507,7 @@ export async function replyDraft(request: ReplyRequest): Promise<string> {
     .filter((line) => line !== "")
     .join("\n");
 
-  const raw = await providerComplete(`${REPLY_SYSTEM}${brandPrompt()}`, prompt, 800);
+  const raw = await providerComplete(`${REPLY_SYSTEM}${writerContext()}`, prompt, 800);
   const text = extractJson<{ text: string }>(raw).text.trim();
   if (!text) throw new Error("The writer returned an empty reply.");
   return limit && text.length > limit ? `${text.slice(0, limit - 1).trimEnd()}…` : text;
@@ -576,7 +576,7 @@ export async function linkDropDraft(request: LinkDropRequest): Promise<string> {
     .filter((line) => line !== "")
     .join("\n");
 
-  const raw = await providerComplete(`${LINK_SYSTEM}${brandPrompt()}`, prompt, 800);
+  const raw = await providerComplete(`${LINK_SYSTEM}${writerContext()}`, prompt, 800);
   const text = extractJson<{ text: string }>(raw).text.trim();
   if (!text) return "";
   // A draft that dropped the link is not a link drop; the engine will see the
@@ -639,7 +639,7 @@ export async function askReplyDraft(request: AskReplyRequest): Promise<string> {
     .filter((line) => line !== "")
     .join("\n");
 
-  const raw = await providerComplete(`${ASK_SYSTEM}${brandPrompt()}`, prompt, 800);
+  const raw = await providerComplete(`${ASK_SYSTEM}${writerContext()}`, prompt, 800);
   const text = extractJson<{ text: string }>(raw).text.trim();
   if (!text) return "";
   if (request.product && !text.includes(request.product.url)) return "";

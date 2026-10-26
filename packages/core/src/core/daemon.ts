@@ -18,6 +18,7 @@ import { runAutopilot } from "./autopilot.ts";
 import { runRecap } from "./recap.ts";
 import { runLinks } from "./links.ts";
 import { canSync, syncConfigOnce } from "../store/synconfig.ts";
+import { brainDaemonTurn } from "./brain.ts";
 import { runDueNewsletters, syncAllUnsubscribes, unsubscribePullError } from "./newsletter.ts";
 import { readNewsletters } from "../store/newsletters.ts";
 import { publishDueNewsletters } from "./newsletter-publish.ts";
@@ -118,6 +119,17 @@ export function builtinJobs(log: (line: string) => void, tickMs: number): Daemon
       run: () => syncConfigOnce(),
     });
   }
+  // The linked brain repo: pulled at most hourly (brainDaemonTurn reads
+  // settings.brain.lastPull, so a restart does not pull again). A failed pull
+  // is a log line, never a crash; no brain linked is a no-op.
+  jobs.push({
+    id: "brain",
+    everyMs: 600_000,
+    async run() {
+      return brainDaemonTurn();
+    },
+  });
+
   // Always registered, and the switch is read on every tick: the nightly
   // summary is on by default, and `myna recap off` (or on) has to take effect
   // without anybody restarting the daemon.

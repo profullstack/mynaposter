@@ -16,8 +16,9 @@
  * about paths, parsing and writing; what goes in a file is core/skills.ts.
  */
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync, renameSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative, sep } from "node:path";
 import { configPath } from "../util/paths.ts";
+import { brainSkillsDir } from "./brain.ts";
 
 export const SKILLS_DIR = "skills";
 /** The directory under skills/ that holds the post-type skills. Not a network. */
@@ -73,7 +74,11 @@ export interface SkillFile {
   frontmatter: SkillFrontmatter;
   body: string;
   raw: string;
+  /** Which tree the file came from: this machine's skills/, or the linked brain's. Absent means local. */
+  source?: SkillSource;
 }
+
+export type SkillSource = "local" | "brain";
 
 /**
  * A handle as a directory name. Handles carry slashes (`profullstack/hqtui`,
@@ -111,11 +116,16 @@ export function typeSkillPath(type: string): string {
 
 /** Every post type that has a directory under skills/types, alphabetical. */
 export function listTypeSlugs(): string[] {
-  const dir = join(skillsDir(), TYPES_DIR);
-  if (!existsSync(dir)) return [];
-  return readdirSync(dir)
-    .filter((name) => statSync(join(dir, name)).isDirectory() && existsSync(join(dir, name, `${DEFAULT_SKILL_SLUG}.md`)))
-    .sort();
+  const found = new Set<string>();
+  for (const root of [skillsDir(), brainSkillsDir()]) {
+    if (!root) continue;
+    const dir = join(root, TYPES_DIR);
+    if (!existsSync(dir)) continue;
+    for (const name of readdirSync(dir)) {
+      if (statSync(join(dir, name)).isDirectory() && existsSync(join(dir, name, `${DEFAULT_SKILL_SLUG}.md`))) found.add(name);
+    }
+  }
+  return [...found].sort();
 }
 
 export function accountSkillDir(network: string, handle: string): string {
@@ -251,11 +261,14 @@ export function listSkillFiles(dir: string): SkillFile[] {
 
 /** Every network directory that has a skill tree, alphabetical. */
 export function listSkillNetworks(): string[] {
-  const dir = skillsDir();
-  if (!existsSync(dir)) return [];
-  return readdirSync(dir)
-    .filter((name) => name !== TYPES_DIR && statSync(join(dir, name)).isDirectory())
-    .sort();
+  const found = new Set<string>();
+  for (const dir of [skillsDir(), brainSkillsDir()]) {
+    if (!dir || !existsSync(dir)) continue;
+    for (const name of readdirSync(dir)) {
+      if (name !== TYPES_DIR && !name.startsWith(".") && statSync(join(dir, name)).isDirectory()) found.add(name);
+    }
+  }
+  return [...found].sort();
 }
 
 /** Every account directory under a network's skill tree. */
@@ -265,4 +278,61 @@ export function listSkillAccountDirs(network: string): string[] {
   return readdirSync(dir)
     .filter((name) => statSync(join(dir, name)).isDirectory())
     .sort();
+}
+
+/* ------------------------------------------------------------ brain layer */
+
+/**
+ * The linked brain's skills/ is a second tree with the same layout. The rule
+ * (see docs/brain.md): a local file a person wrote wins; the brain fills
+ * whatever is missing here, and also replaces a local file that is still the
+ * untouched template myna generated, because every install materialises
+ * those and they would otherwise hide the team's file everywhere.
+ */
+export function brainCounterpart(localPath: string): string | undefined {
+  const brain = brainSkillsDir();
+  if (!brain) return undefined;
+  const rel = relative(skillsDir(), localPath);
+  if (!rel || rel.startsWith("..") || rel.split(sep).includes("..")) return undefined;
+  return join(brain, rel);
+}
+
+/** Is there a brain file for this local skill path? */
+export function brainHasSkill(localPath: string): boolean {
+  const twin = brainCounterpart(localPath);
+  return Boolean(twin && existsSync(twin) && statSync(twin).isFile());
+}
+
+/**
+ * Read a skill through both layers. `untouched` says whether a local file is
+ * still exactly the generated template, in which case the brain's copy wins.
+ */
+export function readLayeredSkill(localPath: string, untouched?: (file: SkillFile) => boolean): SkillFile | undefined {
+  const local = readSkillFile(localPath);
+  if (local && !(untouched && local.frontmatter.generatedFrom && untouched(local))) return { ...local, source: "local" };
+  const twin = brainCounterpart(localPath);
+  const brain = twin ? readSkillFile(twin) : undefined;
+  if (brain) return { ...brain, source: "brain" };
+  return local ? { ...local, source: "local" } : undefined;
+}
+
+/** `listSkillFiles` over both layers, merged by slug with the same rule as `readLayeredSkill`. */
+export function listLayeredSkillFiles(localDir: string, untouched?: (file: SkillFile) => boolean): SkillFile[] {
+  const local = listSkillFiles(localDir).map((file) => ({ ...file, source: "local" as const }));
+  const twin = brainCounterpart(localDir);
+  if (!twin) return local;
+  const brain = listSkillFiles(twin).map((file) => ({ ...file, source: "brain" as const }));
+  if (!brain.length) return local;
+  const bySlug = new Map<string, SkillFile>();
+  for (const file of brain) bySlug.set(file.slug, file);
+  for (const file of local) {
+    const theirs = bySlug.get(file.slug);
+    if (theirs && untouched && file.frontmatter.generatedFrom && untouched(file)) continue;
+    bySlug.set(file.slug, file);
+  }
+  return [...bySlug.values()].sort((a, b) => {
+    if (a.slug === DEFAULT_SKILL_SLUG) return -1;
+    if (b.slug === DEFAULT_SKILL_SLUG) return 1;
+    return a.slug.localeCompare(b.slug);
+  });
 }

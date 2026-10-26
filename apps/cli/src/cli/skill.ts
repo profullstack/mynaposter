@@ -244,17 +244,23 @@ export async function runSkill(positional: string[], flags: Flags): Promise<numb
         const skill = readTypeSkill(typeSlug, { materialise: true });
         if (!skill) throw new Error(`No post type "${typeSlug}". Run: myna skill list`);
         if (flags.json) {
-          out(JSON.stringify({ type: skill.type, path: skill.path, frontmatter: skill.frontmatter, body: skill.body }, null, 2));
+          out(JSON.stringify({ type: skill.type, path: skill.path, source: skill.source ?? "local", frontmatter: skill.frontmatter, body: skill.body }, null, 2));
           return 0;
         }
         out((skill.raw || `${skill.body}\n`).trimEnd());
+        out(`\n<!-- source: ${skill.source ?? "local"} (${skill.path}) -->`);
         return 0;
       }
       const { network, account } = resolveSpec(rest[0]);
       if (!account) {
         ensureNetworkSkill(network);
         const skill = readNetworkSkill(network);
+        if (flags.json) {
+          out(JSON.stringify({ network, path: skill.path, source: skill.source ?? "local", frontmatter: skill.frontmatter, body: skill.body }, null, 2));
+          return 0;
+        }
         out(skill.raw.trimEnd());
+        out(`\n<!-- source: ${skill.source ?? "local"} (${skill.path}) -->`);
         return 0;
       }
       ensureAccountSkill(account);
@@ -265,12 +271,13 @@ export async function runSkill(positional: string[], flags: Flags): Promise<numb
       if (!chosen) throw new Error(`${account.id} has no skill called "${slug}". Run: myna skill list`);
       if (flags.json) {
         const resolved = resolveSkill(account, { settings, selected: chosen });
-        out(JSON.stringify({ account: account.id, network, slug: chosen.slug, path: chosen.path, frontmatter: chosen.frontmatter, body: chosen.body, limits: resolved.limits, networkSkill: resolved.networkSkill.path }, null, 2));
+        out(JSON.stringify({ account: account.id, network, slug: chosen.slug, path: chosen.path, source: chosen.source ?? "local", frontmatter: chosen.frontmatter, body: chosen.body, limits: resolved.limits, networkSkill: resolved.networkSkill.path, sources: resolved.sources }, null, 2));
         return 0;
       }
       out(chosen.raw.trimEnd());
       const resolved = resolveSkill(account, { settings, selected: chosen });
       out(`\n<!-- effective limits for ${account.id}: ${describeLimits(resolved.limits)}; network skill: ${resolved.networkSkill.path} -->`);
+      out(`<!-- sources: account skill ${chosen.source ?? "local"} (${chosen.path}); network skill ${resolved.sources.network} -->`);
       return 0;
     }
 
