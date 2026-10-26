@@ -95,7 +95,7 @@ const server = Bun.serve({
         "content-security-policy":
           // connect-src so a page may read the API under the same origin: the
           // atproto directory and a hand-off card both do.
-          "default-src 'none'; img-src 'self' data:; style-src 'self'; script-src 'self'; font-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'",
+          "default-src 'none'; img-src 'self' data: https://built.indie.pit.world https://pwamart.com; style-src 'self'; script-src 'self'; font-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'",
       },
     });
   },
