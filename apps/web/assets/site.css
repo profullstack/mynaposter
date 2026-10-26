@@ -233,6 +233,19 @@ footer a:hover { color: var(--accent); }
 .pfs-footer__badges{display:flex;flex-wrap:wrap;justify-content:center;align-items:center;gap:.6rem}
 .pfs-footer a.pfs-footer__badge{display:inline-block;line-height:0}
 .pfs-footer__badge img{display:block;width:200px;height:44px;max-width:100%}
+/* The footer's newsletter form (@profullstack/footer 0.4.0 template CSS; css:false here). */
+.pfs-footer__sub{display:flex;align-items:center;gap:.35rem;margin:0;flex-wrap:wrap;justify-content:center}
+.pfs-footer__sub input[type=email]{font:inherit;font-size:.8125rem;color:inherit;background:transparent;width:13.5rem;max-width:62vw;padding:.2rem .5rem;border:1px solid color-mix(in srgb,currentColor 25%,transparent);border-radius:.35rem}
+.pfs-footer__sub input[type=email]::placeholder{color:var(--pfs-footer-muted);opacity:1}
+.pfs-footer__sub input[type=email]:focus-visible{outline:2px solid color-mix(in srgb,currentColor 45%,transparent);outline-offset:1px}
+.pfs-footer__sub button{font:inherit;font-size:.8125rem;color:var(--pfs-footer-muted);background:transparent;padding:.2rem .6rem;border:1px solid color-mix(in srgb,currentColor 25%,transparent);border-radius:.35rem;cursor:pointer}
+.pfs-footer__sub button:hover,.pfs-footer__sub button:focus-visible{color:inherit}
+.pfs-footer__hp{position:absolute!important;left:-9999px!important;width:1px;height:1px;opacity:0}
+.pfs-footer__sub+.pfs-footer__sublink{display:none}
+.pfs-footer__msg{flex-basis:100%;text-align:center;font-size:.8125rem;color:var(--pfs-footer-muted)}
+.pfs-footer__msg:empty{display:none}
+.pfs-footer__msg[data-state=ok]{color:inherit}
+.pfs-footer__msg[data-state=error]{color:#d92d20;color:light-dark(#b42318,#f97066)}
 .pfs-footer__copy{margin:0;color:var(--pfs-footer-muted)}
 .pfs-footer__copy a{color:inherit}
 
