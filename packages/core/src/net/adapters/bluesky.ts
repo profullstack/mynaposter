@@ -40,6 +40,26 @@ async function uploadBlob(base: string, token: string, item: { data: Uint8Array;
 }
 
 /**
+ * Width and height of the first video track of an MP4 (its `tkhd` box), so
+ * Bluesky sizes the player right. null when the file does not say.
+ */
+export function mp4Dimensions(data: Uint8Array): { width: number; height: number } | null {
+  const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
+  for (let i = 4; i + 4 <= data.length; i++) {
+    // "tkhd"
+    if (data[i] !== 0x74 || data[i + 1] !== 0x6b || data[i + 2] !== 0x68 || data[i + 3] !== 0x64) continue;
+    const boxSize = view.getUint32(i - 4);
+    const end = i - 4 + boxSize;
+    if (boxSize < 92 || end > data.length) continue;
+    // width and height are 16.16 fixed point, the last 8 bytes of the box.
+    const width = view.getUint32(end - 8) >>> 16;
+    const height = view.getUint32(end - 4) >>> 16;
+    if (width > 0 && height > 0) return { width, height };
+  }
+  return null;
+}
+
+/**
  * The `{uri, cid}` a like or a repost record has to point at, from whatever
  * reference a person had to hand.
  *
@@ -118,7 +138,18 @@ export const bluesky: Network = {
     // buildPostRecord does the facets and both of Bluesky's length limits.
     const record = buildPostRecord(input.text, new Date().toISOString());
 
-    if (input.media?.length) {
+    const video = input.media?.find((m) => m.mime.startsWith("video/"));
+    if (video) {
+      // A video is its own embed (one per post), not an image. Embedding an
+      // MP4 blob as an image is what createRecord refused with InvalidRequest.
+      const size = mp4Dimensions(video.data);
+      record.embed = {
+        $type: "app.bsky.embed.video",
+        video: await uploadBlob(base, accessJwt, video),
+        ...(video.alt ? { alt: video.alt } : {}),
+        ...(size ? { aspectRatio: size } : {}),
+      };
+    } else if (input.media?.length) {
       const images = [];
       for (const item of input.media.slice(0, 4)) {
         images.push({ image: await uploadBlob(base, accessJwt, item), alt: item.alt ?? "" });

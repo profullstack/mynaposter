@@ -56,7 +56,7 @@ export const linkedin: Network = {
       },
     ],
   },
-  caps: { charLimit: 3000, mediaLimit: 0, threads: false, delete: true, timeline: false, notifications: false, stats: false },
+  caps: { charLimit: 3000, mediaLimit: 1, threads: false, delete: true, timeline: false, notifications: false, stats: false },
 
   async login(input, ctx) {
     const tokens = await authorize(
@@ -99,25 +99,60 @@ export const linkedin: Network = {
   },
 
   async post(account, input) {
+    const token = await linkedinToken(account);
+    const item = input.media?.[0];
+    let share: Record<string, unknown>;
+    if (item && (item.mime.startsWith("video/") || item.mime.startsWith("image/"))) {
+      // Register an asset, PUT the bytes to the URL LinkedIn hands back, then
+      // share the asset (w_member_social covers all three steps).
+      const isVideo = item.mime.startsWith("video/");
+      const reg = await postJson<{
+        value: { asset: string; uploadMechanism: Record<string, { uploadUrl: string }> };
+      }>(
+        "https://api.linkedin.com/v2/assets?action=registerUpload",
+        {
+          registerUploadRequest: {
+            recipes: [isVideo ? "urn:li:digitalmediaRecipe:feedshare-video" : "urn:li:digitalmediaRecipe:feedshare-image"],
+            owner: account.meta.author,
+            serviceRelationships: [{ relationshipType: "OWNER", identifier: "urn:li:userGeneratedContent" }],
+          },
+        },
+        { headers: { authorization: `Bearer ${token}`, "x-restli-protocol-version": "2.0.0" } },
+      );
+      const upload = Object.values(reg.value.uploadMechanism)[0]?.uploadUrl;
+      if (!upload) throw new Error("LinkedIn did not return an upload URL");
+      await request(upload, {
+        method: "PUT",
+        headers: { authorization: `Bearer ${token}`, "content-type": item.mime },
+        body: item.data,
+      });
+      share = {
+        shareCommentary: { text: input.text },
+        shareMediaCategory: isVideo ? "VIDEO" : "IMAGE",
+        media: [{ status: "READY", media: reg.value.asset, ...(input.title ? { title: { text: input.title } } : {}) }],
+      };
+    } else {
+      share = {
+        shareCommentary: { text: input.text },
+        shareMediaCategory: input.extra?.url ? "ARTICLE" : "NONE",
+        ...(input.extra?.url
+          ? { media: [{ status: "READY", originalUrl: input.extra.url, ...(input.title ? { title: { text: input.title } } : {}) }] }
+          : {}),
+      };
+    }
     const created = await postJson<{ id: string }>(
       "https://api.linkedin.com/v2/ugcPosts",
       {
         author: account.meta.author,
         lifecycleState: "PUBLISHED",
         specificContent: {
-          "com.linkedin.ugc.ShareContent": {
-            shareCommentary: { text: input.text },
-            shareMediaCategory: input.extra?.url ? "ARTICLE" : "NONE",
-            ...(input.extra?.url
-              ? { media: [{ status: "READY", originalUrl: input.extra.url, ...(input.title ? { title: { text: input.title } } : {}) }] }
-              : {}),
-          },
+          "com.linkedin.ugc.ShareContent": share,
         },
         visibility: { "com.linkedin.ugc.MemberNetworkVisibility": "PUBLIC" },
       },
       {
         headers: {
-          authorization: `Bearer ${await linkedinToken(account)}`,
+          authorization: `Bearer ${token}`,
           "x-restli-protocol-version": "2.0.0",
         },
       },
