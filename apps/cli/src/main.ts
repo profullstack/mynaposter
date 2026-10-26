@@ -80,6 +80,11 @@ Posting:
   recap on|off|status               The nightly summary email, ON by default:
        [--to you@example.com]       the daemon mails it at --at (08:00) to your
        [--at 08:00]                 profile email unless --to says otherwise
+  links [--days 1] [--send]         A link to every post that went live,
+       [--html out.html] [--json]   by account, as a report
+  links on|off|status               The nightly live-links email, OFF by default:
+       [--to you@example.com]       the daemon mails it at --at (22:00), to the
+       [--at 22:00]                 recap's address unless --to says otherwise
   delete <account> <post id>        Delete a post you made
   repost <account> <post url>       Share a post from one account.
        [--at "in 2h"]               With --at it is queued instead of sent now

@@ -678,48 +678,56 @@ export interface SendRecapResult {
   error?: string;
 }
 
+export interface MailResult {
+  sent: boolean;
+  /** Whether the mail carried the HTML part, or only the text a `mail` without --html can send. */
+  html?: boolean;
+  error?: string;
+}
+
 /**
- * Hand the recap to a mail command. The body goes through a file rather than
- * an argument: a day of post text is longer than a comfortable argv, and it
- * keeps the text out of the process list.
+ * Hand a report to a mail command (anything taking `send --to --subject
+ * --file [--html]`). The body goes through a file rather than an argument: a
+ * day of post text is longer than a comfortable argv, and it keeps the text
+ * out of the process list. The recap and the live-links report both use it.
  */
+export async function mailReport(command: string, to: string, subject: string, text: string, html: string): Promise<MailResult> {
+  const dir = mkdtempSync(join(tmpdir(), "myna-report-"));
+  const file = join(dir, "report.txt");
+  const page = join(dir, "report.html");
+  const base = ["send", "--to", to, "--subject", subject, "--file", file];
+  try {
+    writeFileSync(file, text, { mode: 0o600 });
+    writeFileSync(page, html, { mode: 0o600 });
+    try {
+      // The text stays the plain part of a multipart/alternative mail; the
+      // HTML is the house report drawn over the same numbers.
+      await run(command, [...base, "--html", page]);
+      return { sent: true, html: true };
+    } catch (error) {
+      // A `mail` from before --html refuses the flag before it sends
+      // anything, so the plain report is still worth sending.
+      if (!/unknown option:? *--html/i.test(errorText(error))) throw error;
+      await run(command, base);
+      return { sent: true, html: false };
+    }
+  } catch (error) {
+    const message = (error as Error).message;
+    return { sent: false, error: /ENOENT/.test(message) ? `${command} is not on PATH, so the mail could not be sent.` : message };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+/** Hand the recap to the mail command. */
 export async function sendRecap(settings: RecapSettings, recap: Recap, tz?: string): Promise<SendRecapResult> {
   const subject = recapSubject(recap, tz);
   const body = renderRecapText(recap, tz);
   if (!settings.to) {
     return { sent: false, subject, body, error: "no address; set one with: myna recap on --to you@example.com" };
   }
-
-  const dir = mkdtempSync(join(tmpdir(), "myna-recap-"));
-  const file = join(dir, "recap.txt");
-  const html = join(dir, "recap.html");
-  const base = ["send", "--to", settings.to, "--subject", subject, "--file", file];
-  try {
-    writeFileSync(file, body, { mode: 0o600 });
-    writeFileSync(html, renderRecapHtml(recap, tz, { host: hostname() }), { mode: 0o600 });
-    try {
-      // The text stays the plain part of a multipart/alternative mail; the
-      // HTML is the house report drawn over the same numbers.
-      await run(settings.command, [...base, "--html", html]);
-      return { sent: true, subject, body, html: true };
-    } catch (error) {
-      // A `mail` from before --html refuses the flag before it sends
-      // anything, so the plain recap is still worth sending.
-      if (!/unknown option:? *--html/i.test(errorText(error))) throw error;
-      await run(settings.command, base);
-      return { sent: true, subject, body, html: false };
-    }
-  } catch (error) {
-    const message = (error as Error).message;
-    return {
-      sent: false,
-      subject,
-      body,
-      error: /ENOENT/.test(message) ? `${settings.command} is not on PATH, so the recap could not be sent.` : message,
-    };
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
+  const result = await mailReport(settings.command, settings.to, subject, body, renderRecapHtml(recap, tz, { host: hostname() }));
+  return { ...result, subject, body, ...(result.error ? { error: result.error.replace("the mail could not", "the recap could not") } : {}) };
 }
 
 const errorText = (error: unknown): string => {

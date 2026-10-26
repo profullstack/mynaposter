@@ -4,6 +4,7 @@ import { SETTINGS_FILE } from "../util/paths.ts";
 import { DEFAULT_PACING, type PacingSettings } from "../core/pacing.ts";
 import { DEFAULT_EVERGREEN, type EvergreenSettings } from "../core/evergreen.ts";
 import { DEFAULT_RECAP, recapAddress, resolveRecapSettings, type RecapSettings } from "../core/recap.ts";
+import { DEFAULT_LINKS, type LinksSettings } from "../core/links.ts";
 import { session as cloudSession } from "./cloud.ts";
 import { DEFAULT_BRAND, type NewsletterBrand } from "../core/newsletter-layout.ts";
 import { DEFAULT_UTM, type UtmSettings } from "../core/utm.ts";
@@ -68,6 +69,8 @@ export interface Settings {
   evergreen: EvergreenSettings;
   /** One email a day: what went out, what failed, what is booked next. */
   recap: RecapSettings;
+  /** One email a night with a link to every post that went live. Off by default. */
+  links: LinksSettings;
   /**
    * Caps that live outside the skill files. `maxPerDay` here stands in for the
    * blog template's default when no skill file names a value; a value in a
@@ -549,6 +552,7 @@ export const DEFAULT_SETTINGS: Settings = {
   pacing: { ...DEFAULT_PACING },
   evergreen: { ...DEFAULT_EVERGREEN },
   recap: { ...DEFAULT_RECAP },
+  links: { ...DEFAULT_LINKS },
   blog: {},
   utm: DEFAULT_UTM,
   skills: { defaults: {}, rotate: {}, cursor: {} },
@@ -589,6 +593,7 @@ export function loadSettings(): Settings {
     pacing: { ...DEFAULT_SETTINGS.pacing, ...stored.pacing },
     evergreen: { ...DEFAULT_SETTINGS.evergreen, ...stored.evergreen },
     recap: resolveRecapSettings(stored.recap),
+    links: { ...DEFAULT_LINKS, ...stored.links },
     blog: { ...DEFAULT_SETTINGS.blog, ...stored.blog },
     utm: { ...DEFAULT_UTM, ...stored.utm },
     profile: { ...DEFAULT_PROFILE, ...stored.profile },
@@ -623,6 +628,13 @@ export function effectiveRecap(settings: Settings = loadSettings()): RecapSettin
   }
   const address = recapAddress(settings.recap, { profile: settings.profile.email, cloud });
   return { ...settings.recap, to: address.to, toSource: address.source };
+}
+
+/** The live-links report as the daemon sends it: its own address, else the recap's. */
+export function effectiveLinks(settings: Settings = loadSettings()): LinksSettings & { toSource: "links.to" | "recap" | "none" } {
+  if (settings.links.to.trim()) return { ...settings.links, to: settings.links.to.trim(), toSource: "links.to" };
+  const recap = effectiveRecap(settings);
+  return { ...settings.links, to: recap.to, toSource: recap.to ? "recap" : "none" };
 }
 
 export function saveSettings(settings: Settings): void {

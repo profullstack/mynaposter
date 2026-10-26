@@ -59,6 +59,8 @@ export const NEWSLETTERS_FILE = "newsletters.json";
 export const PROFILE_FILE = "openprofile.md";
 /** When the daily recap was last sent. State, not preference, so not in settings. */
 export const RECAP_FILE = "recap.json";
+/** When the live-links report was last sent; its window starts there. */
+export const LINKS_FILE = "links.json";
 /** Hand-off cards: the steps a person does by hand. Plain JSON, nothing secret. */
 export const HANDOFFS_FILE = "handoffs.json";
 /** The upvoter: what was found worth a vote, what was done about it, and what has been seen before. */
