@@ -137,12 +137,16 @@ export async function selfUpdate(options: UpdateOptions = {}): Promise<UpdateRes
   // Running from source, the binary is Bun itself, and overwriting that would
   // be an extremely rude way to update a social media tool.
   if (!options.target && /(^|[\\/])bun(\.exe)?$/.test(target)) {
-    const check = await checkForUpdate();
+    // The refusal must not depend on GitHub answering (rate limits, offline):
+    // name the newest release when we can, and refuse either way.
+    const check = await checkForUpdate().catch(
+      (): UpdateCheck => ({ current: VERSION, latest: VERSION, newer: false, url: `https://github.com/${REPO}/releases/latest` }),
+    );
     return {
       ...check,
       installed: false,
       reason:
-        `myna ${check.latest} is the newest release; this one is running under Bun rather than as an ` +
+        `myna ${check.latest} is the newest release we know of; this one is running under Bun rather than as an ` +
         "installed binary, so there is nothing here to replace. Update it the way it was installed: " +
         "`git pull` in a checkout, `bun add -g @profullstack/myna` for a global install, or " +
         "`curl -fsSL https://mynaposter.com/install.sh | sh` for a standalone binary.",
