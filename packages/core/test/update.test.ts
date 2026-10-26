@@ -1,5 +1,5 @@
 import { test, expect, describe } from "bun:test";
-import { mkdtempSync, readFileSync, writeFileSync, statSync } from "node:fs";
+import { mkdtempSync, readFileSync, chmodSync, writeFileSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { assetFor, cpuHasAvx2, isNewer, selfUpdate } from "../src/core/update.ts";
@@ -71,7 +71,10 @@ test("running from source refuses to overwrite Bun itself", async () => {
 test("a fake binary is replaced atomically, and never left half written", async () => {
   const dir = mkdtempSync(join(tmpdir(), "myna-update-test-"));
   const target = join(dir, "myna");
-  writeFileSync(target, "old binary", { mode: 0o755 });
+  writeFileSync(target, "old binary");
+  // Set the mode explicitly: writeFileSync's mode is filtered by the umask
+  // (007 on some boxes gives 0750), which made this fail for the wrong reason.
+  chmodSync(target, 0o755);
 
   // No network here: the point is that a failing download leaves the existing
   // binary exactly as it was, which is the property that makes an in-place
