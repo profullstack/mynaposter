@@ -6,6 +6,7 @@
  * the copy button.
  */
 import { join, extname, normalize } from "node:path";
+import { createHash } from "node:crypto";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { apiPath, forward } from "./proxy.ts";
@@ -40,6 +41,26 @@ function resolve(pathname: string): string | null {
   // Extensionless URLs map to .html, so /docs serves docs.html.
   const asHtml = `${candidate}.html`;
   return existsSync(asHtml) ? asHtml : null;
+}
+
+/**
+ * CSP 'sha256-…' sources for a page's inline scripts. The only one is the
+ * @profullstack/footer newsletter form's (0.4.0+), which posts to pit.world and
+ * reports the result inline. The HTML is baked once at container start and served
+ * as a file, so a per-request nonce cannot reach it; a hash of the exact text can.
+ * JSON-LD and other typed blocks do not execute, so they are skipped.
+ */
+const scriptHashCache = new Map<string, string>();
+function inlineScriptHashes(file: string, body: Buffer): string {
+  const key = `${file}:${statSync(file).mtimeMs}`;
+  let hashes = scriptHashCache.get(key);
+  if (hashes === undefined) {
+    hashes = [...body.toString("utf8").matchAll(/<script(?:\s+nonce="[^"]*")?>([\s\S]*?)<\/script>/g)]
+      .map((m) => `'sha256-${createHash("sha256").update(m[1] ?? "", "utf8").digest("base64")}'`)
+      .join(" ");
+    scriptHashCache.set(key, hashes);
+  }
+  return hashes;
 }
 
 const server = Bun.serve({
@@ -86,7 +107,10 @@ const server = Bun.serve({
     const wellKnown = file.startsWith(join(root, ".well-known") + "/");
     const cache = wellKnown ? "public, max-age=300" : volatile ? "public, max-age=0, must-revalidate" : "public, max-age=31536000, immutable";
 
-    return new Response(readFileSync(file), {
+    const body = readFileSync(file);
+    const scriptHashes = type.startsWith("text/html") ? inlineScriptHashes(file, body) : "";
+
+    return new Response(body, {
       headers: {
         "content-type": type,
         "cache-control": cache,
@@ -94,8 +118,10 @@ const server = Bun.serve({
         "referrer-policy": "strict-origin-when-cross-origin",
         "content-security-policy":
           // connect-src so a page may read the API under the same origin: the
-          // atproto directory and a hand-off card both do.
-          "default-src 'none'; img-src 'self' data: https://built.indie.pit.world https://pwamart.com; style-src 'self'; script-src 'self'; font-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'",
+          // atproto directory and a hand-off card both do. https://pit.world: the
+          // footer's newsletter form posts to pit.world/api/subscribe (connect-src)
+          // and falls back to a plain POST to pit.world/subscribe (form-action).
+          `default-src 'none'; img-src 'self' data: https://built.indie.pit.world https://pwamart.com; style-src 'self'; script-src 'self'${scriptHashes ? ` ${scriptHashes}` : ""}; font-src 'self'; connect-src 'self' https://pit.world; base-uri 'none'; form-action https://pit.world`,
       },
     });
   },
