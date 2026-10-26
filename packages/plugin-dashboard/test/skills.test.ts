@@ -163,3 +163,17 @@ test("GET /types/skill.md is the index of post types and /types/:type/skill.md s
   // The skills index links to them.
   expect(await get("/skills").text()).toContain("[All types](/types/skill.md)");
 });
+
+test("GET /brain reports the linked brain, and linked:false without one", async () => {
+  const none = (await get("/brain").json()) as { linked: boolean };
+  expect(none.linked).toBe(false);
+  const { mkdirSync, writeFileSync } = await import("node:fs");
+  const root = join(dir, "team-brain");
+  mkdirSync(join(root, "knowledge"), { recursive: true });
+  writeFileSync(join(root, "knowledge", "positioning.md"), "We sell shovels.\n");
+  const { linkBrain } = await import("@profullstack/myna-core");
+  linkBrain(root);
+  const status = (await get("/brain").json()) as { linked: boolean; prompt: { included: string[] } };
+  expect(status.linked).toBe(true);
+  expect(status.prompt.included).toEqual(["knowledge/positioning.md"]);
+});

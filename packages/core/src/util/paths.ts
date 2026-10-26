@@ -76,3 +76,13 @@ export const PLUGINS_DIR = "plugins";
 export const BRAND_FILE = "brand.md";
 /** Plan items: a topic and an angle on a date, before anyone has written the copy. */
 export const PLAN_FILE = "plan.json";
+/**
+ * The team's "content brain": a git repo of knowledge/*.md and skills/. A
+ * brain linked by git URL is cloned here; a local path is used in place.
+ */
+export const BRAIN_DIR = "brain";
+
+/** Where a brain linked by git URL lives on this machine. MYNA_HOME-aware. */
+export function brainCloneDir(): string {
+  return configPath(BRAIN_DIR);
+}

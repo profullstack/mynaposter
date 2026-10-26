@@ -33,10 +33,13 @@ import {
   accountSkillDir,
   accountSkillPath,
   handleSlug,
-  listSkillFiles,
+  brainHasSkill,
+  listLayeredSkillFiles,
   networkSkillPath,
   parseSkill,
+  readLayeredSkill,
   readSkillFile,
+  serializeSkill,
   removeSkillFile,
   safeSlug,
   writeSkillFile,
@@ -44,6 +47,7 @@ import {
   type SkillFrontmatter,
   type SkillKind,
   type SkillLimits,
+  type SkillSource,
 } from "../store/skills.ts";
 import { textKey } from "./pacing.ts";
 import { deriveTitle } from "../util/text.ts";
@@ -430,6 +434,8 @@ export function ensureNetworkSkill(networkId: string, options: { force?: boolean
   const path = networkSkillPath(networkId);
   const existing = readSkillFile(path);
   if (existing && !options.force) return { path, written: false };
+  // The linked brain already provides it: a generated copy here would only shadow the team's file.
+  if (!existing && !options.force && brainHasSkill(path)) return { path, written: false };
   const { frontmatter, body } = networkTemplate(networkId, options.settings ?? loadSettings());
   writeSkillFile(path, frontmatter, body);
   return { path, written: true };
@@ -443,6 +449,7 @@ export function ensureAccountSkill(
   const path = accountSkillPath(account.network, account.handle);
   const existing = readSkillFile(path);
   if (existing && !options.force) return { path, written: false };
+  if (!existing && !options.force && brainHasSkill(path)) return { path, written: false };
   const { frontmatter, body } = accountTemplate(account, options.settings ?? loadSettings());
   writeSkillFile(path, frontmatter, body);
   return { path, written: true };
@@ -478,14 +485,20 @@ export function initSkills(
 
 /* --------------------------------------------------------------- reading */
 
+/** Is a local file still exactly the template myna wrote? Then a brain file may replace it. */
+export function isTemplate(file: SkillFile, template: { frontmatter: SkillFrontmatter; body: string }): boolean {
+  return file.raw.trim() === serializeSkill(template.frontmatter, template.body).trim();
+}
+
 /** The network skill from disk, or the template when there is no file yet. */
 export function readNetworkSkill(networkId: string, options: { materialise?: boolean } = {}): SkillFile {
   const path = networkSkillPath(networkId);
   if (options.materialise) ensureNetworkSkill(networkId);
-  const file = readSkillFile(path);
+  const settings = loadSettings();
+  const file = readLayeredSkill(path, (local) => isTemplate(local, networkTemplate(networkId, settings)));
   if (file) return file;
-  const { frontmatter, body } = networkTemplate(networkId, loadSettings());
-  return { slug: DEFAULT_SKILL_SLUG, path, frontmatter, body, raw: "" };
+  const { frontmatter, body } = networkTemplate(networkId, settings);
+  return { slug: DEFAULT_SKILL_SLUG, path, frontmatter, body, raw: "", source: "local" };
 }
 
 /** Every skill an account has, default first. Empty when nothing was materialised and `materialise` is off. */
@@ -494,10 +507,14 @@ export function listAccountSkills(
   options: { materialise?: boolean } = {},
 ): SkillFile[] {
   if (options.materialise) ensureAccountSkill(account);
-  const files = listSkillFiles(accountSkillDir(account.network, account.handle));
+  const settings = loadSettings();
+  const files = listLayeredSkillFiles(
+    accountSkillDir(account.network, account.handle),
+    (local) => local.slug === DEFAULT_SKILL_SLUG && isTemplate(local, accountTemplate(account, settings)),
+  );
   if (files.some((file) => file.slug === DEFAULT_SKILL_SLUG)) return files;
-  const { frontmatter, body } = accountTemplate(account, loadSettings());
-  return [{ slug: DEFAULT_SKILL_SLUG, path: accountSkillPath(account.network, account.handle), frontmatter, body, raw: "" }, ...files];
+  const { frontmatter, body } = accountTemplate(account, settings);
+  return [{ slug: DEFAULT_SKILL_SLUG, path: accountSkillPath(account.network, account.handle), frontmatter, body, raw: "", source: "local" }, ...files];
 }
 
 export function readAccountSkill(
@@ -650,6 +667,8 @@ export interface ResolvedSkill {
   limits: ResolvedLimits;
   /** What an agent reads: the type skill, then the account skill, then the network skill. */
   body: string;
+  /** Where each layer came from: this machine's skills/ or the linked brain's. */
+  sources: { type?: SkillSource; selected: SkillSource; network: SkillSource };
 }
 
 function limitsOf(file: SkillFile | undefined): SkillLimits {
@@ -740,7 +759,12 @@ export function resolveSkill(
   const limits = mergeLimits(template, layers, settings.blog?.maxPerDay, kind);
   const typeSkill = options.type ? readTypeSkill(options.type) : undefined;
   const body = [typeSkill?.body, selected.body, networkSkill.body].filter(Boolean).join("\n\n---\n\n");
-  return { account: account.id, network: account.network, kind, selected, networkSkill, typeSkill, limits, body };
+  const sources = {
+    ...(typeSkill ? { type: typeSkill.source ?? "local" } : {}),
+    selected: selected.source ?? "local",
+    network: networkSkill.source ?? "local",
+  };
+  return { account: account.id, network: account.network, kind, selected, networkSkill, typeSkill, limits, body, sources };
 }
 
 /** The limits the planner needs, in the units it uses. */

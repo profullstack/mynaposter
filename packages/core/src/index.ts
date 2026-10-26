@@ -227,7 +227,7 @@ export {
   typeCapFor,
   type TypeSkill,
 } from "./core/post-types.ts";
-export { parseSkill, serializeSkill, typeSkillPath, listTypeSlugs, TYPES_DIR, type TypeFrontmatter, skillsDir, networkSkillPath, accountSkillPath, accountSkillDir, listSkillNetworks, listSkillAccountDirs, SKILLS_DIR } from "./store/skills.ts";
+export { parseSkill, serializeSkill, typeSkillPath, listTypeSlugs, TYPES_DIR, type TypeFrontmatter, skillsDir, networkSkillPath, accountSkillPath, accountSkillDir, listSkillNetworks, listSkillAccountDirs, SKILLS_DIR, type SkillSource } from "./store/skills.ts";
 export { runEvergreen, pickEvergreen, evergreenText, lastEvergreen, DEFAULT_EVERGREEN, EVERGREEN_MARK, type EvergreenSettings, type EvergreenRun, type EvergreenPick } from "./core/evergreen.ts";
 export {
   buildRecap,
@@ -714,6 +714,7 @@ export {
 export {
   brandPath,
   brandPrompt,
+  writerContext,
   hasBrand,
   learnBrand,
   loadBrand,
@@ -726,6 +727,33 @@ export {
   type LearnResult,
   type Pillar,
 } from "./core/brand.ts";
+// The brain: the team's knowledge/ and skills/ as Markdown in a git repo.
+export {
+  brainPrompt,
+  planBrainPrompt,
+  knowledgeFiles,
+  linkBrain,
+  unlinkBrain,
+  pullBrain,
+  pushBrain,
+  brainStatus,
+  brainDaemonTurn,
+  initBrain,
+  listBrainFiles,
+  brainRoot,
+  brainSettings,
+  isGitUrl,
+  BRAIN_PROMPT_CAP,
+  BRAIN_PRIORITY,
+  type BrainSettings,
+  type BrainStatus,
+  type BrainPromptPlan,
+  type KnowledgeFile,
+  type PullResult,
+  type PushResult,
+  type InitBrainResult,
+} from "./core/brain.ts";
+export { brainCloneDir } from "./util/paths.ts";
 // Plan items: a subject and an angle on a date, before the copy exists.
 export {
   addPlanItems,

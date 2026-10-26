@@ -23,6 +23,7 @@ import { currentProfile } from "../store/profile.ts";
 import { topicIndex } from "./topics.ts";
 import { extractJson, providerComplete, writerAvailable } from "../ai/writer.ts";
 import { fetchPage } from "../ai/extract.ts";
+import { brainPrompt } from "./brain.ts";
 
 /** One thing you post about, and why anyone cares. */
 export interface Pillar {
@@ -175,6 +176,15 @@ export function brandPrompt(brand: Brand | null = loadBrand()): string {
   }
   if (brand.avoid.length) parts.push(`Never: ${brand.avoid.join("; ")}`);
   return parts.length ? `\n\nBrand:\n${parts.join("\n")}` : "";
+}
+
+/**
+ * Everything a writing system prompt appends: the brand card, then the linked
+ * brain's knowledge files. One helper so every writer gets both. With no brain
+ * linked this is exactly brandPrompt().
+ */
+export function writerContext(brand: Brand | null = loadBrand()): string {
+  return `${brandPrompt(brand)}${brainPrompt()}`;
 }
 
 const LEARN_SYSTEM = `You are reading somebody's actual published posts and writing the brand document those posts imply.

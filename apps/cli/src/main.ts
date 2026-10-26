@@ -106,6 +106,18 @@ Brand, plan and autopilot (the parts that run without you):
     brand set <key> <value>         name, audience, positioning, voice
     brand pillar add|rm ["a: why"]  The subjects you keep returning to
     brand avoid add|rm "<text>"     What never goes out
+  brain                             The team's content brain: positioning, voice,
+                                    audience, objections and skills as Markdown
+                                    in a git repo every teammate's AI reads.
+                                    Shows source, HEAD, files, what is prompted
+    brain init <dir>                Scaffold one (seeded from brand.md and your
+       [--product <slug>]           skills), git init, commit, and link it
+    brain link <git-url|path>       A URL is cloned under the config dir; a
+       [--product <slug>]           path is used in place. --product also reads
+                                    knowledge/<slug>/*.md
+    brain pull | unlink             git pull --ff-only (the daemon does it hourly)
+    brain push [-m "msg"]           git add -A, commit and push
+    brain show [--show-prompt]      --show-prompt prints the knowledge block
   plan                              Planned angles: a subject and an argument on
                                     a date, with no copy written yet. --all
                                     includes the ones already booked

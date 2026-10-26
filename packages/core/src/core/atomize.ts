@@ -14,7 +14,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { addPlanItems, planHasAngle, type PlanItem } from "../store/plan.ts";
 import { extractJson, providerComplete, writerAvailable } from "../ai/writer.ts";
 import { fetchPage } from "../ai/extract.ts";
-import { brandPrompt, loadBrand } from "./brand.ts";
+import { writerContext, loadBrand } from "./brand.ts";
 import { isoDay } from "./plan.ts";
 
 const DAY_MS = 86_400_000;
@@ -110,7 +110,7 @@ export async function atomize(options: AtomizeOptions): Promise<AtomizeResult> {
     .join("\n");
 
   log(`splitting into up to ${wanted} angles`);
-  const raw = await providerComplete(`${ATOMIZE_SYSTEM}${brandPrompt(brand)}`, prompt, 3000);
+  const raw = await providerComplete(`${ATOMIZE_SYSTEM}${writerContext(brand)}`, prompt, 3000);
   const angles = (extractJson<{ angles: AtomizedAngle[] }>(raw).angles ?? []).filter((entry) => entry?.angle?.trim());
 
   const fresh = angles.filter((entry) => !planHasAngle(entry.angle));

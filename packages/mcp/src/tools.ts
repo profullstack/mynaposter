@@ -29,6 +29,9 @@ import {
   loadBrand,
   learnBrand,
   brandPath,
+  brainStatus,
+  planBrainPrompt,
+  pullBrain,
   listPlan,
   pendingPlan,
   getPlanItem,
@@ -104,6 +107,26 @@ export const TOOLS = [
       "out. One Markdown file on this machine that every myna writing path already loads. Read it before " +
       "drafting anything so your copy matches what they actually sound like. Returns null when none is written " +
       "yet, in which case myna_brand_learn writes one from their own posts.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+  },
+  {
+    name: "myna_brain",
+    description:
+      "Read the linked brain repo: the team's shared marketing knowledge (positioning, voice, audience, objections, " +
+      "any other knowledge/*.md) and skills, kept as Markdown in git. Returns the source, last pull, git HEAD, every " +
+      "file with its size, which knowledge files every myna writing path appends to its system prompt, and that " +
+      "knowledge text itself. linked:false means none is linked (a person runs: myna brain link <git-url|path>).",
+    inputSchema: {
+      type: "object",
+      properties: { text: { type: "boolean", description: "Include the knowledge block text. Default true." } },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "myna_brain_pull",
+    description:
+      "git pull --ff-only the linked brain repo (cloning it first when this machine has the link from sync but no " +
+      "clone yet) and list the files that changed. A directory that is not a git repo is skipped, not an error.",
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
   },
   {
@@ -862,6 +885,16 @@ export async function callTool(name: string, args_: Record<string, unknown> = {}
           avoid: brand.avoid,
           links: brand.links,
         });
+      }
+
+      case "myna_brain": {
+        const status = brainStatus();
+        const wantText = (args_ as Record<string, unknown>).text !== false;
+        return text(wantText && status.linked ? { ...status, text: planBrainPrompt().text } : status);
+      }
+
+      case "myna_brain_pull": {
+        return text(pullBrain());
       }
 
       case "myna_brand_learn": {
