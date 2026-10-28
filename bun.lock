@@ -13,7 +13,7 @@
     },
     "apps/api": {
       "name": "@profullstack/myna-api",
-      "version": "0.49.2",
+      "version": "0.50.0",
       "dependencies": {
         "@profullstack/myna-core": "workspace:*",
         "@profullstack/myna-mcp": "workspace:*",
@@ -25,7 +25,7 @@
     },
     "apps/cli": {
       "name": "@profullstack/myna",
-      "version": "0.49.2",
+      "version": "0.50.0",
       "bin": {
         "myna": "./bin/myna.mjs",
       },
@@ -60,7 +60,7 @@
     },
     "packages/core": {
       "name": "@profullstack/myna-core",
-      "version": "0.49.2",
+      "version": "0.50.0",
       "dependencies": {
         "@anthropic-ai/sdk": "^0.123.0",
         "@profullstack/synconfig": "workspace:*",
@@ -68,7 +68,7 @@
     },
     "packages/mcp": {
       "name": "@profullstack/myna-mcp",
-      "version": "0.49.2",
+      "version": "0.50.0",
       "bin": {
         "myna-mcp": "./src/server.ts",
       },
@@ -103,7 +103,7 @@
     },
     "packages/plugin-dashboard": {
       "name": "@profullstack/myna-plugin-dashboard",
-      "version": "0.49.2",
+      "version": "0.50.0",
       "devDependencies": {
         "@profullstack/myna-core": "workspace:*",
       },
