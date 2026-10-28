@@ -127,6 +127,7 @@ import { runPlan, runAtomize } from "./plan.ts";
 import { runAutopilotCommand } from "./autopilot.ts";
 import { runUpvote } from "./upvote.ts";
 import { runAsks } from "./asks.ts";
+import { runHubs } from "./hubs.ts";
 import { runDid } from "./did.ts";
 import { runContacts, runEmail, runSms, runSmtp } from "./outreach.ts";
 import { runNewsletter } from "./newsletter.ts";
@@ -187,6 +188,8 @@ export function parseFlags(argv: string[]): { positional: string[]; flags: Flags
       "go", "clean", "background", "watch",
       // brain show --show-prompt
       "showPrompt",
+      // asks stats --refresh, outreachgraph hubs --refresh, asks phrases --generate
+      "refresh", "generate",
     ]);
     if (BOOLS.has(name)) {
       flags[name === "noThread" ? "thread" : name] = name !== "noThread";
@@ -653,6 +656,13 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
       // The writer's key and the OutreachGraph login are in the vault.
       await ensureUnlocked();
       return await runAsks(positional, flags);
+    }
+
+    case "hubs":
+    case "hub": {
+      // Approving reads the connected accounts, which live in the vault.
+      await ensureUnlocked();
+      return await runHubs(positional, flags);
     }
 
     case "did": {

@@ -40,9 +40,19 @@ import {
 import { addHandoff, attachCloud, cloudSignedIn, getHandoff, publishHandoff, type Handoff } from "../store/handoffs.ts";
 import { askJudge, askReplyDraft, writerAvailable, type AskJudgeInput, type AskJudgement, type AskReplyRequest } from "../ai/writer.ts";
 import { contentful, termsOf } from "./topics.ts";
+import { matchPain, painOf, painQueries } from "./pain.ts";
 import { runAfterDiscover } from "../plugins/hooks.ts";
 
 const DAY_MS = 86_400_000;
+/** A complaint matching a product's pain phrase: above every pattern, so it lists first. */
+export const PAIN_SCORE = 0.9;
+
+/**
+ * Pain first, then newest. A person describing the problem in their own words
+ * already wants the fix; a generic match only might.
+ */
+export const byRank = (a: Pick<Ask, "kind" | "postedAt">, b: Pick<Ask, "kind" | "postedAt">): number =>
+  Number(b.kind === "pain") - Number(a.kind === "pain") || b.postedAt.localeCompare(a.postedAt);
 
 // ------------------------------------------------------------------ detection
 
@@ -338,6 +348,9 @@ export function assignIdea(file: AsksFile, ask: Ask, at: string): Idea {
 
 /** One of our products that answers this ask, if any does. */
 export function matchProduct(products: AskProduct[], ask: Pick<Ask, "title" | "text" | "wants">): AskProduct | undefined {
+  // A pain phrase is the strongest evidence there is: it is the product's own problem, in the asker's words.
+  const pain = painOf(products, `${ask.title}\n${ask.text}`);
+  if (pain) return pain.product;
   const text = `${ask.title}\n${ask.wants.join("\n")}\n${ask.text}`.toLowerCase();
   const terms = new Set(askTerms({ title: `${ask.title} ${ask.text.slice(0, 600)}`, wants: ask.wants }));
   let best: { product: AskProduct; points: number } | undefined;
@@ -596,6 +609,8 @@ export interface AskScanOptions {
   judge?: ((posts: AskJudgeInput[]) => Promise<AskJudgement[]>) | null;
   /** Candidates the judge reads per scan; the rest wait for the next. */
   judgeLimit?: number;
+  /** Pain-phrase archive searches this scan; defaults to `asks.painSearches`. */
+  painSearches?: number;
 }
 
 export interface AskScanResult {
@@ -612,6 +627,8 @@ export interface AskScanResult {
   judged: boolean;
   /** Candidates left for the next scan's judge. */
   deferred: number;
+  /** Pain-phrase searches run, and the complaints they and the feeds turned up. */
+  pain: { searches: Array<{ phrase: string; sub: string; posts: number }>; found: number };
 }
 
 /**
@@ -627,7 +644,7 @@ export async function scanAsks(options: AskScanOptions = {}): Promise<AskScanRes
   const log = options.log ?? (() => {});
   const now = options.now ?? Date.now();
   const at = new Date(now).toISOString();
-  const result: AskScanResult = { found: [], read: 0, sources: [], skipped: [], flagged: [], rejected: 0, judged: false, deferred: 0 };
+  const result: AskScanResult = { found: [], read: 0, sources: [], skipped: [], flagged: [], rejected: 0, judged: false, deferred: 0, pain: { searches: [], found: 0 } };
   const judge =
     options.judge === null
       ? undefined
@@ -638,7 +655,8 @@ export async function scanAsks(options: AskScanOptions = {}): Promise<AskScanRes
   const us = settings.redditUser.trim().toLowerCase();
   const oldest = now - settings.windowDays * DAY_MS;
 
-  const candidates: Array<{ post: FeedPost; verdict: AskVerdict }> = [];
+  const candidates: Array<{ post: FeedPost; verdict: AskVerdict; pain?: { product: AskProduct; phrase: string } }> = [];
+  const painVerdict = (phrase: string): AskVerdict => ({ score: PAIN_SCORE, kind: "pain", wants: [phrase] });
   for (const sub of options.subs ?? subsOf(settings)) {
     let read: Awaited<ReturnType<typeof readSub>>;
     try {
@@ -655,11 +673,48 @@ export async function scanAsks(options: AskScanOptions = {}): Promise<AskScanRes
       file.seen.push(post.id);
       if (us && post.author.toLowerCase() === us) continue;
       if (Date.parse(post.postedAt) < oldest) continue;
+      const pain = painOf(file.products, `${post.title}\n${post.text}`);
+      if (pain) {
+        candidates.push({ post, verdict: painVerdict(pain.phrase), pain });
+        continue;
+      }
       const verdict = classifyAsk(post.title, post.text);
       // The feed's summary is cut short; give a near miss the benefit of the
       // doubt until the full text is in.
       if (verdict.score < settings.minScore - 0.1) continue;
       candidates.push({ post, verdict });
+    }
+  }
+
+  // The complaint itself, searched for: a phrase inside a sub, a few per scan, taking turns.
+  const budget = options.painSearches ?? settings.painSearches ?? 0;
+  const turn = painQueries(file.products, options.subs ?? subsOf(settings), file.painCursor ?? 0, budget);
+  if (turn.queries.length) file.painCursor = turn.next;
+  const statsBase = settings.statsBase.replace(/\/+$/, "");
+  for (const query of turn.queries) {
+    const product = file.products.find((entry) => entry.id === query.product);
+    if (!product) continue;
+    let posts: ArchivePost[] = [];
+    try {
+      posts = dataOf<ArchivePost>(
+        await fetchJson(`${statsBase}/api/posts/search?subreddit=${encodeURIComponent(query.sub)}&query=${encodeURIComponent(query.phrase)}&limit=25&sort=desc`),
+      );
+    } catch (error) {
+      result.skipped.push(`pain "${query.phrase}" in r/${query.sub}: ${(error as Error).message}`);
+      continue;
+    }
+    result.pain.searches.push({ phrase: query.phrase, sub: query.sub, posts: posts.length });
+    for (const record of posts) {
+      const post = fromArchive(record, query.sub);
+      if (!post.id || !post.title || seen.has(post.id) || known.has(post.id)) continue;
+      if (us && post.author.toLowerCase() === us) continue;
+      if (Date.parse(post.postedAt) < oldest) continue;
+      // The archive matches the words anywhere; the phrase must really be there.
+      const phrase = matchPain(product.painPhrases ?? [], `${post.title}\n${post.text}`);
+      if (!phrase) continue;
+      seen.add(post.id);
+      file.seen.push(post.id);
+      candidates.push({ post, verdict: painVerdict(phrase), pain: { product, phrase } });
     }
   }
 
@@ -676,10 +731,16 @@ export async function scanAsks(options: AskScanOptions = {}): Promise<AskScanRes
     }
   }
 
-  const kept: Array<{ post: FeedPost; verdict: AskVerdict; body: string; record?: ArchivePost }> = [];
-  for (const { post, verdict: first } of candidates) {
+  const kept: Array<{ post: FeedPost; verdict: AskVerdict; body: string; record?: ArchivePost; pain?: { product: AskProduct; phrase: string } }> = [];
+  const pains: typeof kept = [];
+  for (const { post, verdict: first, pain } of candidates) {
     const record = full.get(post.id);
     const body = record?.selftext && record.selftext.length > post.text.length && record.selftext !== "[removed]" ? record.selftext : post.text;
+    if (pain) {
+      // A complaint is not an ask, so neither the patterns nor the ask judge get a say.
+      pains.push({ post, verdict: first, body, pain, ...(record ? { record } : {}) });
+      continue;
+    }
     const verdict = body === post.text ? first : classifyAsk(post.title, body);
     if (verdict.score < settings.minScore) continue;
     kept.push({ post, verdict, body, ...(record ? { record } : {}) });
@@ -707,13 +768,13 @@ export async function scanAsks(options: AskScanOptions = {}): Promise<AskScanRes
     }
   }
 
-  for (const { post, verdict, body, record } of kept) {
-    const judgement = judgements.get(post.id);
+  for (const { post, verdict, body, record, pain } of [...pains, ...kept]) {
+    const judgement = pain ? undefined : judgements.get(post.id);
     if (judgement && !judgement.ask) {
       result.rejected += 1;
       continue;
     }
-    if (result.judged && !judgement) {
+    if (result.judged && !judgement && !pain) {
       // The judge ran and said nothing about this one. Judge it next time
       // rather than let the patterns alone decide.
       file.seen = file.seen.filter((id) => id !== post.id);
@@ -731,6 +792,7 @@ export async function scanAsks(options: AskScanOptions = {}): Promise<AskScanRes
       postedAt: post.postedAt,
       score: verdict.score,
       kind: verdict.kind,
+      ...(pain ? { pain: pain.phrase } : {}),
       wants: judgement?.wants.length ? judgement.wants : verdict.wants,
       ...(judgement?.label ? { label: judgement.label } : {}),
       ...(judgement ? { judged: true } : {}),
@@ -745,10 +807,12 @@ export async function scanAsks(options: AskScanOptions = {}): Promise<AskScanRes
       ask.stats.push({ at, ...(score !== undefined ? { score } : {}), ...(comments !== undefined ? { comments } : {}), ...(record?.upvote_ratio !== undefined ? { ratio: record.upvote_ratio } : {}) });
       ask.statsAt = at;
     }
-    const product = matchProduct(file.products, ask);
+    const product = pain?.product ?? matchProduct(file.products, ask);
     if (product) ask.product = { id: product.id, name: product.name, url: product.url };
     file.asks.push(ask);
-    assignIdea(file, ask, ask.postedAt);
+    // A complaint is demand for a fix we already sell, not for a new thing to build.
+    if (!pain) assignIdea(file, ask, ask.postedAt);
+    else result.pain.found += 1;
     result.found.push(ask);
     log(`asks: r/${ask.sub} ${ask.kind} (${ask.score}) ${ask.title.slice(0, 80)}`);
   }
@@ -865,7 +929,13 @@ export async function replyToAsk(ref: string, options: AskReplyOptions = {}): Pr
   if (!text) {
     const writerOk = settings.useWriter && (options.writerReady ?? writerAvailable().ok);
     if (writerOk) {
-      text = await (options.drafter ?? askReplyDraft)({ title: ask.title, text: ask.text, wants: ask.wants, ...(product ? { product } : {}) });
+      text = await (options.drafter ?? askReplyDraft)({
+        title: ask.title,
+        text: ask.text,
+        wants: ask.wants,
+        ...(product ? { product } : {}),
+        ...(ask.pain ? { pain: ask.pain } : {}),
+      });
       if (!text) throw new Error("The writer declined: it judged the reply would not help. Pass --text to write one yourself, or skip it.");
       drafted = "writer";
     } else {
@@ -882,6 +952,9 @@ export async function replyToAsk(ref: string, options: AskReplyOptions = {}): Pr
     steps: [
       "Open the thread and read the newest comments first; skip it if someone already answered the same way.",
       "Paste the reply as a top-level comment.",
+      // comment-share (social-promo, 75% of every share): their post, with our comment under it,
+      // is what we share, not a post of our own.
+      "Then crosspost THEIR post to r/fleetcoding first, then to the campaign's other subs (comment-share).",
       "Mark done. myna asks stats then finds the comment and tracks its score and replies.",
     ],
     ...(settings.redditUser ? { account: `u/${settings.redditUser}` } : {}),

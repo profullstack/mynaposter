@@ -90,6 +90,7 @@ export interface Settings {
   reshare: ReshareSettings;
   /** Follow-ups: who replied, reposted or followed, and what to send them back. */
   engage: EngageSettings;
+  hubs: HubsSettings;
   /** Gap-fill posting: hold a cadence from the plan, never sooner than the hold window. */
   autopilot: AutopilotSettings;
   /** The upvoter: finding posts worth a vote, and what myna may do about them. */
@@ -345,6 +346,30 @@ export interface AsksSettings {
   leads: boolean;
   /** Draft replies with the writer when one is configured; the template otherwise. */
   useWriter: boolean;
+  /**
+   * Archive searches per scan for the products' pain phrases (one phrase in one sub each, about
+   * 2.5 s apart). They take turns, so a small number still reaches every phrase. 0 turns them off;
+   * phrases still match every post the scan reads anyway.
+   */
+  painSearches: number;
+}
+
+/**
+ * Engage the hubs: the handful of accounts a campaign's buyers follow and answer, watched so a
+ * reply under their posts reaches the audience where it talks. Drafts only: every reply waits for
+ * a person to approve it, and an approved one goes through the queue and its pacing.
+ */
+export interface HubsSettings {
+  /** Hubs whose posts a scan reads, best first. */
+  watch: number;
+  /** Posts read per hub per scan. */
+  postsPerHub: number;
+  /** Only posts newer than this get a draft: an old thread's replies are read by nobody. */
+  maxAgeHours: number;
+  /** Drafts a scan writes at most, across every hub. */
+  draftsPerScan: number;
+  /** Bluesky's public AppView, for reading hubs' posts without an account. */
+  bskyBase: string;
 }
 
 export interface DidSettings {
@@ -532,6 +557,15 @@ export const DEFAULT_ASKS: AsksSettings = {
   redditUser: "",
   leads: true,
   useWriter: true,
+  painSearches: 6,
+};
+
+export const DEFAULT_HUBS: HubsSettings = {
+  watch: 8,
+  postsPerHub: 10,
+  maxAgeHours: 72,
+  draftsPerScan: 10,
+  bskyBase: "https://api.bsky.app",
 };
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -573,6 +607,7 @@ export const DEFAULT_SETTINGS: Settings = {
   profile: { ...DEFAULT_PROFILE },
   reshare: { ...DEFAULT_RESHARE },
   engage: { ...DEFAULT_ENGAGE },
+  hubs: { ...DEFAULT_HUBS },
   autopilot: { ...DEFAULT_AUTOPILOT },
   upvote: { ...DEFAULT_UPVOTE },
   asks: { ...DEFAULT_ASKS },
@@ -613,6 +648,7 @@ export function loadSettings(): Settings {
     profile: { ...DEFAULT_PROFILE, ...stored.profile },
     reshare: { ...DEFAULT_RESHARE, ...stored.reshare },
     engage: { ...DEFAULT_ENGAGE, ...stored.engage },
+    hubs: { ...DEFAULT_HUBS, ...stored.hubs },
     autopilot: { ...DEFAULT_AUTOPILOT, ...stored.autopilot },
     asks: { ...DEFAULT_ASKS, ...stored.asks },
     did: { ...DEFAULT_DID, ...stored.did },

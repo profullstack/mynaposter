@@ -86,6 +86,7 @@ import {
   queriesFor,
   saveSettings,
   asksApi,
+  hubsApi,
 } from "@profullstack/myna-core";
 
 export interface ToolResult {
@@ -813,6 +814,98 @@ export const TOOLS = [
     },
   },
   {
+    name: "myna_asks_phrases",
+    description:
+      "A product's pain phrases: the words people use when the problem hits them (\"can't find communities\"), not " +
+      "the category. Each asks scan searches them in turn and checks every post it reads; a match is a `pain` ask, " +
+      "ranked above keyword matches. Without changes: read them. generate asks the writer to draft them from the " +
+      "product; set replaces, add and remove edit.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        product: { type: "string", description: "The product id (myna asks product list)." },
+        generate: { type: "boolean", description: "Draft phrases with the writer and merge them in." },
+        set: { type: "array", items: { type: "string" }, description: "Replace the list with these." },
+        add: { type: "array", items: { type: "string" } },
+        remove: { type: "array", items: { type: "string" } },
+      },
+      required: ["product"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "myna_hubs",
+    description:
+      "Engage the hubs: the handful of accounts a campaign's buyers follow and reply to on Bluesky, Mastodon, X or " +
+      "LinkedIn, ranked (from OutreachGraph or added by hand), and the reply drafts waiting for approval. Reading " +
+      "changes nothing.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        campaign: { type: "string", description: "Only this OutreachGraph campaign's hubs." },
+        drafts: { type: "string", description: 'List drafts instead: "pending", "queued", "handoff", "skipped" or "all".' },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "myna_hubs_import",
+    description:
+      "Add hubs: one (network + handle) or a ranked list (hubs[]), e.g. from OutreachGraph's campaign hubs. " +
+      "Posts nothing.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        network: { type: "string" },
+        handle: { type: "string" },
+        score: { type: "number" },
+        campaign: { type: "string" },
+        hubs: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: { network: { type: "string" }, handle: { type: "string" }, score: { type: "number" }, why: { type: "string" } },
+            required: ["network", "handle"],
+          },
+        },
+        replace: { type: "boolean", description: "Drop this campaign's earlier hubs first." },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "myna_hubs_scan",
+    description:
+      "Read the watched hubs' newest posts (Bluesky and Mastodon are public; X and LinkedIn are listed to watch by " +
+      "hand) and draft a reply under the ones worth answering. Drafts only: nothing is posted. Takes a minute.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        hubs: { type: "array", items: { type: "string" }, description: "Only these hubs (network:handle)." },
+        campaign: { type: "string" },
+      },
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "myna_hubs_decide",
+    description:
+      "Decide on one hub reply draft. approve queues it under their post from a connected account on that network " +
+      "(pacing decides when it goes) or, where myna cannot reply, makes a hand-off card; skip drops it; edit rewrites it. " +
+      "Only approve when the person asked you to.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string" },
+        action: { type: "string", description: "approve, skip or edit." },
+        text: { type: "string", description: "The new reply (edit), or the text to approve with." },
+        account: { type: "string", description: "Reply from this account instead of the first on that network." },
+      },
+      required: ["id", "action"],
+      additionalProperties: false,
+    },
+  },
+  {
     name: "myna_upvote_set",
     description:
       "Turn the upvoter on or off, drop one queued action, or rewrite the reply a queued action carries. " +
@@ -1262,6 +1355,66 @@ export async function callTool(name: string, args_: Record<string, unknown> = {}
             ...(typeof args.label === "string" ? { label: args.label as string } : {}),
             ...(typeof args.note === "string" ? { note: args.note as string } : {}),
             ...(typeof args.merge_into === "string" ? { mergeInto: args.merge_into as string } : {}),
+          }),
+        );
+      }
+
+      case "myna_asks_phrases": {
+        const strings = (value: unknown): string[] | undefined => (Array.isArray(value) ? value.map(String) : undefined);
+        return text(
+          await asksApi.asksPhrases(String(args.product ?? ""), {
+            ...(strings(args.set) ? { set: strings(args.set) } : {}),
+            ...(strings(args.add) ? { add: strings(args.add) } : {}),
+            ...(strings(args.remove) ? { remove: strings(args.remove) } : {}),
+            generate: Boolean(args.generate),
+          }),
+        );
+      }
+
+      case "myna_hubs": {
+        if (typeof args.drafts === "string") return text(hubsApi.hubsDrafts(args.drafts as string));
+        return text(hubsApi.hubsOverview({ ...(typeof args.campaign === "string" ? { campaignId: args.campaign as string } : {}) }));
+      }
+
+      case "myna_hubs_import": {
+        const campaignId = typeof args.campaign === "string" ? (args.campaign as string) : undefined;
+        if (Array.isArray(args.hubs)) {
+          return text(
+            hubsApi.hubsImport({
+              hubs: (args.hubs as Array<Record<string, unknown>>).map((hub) => ({
+                network: String(hub.network ?? ""),
+                handle: String(hub.handle ?? ""),
+                ...(typeof hub.score === "number" ? { score: hub.score } : {}),
+                ...(typeof hub.why === "string" ? { why: hub.why } : {}),
+              })),
+              ...(campaignId ? { campaignId } : {}),
+              replace: Boolean(args.replace),
+            }),
+          );
+        }
+        return text(
+          hubsApi.hubsAdd({
+            network: String(args.network ?? ""),
+            handle: String(args.handle ?? ""),
+            ...(typeof args.score === "number" ? { score: args.score as number } : {}),
+            ...(campaignId ? { campaignId } : {}),
+          }),
+        );
+      }
+
+      case "myna_hubs_scan": {
+        const hubs = Array.isArray(args.hubs) ? (args.hubs as unknown[]).map(String) : [];
+        return text(await hubsApi.hubsScan({ ...(hubs.length ? { hubs } : {}), ...(typeof args.campaign === "string" ? { campaignId: args.campaign as string } : {}) }));
+      }
+
+      case "myna_hubs_decide": {
+        const action = String(args.action ?? "");
+        if (action !== "approve" && action !== "skip" && action !== "edit") throw new Error('action is "approve", "skip" or "edit".');
+        return text(
+          hubsApi.hubsDecide(String(args.id ?? ""), {
+            action,
+            ...(typeof args.text === "string" ? { text: args.text as string } : {}),
+            ...(typeof args.account === "string" ? { account: args.account as string } : {}),
           }),
         );
       }

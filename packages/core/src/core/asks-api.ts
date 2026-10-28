@@ -8,7 +8,9 @@
  */
 import { loadSettings, saveSettings } from "../store/settings.ts";
 import { findIn, readAsks, writeAsks, type Ask, type AskStatus, type IdeaStatus } from "../store/asks.ts";
+import { editPainPhrases } from "./pain.ts";
 import {
+  byRank,
   mergeIdeas,
   rankIdeas,
   refreshAskStats,
@@ -37,6 +39,7 @@ export function askView(ask: Ask) {
     author: ask.author,
     postedAt: ask.postedAt,
     kind: ask.kind,
+    pain: ask.pain,
     score: ask.score,
     confirmed: Boolean(ask.judged),
     label: ask.label,
@@ -99,7 +102,7 @@ export function asksList(options: { status?: string; sub?: string; idea?: string
     .filter((ask) => status === "all" || ask.status === status)
     .filter((ask) => !sub || ask.sub.toLowerCase() === sub)
     .filter((ask) => !options.idea || ask.ideaId === options.idea)
-    .sort((a, b) => b.postedAt.localeCompare(a.postedAt))
+    .sort(byRank)
     .slice(0, Math.max(1, Math.min(500, options.limit ?? 50)))
     .map(askView);
 }
@@ -143,6 +146,7 @@ export async function asksScan(subs?: string[]) {
     rejected: result.rejected,
     deferred: result.deferred,
     skipped: result.skipped,
+    pain: result.pain,
     found: result.found.map(askView),
     flagged: result.flagged.map((idea) => ({ id: idea.id, label: idea.label })),
   };
@@ -216,4 +220,22 @@ export function asksSet(patch: {
     }
   }
   return { done: done.length ? done : ["nothing to change"] };
+}
+
+/**
+ * A product's pain phrases: read them, replace them, add or drop some, or
+ * have the writer draft them from what the product does.
+ */
+export async function asksPhrases(
+  productId: string,
+  edit: { set?: string[]; add?: string[]; remove?: string[]; generate?: boolean } = {},
+) {
+  const changing = Boolean(edit.set || edit.add?.length || edit.remove?.length || edit.generate);
+  if (!changing) {
+    const product = findIn(readAsks().products, productId);
+    if (!product) throw new Error(`No product ${productId}.`);
+    return { product: product.id, phrases: product.painPhrases ?? [], subs: product.painSubs ?? [] };
+  }
+  const { product, by } = await editPainPhrases(productId, edit);
+  return { product: product.id, phrases: product.painPhrases ?? [], subs: product.painSubs ?? [], ...(by ? { drafted: by } : {}) };
 }

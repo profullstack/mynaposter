@@ -336,7 +336,25 @@ Follow-ups (the people who replied, reposted or followed you):
   asks stats [--refresh]            Thread score and comments, our reply's
                                     score and the answers it got
   asks product add <name> <url> [--keywords "a, b"] [--about "…"]
+  asks phrases <product> [--generate] [--set|--add|--remove "a, b"]
+                                    Pain phrases: the words people use when
+                                    the problem hits ("can't find
+                                    communities"). Searched each scan and
+                                    ranked above any keyword match
   asks subs [add|rm <sub>] | set <key> <value>
+
+  hubs [--campaign <id>]            The accounts a campaign's buyers follow
+                                    and reply to, and the drafts waiting
+  outreachgraph hubs <campaign>     Rank them in OutreachGraph and import them
+  hubs add <network> <handle> | rm <hub>
+  hubs scan [--hub a,b] [--campaign <id>]
+                                    Read the hubs' newest posts (Bluesky,
+                                    Mastodon) and draft replies. Drafts only
+  hubs drafts [--status pending|queued|handoff|skipped|all]
+  hubs approve <id> [--text "…"] [--account <id>]
+                                    Queue the reply under their post; pacing
+                                    sends it. LinkedIn/X: a hand-off card
+  hubs skip <id> | edit <id> "…"
 
 Directories (submitting the product, not a post):
   directory                         The directories myna can submit to, and

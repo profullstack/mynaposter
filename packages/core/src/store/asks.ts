@@ -58,8 +58,14 @@ export interface Ask {
   postedAt: string;
   /** 0-1, how sure the detector is that this is somebody asking for a thing. */
   score: number;
-  /** Which pattern made it an ask: `is-there`, `looking-for`, `wish`… The honest answer to "why this one". */
+  /**
+   * Which pattern made it an ask: `is-there`, `looking-for`, `wish`… The honest answer to "why this one".
+   * `pain` is a complaint that matched one of a product's pain phrases: not an ask, but someone who
+   * has the problem right now, so it ranks first.
+   */
   kind: string;
+  /** The pain phrase it matched, for a `pain` ask. */
+  pain?: string;
   /** What they want it to do, as their own phrases. */
   wants: string[];
   /** A short name for the thing, from the writer's second look. What ideas are grouped by first. */
@@ -112,6 +118,13 @@ export interface AskProduct {
   keywords: string[];
   /** One line on what it does, which the writer reads before it mentions it. */
   about?: string;
+  /**
+   * The words people use when the problem hits them ("can't find communities"), not the category
+   * ("social media tool"). Drafted by the writer, edited by a person; a post matching one is a `pain` ask.
+   */
+  painPhrases?: string[];
+  /** Subs to search the phrases in. Absent means the asks subs. */
+  painSubs?: string[];
 }
 
 export interface AsksFile {
@@ -119,6 +132,8 @@ export interface AsksFile {
   asks: Ask[];
   ideas: Idea[];
   products: AskProduct[];
+  /** Where the next scan's pain-phrase searches start, so they take turns. */
+  painCursor?: number;
 }
 
 const SEEN_LIMIT = 20_000;
@@ -132,6 +147,7 @@ export function readAsks(): AsksFile {
     asks: Array.isArray(file.asks) ? file.asks : [],
     ideas: Array.isArray(file.ideas) ? file.ideas : [],
     products: Array.isArray(file.products) ? file.products : [],
+    ...(typeof file.painCursor === "number" ? { painCursor: file.painCursor } : {}),
   };
 }
 
@@ -186,7 +202,7 @@ const slug = (value: string): string =>
     .slice(0, 40);
 
 /** Add or replace one of our products. Keyed by a slug of its name. */
-export function saveProduct(input: { name: string; url: string; keywords?: string[]; about?: string }): AskProduct {
+export function saveProduct(input: { name: string; url: string; keywords?: string[]; about?: string; painPhrases?: string[]; painSubs?: string[] }): AskProduct {
   const name = input.name.trim();
   if (!name) throw new Error("A product needs a name.");
   let url: URL;
@@ -205,6 +221,12 @@ export function saveProduct(input: { name: string; url: string; keywords?: strin
     ...(input.about?.trim() ? { about: input.about.trim() } : {}),
   };
   const file = readAsks();
+  // Re-adding a product keeps the phrases a person already edited unless new ones are given.
+  const earlier = file.products.find((entry) => entry.id === product.id);
+  const phrases = input.painPhrases ?? earlier?.painPhrases;
+  if (phrases?.length) product.painPhrases = phrases.map((phrase) => phrase.trim().toLowerCase()).filter(Boolean);
+  const painSubs = input.painSubs ?? earlier?.painSubs;
+  if (painSubs?.length) product.painSubs = painSubs;
   file.products = [...file.products.filter((entry) => entry.id !== product.id), product];
   writeAsks(file);
   return product;

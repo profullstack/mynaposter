@@ -602,7 +602,8 @@ Rules, all of them load-bearing:
 - When there is no product to offer, do not invent one. Say you have not found one that does all of it, and ask the one question that would tell a builder what matters most to them (which of the things they listed they would drop, or what they use today).
 - Two to four sentences. Plain and specific. No headings, no lists unless they used one.
 - No em dashes. No hashtags. No emoji. No exclamation marks. No "great question", no "hope this helps", no "check out", no call to action.
-- Decline (empty text) if their post is not actually asking for a tool, or if the product does not do the main thing they asked for.
+- When the prompt says the post is a complaint (someone describing the problem in their own words, not asking for a tool), help with the problem first in two or three sentences, from experience, then name the product only if it fixes that exact problem.
+- Decline (empty text) if their post is neither asking for a tool nor describing the problem, or if the product does not do the main thing they asked for.
 
 Return JSON: {"text": "<the reply>"} or {"text": ""} to decline.`;
 
@@ -614,6 +615,8 @@ export interface AskReplyRequest {
   /** Ours, when one answers it. */
   product?: { name: string; url: string; about?: string };
   voice?: string;
+  /** The pain phrase it matched, when the post is a complaint rather than an ask. */
+  pain?: string;
 }
 
 /**
@@ -630,6 +633,7 @@ export async function askReplyDraft(request: AskReplyRequest): Promise<string> {
     `Their post title: ${request.title}`,
     request.text ? `Their post:\n${request.text.slice(0, 3000)}` : "",
     request.wants.length ? `What they want, as they put it: ${request.wants.join("; ")}` : "",
+    request.pain ? `This post is a complaint, not an ask: they are describing the problem ("${request.pain}"). Help with the problem first.` : "",
     "",
     request.product
       ? `The product you may name, and must disclose you work on: ${request.product.name} at ${request.product.url}` +
@@ -695,4 +699,83 @@ export async function askJudge(posts: AskJudgeInput[]): Promise<AskJudgement[]> 
       wants: Array.isArray(entry.wants) ? entry.wants.map(String).map((want) => want.trim()).filter(Boolean).slice(0, 6) : [],
       label: typeof entry.label === "string" ? entry.label.trim().slice(0, 80) : "",
     }));
+}
+
+const PAIN_SYSTEM = `You write the search phrases that find people at the moment a problem hits them.
+
+Given a product, list the words its buyers type when they are stuck: the complaint itself, in the first person or as a question, the way it shows up in a post title or a reply. Not the product category, not marketing words, not "SaaS", "startup", "tool", "platform" or the product's name.
+
+Good: "can't find communities", "nobody sees my posts", "no one replies to my cold emails", "got only 2 users".
+Bad: "social media management", "best scheduling tool", "SaaS marketing".
+
+Rules:
+- 8 to 15 phrases, 2 to 6 words each, lower case, no punctuation except apostrophes.
+- Each phrase should be something a frustrated person would actually write, so a literal search for it finds them.
+- Cover different moments: before they know a fix exists, while a workaround fails, after giving up.
+
+Return only JSON: {"phrases": ["..."]}.`;
+
+export interface PainPhraseRequest {
+  name: string;
+  url?: string;
+  about?: string;
+  keywords?: string[];
+}
+
+/** The complaint phrases for a product, from what it does. */
+export async function painPhrasesDraft(request: PainPhraseRequest): Promise<string[]> {
+  const prompt = [
+    `Product: ${request.name}${request.url ? ` (${request.url})` : ""}`,
+    request.about ? `What it does: ${request.about}` : "",
+    request.keywords?.length ? `What it is about: ${request.keywords.join(", ")}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+  const raw = await providerComplete(PAIN_SYSTEM, prompt, 800);
+  const parsed = extractJson<{ phrases?: unknown[] }>(raw);
+  return Array.isArray(parsed.phrases) ? parsed.phrases.map(String) : [];
+}
+
+/**
+ * Replying under a hub's post. A hub is an account the buyers follow and
+ * answer, so the reply is read by exactly the people we want, which is why it
+ * must be worth reading on its own: a pitch under someone else's post is the
+ * fastest way to be muted by the whole room.
+ */
+const HUB_SYSTEM = `You are replying under a post by an account that a community follows closely. The people reading the replies are the audience. You are a guest.
+
+Rules:
+- Add something: an answer, a specific experience, a sharp follow-up question, a number. Agreeing or praising is not a reply.
+- One to three sentences, under the network's limit. Plain and specific.
+- Mention the product only when the post is about the exact problem it fixes, and then say you work on it. Most replies should not mention it at all.
+- No links unless you name the product. No hashtags, no emoji, no em dashes, no exclamation marks, no "great post", no call to action.
+- Decline (empty text) when you have nothing to add, the post is personal, political, a joke you would only spoil, or not in your field.
+
+Return only JSON: {"text": "<the reply>"} or {"text": ""} to decline.`;
+
+export interface HubReplyRequest {
+  network: string;
+  hub: string;
+  post: string;
+  charLimit?: number;
+  product?: { name: string; url: string; about?: string };
+  voice?: string;
+}
+
+/** A reply under a hub account's post, or "" when there is nothing worth saying. */
+export async function hubReplyDraft(request: HubReplyRequest): Promise<string> {
+  const { ai } = loadSettings();
+  const prompt = [
+    `Voice: ${request.voice ?? ai.voice}`,
+    `Network: ${request.network}${request.charLimit ? ` (limit ${request.charLimit} characters)` : ""}`,
+    `Post by ${request.hub}:\n${request.post.slice(0, 2000)}`,
+    request.product
+      ? `A product you may name only if the post is about the problem it fixes, disclosing you work on it: ${request.product.name} at ${request.product.url}` +
+        (request.product.about ? `\nWhat it does: ${request.product.about}` : "")
+      : "There is no product to mention.",
+  ].join("\n\n");
+  const raw = await providerComplete(`${HUB_SYSTEM}${writerContext()}`, prompt, 600);
+  const text = extractJson<{ text?: string }>(raw).text?.trim() ?? "";
+  if (!text) return "";
+  return request.charLimit && text.length > request.charLimit ? "" : text;
 }

@@ -3,6 +3,7 @@ import { getPluginSecrets, listAccounts, setPluginSecrets } from "../store/accou
 import { loadSettings } from "../store/settings.ts";
 import { configDir } from "../util/paths.ts";
 import { addSeeds } from "../core/graph.ts";
+import { importHubs } from "../core/hubs.ts";
 import { getNetwork } from "../net/registry.ts";
 import type { Account, Profile } from "../net/types.ts";
 import type { MynaPlugin, PluginContext } from "./types.ts";
@@ -38,6 +39,12 @@ export function pluginContext(plugin: MynaPlugin, host: HostOptions = {}): Plugi
       addSeeds,
       following: (account, handle, limit) => readList("following", account, handle, limit),
       followers: (account, handle, limit) => readList("followers", account, handle, limit),
+    },
+    hubs: {
+      import: (hubs, options = {}) => {
+        const result = importHubs(hubs, { source: "outreachgraph", ...options });
+        return { added: result.added, updated: result.updated };
+      },
     },
     configDir: configDir(),
     flags: host.flags ?? {},

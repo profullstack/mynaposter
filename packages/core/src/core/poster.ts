@@ -29,6 +29,8 @@ export interface ComposeOptions {
   /** Added per network, only where they belong and only if they fit. */
   hashtags?: string[];
   extra?: Record<string, string>;
+  /** Somebody else's post to reply under; the first part goes there and any thread hangs off it. */
+  replyTo?: string;
   signature?: string;
   /**
    * Publish to a blog even though a post with this title is already in its
@@ -123,7 +125,7 @@ async function postOne(account: Account, options: ComposeOptions, utm?: UtmPlan)
     }
 
     const posts: PostResult[] = [];
-    let replyTo: string | undefined;
+    let replyTo: string | undefined = options.replyTo;
     for (const part of parts) {
       const input: PostInput = {
         text: part,
