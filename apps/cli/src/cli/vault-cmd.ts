@@ -86,7 +86,8 @@ export async function runVault(positional: string[], _flags: Flags, io: VaultIo 
     out(`mode: ${vaultMode()}`);
     try {
       const res = await daemonRequest<{ unlocked?: boolean; expiresAt?: string | null }>("GET", "/status");
-      out(`daemon: ${res.body.unlocked ? `unlocked until ${res.body.expiresAt}` : "locked"}`);
+      if (vaultMode() === "keyfile") out("daemon: running (keyfile vault: nothing to unlock; `myna vault passphrase` to seal it)");
+      else out(`daemon: ${res.body.unlocked ? `unlocked until ${res.body.expiresAt}` : "locked"}`);
     } catch {
       out("daemon: not running");
     }
