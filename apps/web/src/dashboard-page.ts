@@ -24,7 +24,7 @@ export function renderDashboardPage(apiBase: string, version = ""): string {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Dashboard &mdash; myna</title>
-<meta name="description" content="Your myna hand-off queue: the posts only you can make, ready to copy, paste and mark done.">
+<meta name="description" content="Your myna hand-off queue and webhooks: the posts only you can make, ready to copy, paste and mark done.">
 <meta name="robots" content="noindex, nofollow">
 <meta name="color-scheme" content="dark">
 <link rel="canonical" href="https://mynaposter.com/dashboard">
@@ -90,6 +90,28 @@ export function renderDashboardPage(apiBase: string, version = ""): string {
 
   <h2 class="later">Scheduled</h2>
   <p class="fineprint">Your post queue lives on the machine that sends it, not here. <code>myna queue</code> shows it.</p>
+</section>
+
+<section id="webhooks" hidden aria-labelledby="webhooks-title">
+  <h2 id="webhooks-title" class="later">Webhooks</h2>
+  <p class="fineprint">myna calls your URL with a signed <a href="https://cloudevents.io/">CloudEvent</a> when something happens. Verify the <code>webhook-signature</code> header with the endpoint's secret (any <a href="https://www.standardwebhooks.com/">Standard Webhooks</a> library). Posts and newsletters go out from your own machine, so their events need <code>myna webhooks relay on</code> there.</p>
+  <p id="hooks-note" class="note" role="status" aria-live="polite"></p>
+  <div id="hook-secret" class="secret-box" hidden>
+    <p><strong>Signing secret</strong> for <span id="hook-secret-url"></span>. Copy it now; <code>myna webhooks secret &lt;id&gt;</code> shows it again.</p>
+    <div class="actions"><code id="hook-secret-value" class="secret"></code><button id="hook-secret-copy" type="button" class="quiet">Copy</button><button id="hook-secret-hide" type="button" class="linkish">Hide</button></div>
+  </div>
+  <ol id="hooks" class="cards"></ol>
+  <p id="hooks-empty" class="fineprint" hidden>No endpoints yet.</p>
+  <form id="hook-form" class="panel" novalidate>
+    <h3>Add an endpoint</h3>
+    <label for="hook-url">URL (https, public)</label>
+    <input id="hook-url" name="url" type="url" inputmode="url" placeholder="https://example.com/myna-hook" required>
+    <fieldset id="hook-events" class="events"><legend>Events (none ticked means all)</legend></fieldset>
+    <label for="hook-description">Description (optional)</label>
+    <input id="hook-description" name="description" type="text" maxlength="200">
+    <div class="actions"><button id="hook-add" type="submit">Add endpoint</button></div>
+    <p id="hook-form-note" class="note" role="alert"></p>
+  </form>
 </section>
 
 <noscript><p class="fineprint">The dashboard needs JavaScript. In a terminal, <code>myna handoff list</code> shows the same cards.</p></noscript>

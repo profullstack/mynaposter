@@ -13,7 +13,7 @@ main.dash code { word-break: break-word; }
 main.dash .panel { margin-top: 24px; padding: 20px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
 main.dash form { display: grid; gap: 6px; margin-top: 16px; max-width: 26rem; }
 main.dash label { font-size: 14px; color: var(--muted); margin-top: 8px; }
-main.dash input[type="email"], main.dash input[type="password"] {
+main.dash input[type="email"], main.dash input[type="password"], main.dash input[type="url"], main.dash input[type="text"] {
   font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; width: 100%;
 }
 
@@ -59,6 +59,15 @@ main.dash .steps { margin: 8px 0 0 20px; font-size: 14px; color: var(--muted); }
 main.dash .card-link { font-size: 14px; }
 
 main.dash .empty { margin-top: 16px; padding: 24px 20px; border: 1px dashed var(--line); border-radius: 10px; }
+
+/* Webhooks */
+main.dash h3 { font-size: 17px; margin: 0; }
+main.dash #hook-form { max-width: none; }
+main.dash .events { border: 0; padding: 0; margin: 8px 0 0; display: flex; flex-wrap: wrap; gap: 6px 16px; min-width: 0; }
+main.dash .events legend { font-size: 14px; color: var(--muted); padding: 0; margin-bottom: 4px; }
+main.dash .secret-box { margin-top: 12px; padding: 14px 16px; border: 1px solid var(--accent); border-radius: 10px; background: var(--surface); }
+main.dash .secret { font: 14px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; overflow-wrap: anywhere; flex: 1 1 18rem; min-width: 0; }
+main.dash .deliveries { font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; overflow-wrap: anywhere; }
 
 @media (max-width: 640px) {
   .top { padding: 16px; gap: 14px; }

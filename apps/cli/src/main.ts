@@ -272,6 +272,16 @@ Hand-offs (the steps only a person can do: a Reddit comment, an HN submission):
                                     signed in to myna cloud; the recap lists it
   handoff [list] [--all] | show <id> | done <id> | undo <id> | rm <id>
 
+Webhooks (myna cloud calls your URL, signed, when something happens):
+  webhooks [list] [--json]          Your endpoints and the events there are:
+                                    post.published, post.failed, newsletter.sent,
+                                    handoff.created, handoff.completed,
+                                    newsletter.unsubscribed, newsletter.resubscribed
+  webhooks add <url> [--events a,b] Prints the signing secret once; turns the
+       [--description "..."]        relay on (this machine reports its posts)
+  webhooks show|edit|enable|disable|secret|rotate|test|rm <id>
+  webhooks deliveries [<id>] | retry <delivery id> | relay [on|off]
+
 OpenConnection (an app you paste a token into, such as DefPromo, acts through myna):
   connect token [--scopes a,b]      A setup token to paste into the app: single
        [--minutes 15]               use, expires; the app claims it once

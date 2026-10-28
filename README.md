@@ -1097,6 +1097,31 @@ secret: anyone holding it can read the card and mark it done, nobody else can
 find it. `--local` keeps a card off the cloud. The daily recap lists open
 hand-offs with their links, so the mail is enough to finish them.
 
+## Webhooks
+
+Your myna cloud account can call your URL, signed, when something happens:
+a CloudEvent per the [Standard Webhooks](https://www.standardwebhooks.com/) spec
+(`webhook-id`, `webhook-timestamp`, `webhook-signature`), retried with backoff for
+about three days, with a delivery log.
+
+```
+myna webhooks add https://example.com/hook --events post.*   # prints the signing secret once
+myna webhooks test <id>
+myna webhooks deliveries
+```
+
+| Event | When |
+| --- | --- |
+| `post.published` / `post.failed` | a post went out on an account, or did not (with the error) |
+| `newsletter.sent` | an issue finished sending to its list |
+| `handoff.created` / `handoff.completed` | a hand-off card was published, or marked done |
+| `newsletter.unsubscribed` / `newsletter.resubscribed` | a reader used the one-click link (the token, never an address) |
+
+Posts and newsletters go out from your own machine, so that machine reports them:
+`myna webhooks add` turns the relay on (`myna webhooks relay on|off`). The same
+endpoints are at mynaposter.com/dashboard, over the API at `/api/v1/webhooks`
+(myna cloud token), and as MCP tools (`create_webhook`, `test_webhook`, ...).
+
 ## The nightly summary
 
 Once a day the daemon (`myna run`) mails a report of what myna did: sent in

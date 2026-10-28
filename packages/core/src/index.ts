@@ -575,6 +575,11 @@ export * as atproto from "./store/atproto.ts";
 export * as handoffs from "./store/handoffs.ts";
 export { normaliseHandoff, type Handoff, type HandoffInput, type CloudHandoff } from "./store/handoffs.ts";
 
+// Webhooks: endpoints on myna cloud, and the relay that reports this machine's posts and sends to them.
+export * as webhooks from "./store/webhooks.ts";
+export { webhooksPlugin } from "./plugins/webhooks-plugin.ts";
+export { WEBHOOK_EVENTS, type WebhookEndpoint, type WebhookDelivery, type RelayEvent } from "./store/webhooks.ts";
+
 // Outreach: SMTP servers, texts through Telnyx, contacts and lists.
 export { sendSmtp, buildMime, dotStuff, addressOf, SmtpError, type SmtpServer, type SmtpMessage, type SmtpResult, type SmtpOptions, type SmtpSecurity } from "./core/smtp.ts";
 export { sendSms, e164, TELNYX_MESSAGES_URL, type SmsConfig, type SmsResult } from "./core/sms.ts";

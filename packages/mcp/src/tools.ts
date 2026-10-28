@@ -7,6 +7,7 @@
  * only one of them would be the worst kind of bug to find.
  */
 import {
+  webhooks,
   NETWORKS,
   authSummary,
   draft,
@@ -827,6 +828,74 @@ export const TOOLS = [
       additionalProperties: false,
     },
   },
+  {
+    name: "myna_webhooks",
+    description:
+      "List this myna cloud account's webhook endpoints (myna calls a URL, signed per Standard Webhooks, when " +
+      "something happens) and the event types there are. Needs `myna cloud login` on this machine.",
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+  },
+  {
+    name: "create_webhook",
+    description:
+      "Add a webhook endpoint. Returns the endpoint and its signing secret, shown this once (myna_webhook_secret shows it again). " +
+      "Also turns on the relay, so this machine reports post.published, post.failed and newsletter.sent.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        url: { type: "string", description: "An https URL on the public internet." },
+        events: { type: "array", items: { type: "string" }, description: "Patterns: post.published, post.*, *. Default every event." },
+        description: { type: "string" },
+      },
+      required: ["url"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "update_webhook",
+    description: "Change an endpoint's url, events, description, or switch it on or off (on again clears its failure count).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        id: { type: "string" },
+        url: { type: "string" },
+        events: { type: "array", items: { type: "string" } },
+        description: { type: "string" },
+        enabled: { type: "boolean" },
+      },
+      required: ["id"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "delete_webhook",
+    description: "Remove a webhook endpoint.",
+    inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"], additionalProperties: false },
+  },
+  {
+    name: "test_webhook",
+    description: "Send a webhook.test event to an endpoint now and say how it went (status or error).",
+    inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"], additionalProperties: false },
+  },
+  {
+    name: "rotate_webhook_secret",
+    description: "Replace an endpoint's signing secret. The old one stops working at once; returns the new one.",
+    inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"], additionalProperties: false },
+  },
+  {
+    name: "myna_webhook_secret",
+    description: "Show an endpoint's current signing secret.",
+    inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"], additionalProperties: false },
+  },
+  {
+    name: "myna_webhook_deliveries",
+    description: "Recent webhook deliveries (status, attempts, last HTTP status or error), for one endpoint or all of them.",
+    inputSchema: {
+      type: "object",
+      properties: { id: { type: "string", description: "An endpoint id; omit for all." }, limit: { type: "number", description: "Default 20." } },
+      additionalProperties: false,
+    },
+  },
 ];
 
 /**
@@ -1610,6 +1679,36 @@ export async function callTool(name: string, args_: Record<string, unknown> = {}
 
       case "myna_newsletter_subscribers":
         return text(subscribers(args.list).map(({ contact, active }) => ({ id: contact.id, email: contact.email, name: contact.name, addedAt: contact.addedAt, active, optedOut: Boolean(contact.optedOut) })));
+
+      case "myna_webhooks":
+        return text({ ...(await webhooks.listWebhooks()), relay: webhooks.relayOn() });
+
+      case "create_webhook": {
+        const a = args_ as { url: string; events?: string[]; description?: string };
+        const created = await webhooks.addWebhook({ url: a.url, events: a.events, description: a.description });
+        webhooks.setRelay(true);
+        return text({ ...created, relay: webhooks.relayOn() });
+      }
+
+      case "update_webhook": {
+        const { id, ...patch } = args_ as { id: string; url?: string; events?: string[]; description?: string; enabled?: boolean };
+        return text(await webhooks.updateWebhook(id, patch));
+      }
+
+      case "delete_webhook":
+        return text(await webhooks.removeWebhook(args.id));
+
+      case "test_webhook":
+        return text(await webhooks.testWebhook(args.id));
+
+      case "rotate_webhook_secret":
+        return text(await webhooks.rotateWebhook(args.id));
+
+      case "myna_webhook_secret":
+        return text(await webhooks.webhookSecret(args.id));
+
+      case "myna_webhook_deliveries":
+        return text(await webhooks.webhookDeliveries((args_ as { id?: string }).id, Number((args_ as { limit?: number }).limit ?? 20)));
 
       default:
         throw new Error(`Unknown tool "${name}"`);
