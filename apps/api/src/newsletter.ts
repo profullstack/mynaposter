@@ -46,18 +46,29 @@ export async function inboxExists(inbox: string): Promise<boolean> {
  * Set a token's state. Idempotent: pressing unsubscribe twice keeps the first
  * time, so a pull that already saw it is not handed it again.
  */
-export async function recordState(inbox: string, token: string, state: SubscriptionState): Promise<boolean> {
+export async function recordState(
+  inbox: string,
+  token: string,
+  state: SubscriptionState,
+  onChange?: (change: { inbox: string; token: string; state: SubscriptionState; at: string }) => void | Promise<void>,
+): Promise<boolean> {
   if (!PART_SHAPE.test(token) || !(await inboxExists(inbox))) return false;
-  await db()`
+  // A row comes back only when the state actually changed (a new token, or
+  // unsubscribed <-> resubscribed), which is when the owner's webhooks hear of it.
+  const changed = (await db()`
     insert into newsletter_unsubscribes (inbox_id, token, state) values (${inbox}, ${token}, ${state})
     on conflict (inbox_id, token) do update set state = excluded.state, at = now()
     where newsletter_unsubscribes.state <> excluded.state
-  `;
+    returning at
+  `) as unknown as { at: Date }[];
+  if (changed[0] && onChange) await onChange({ inbox, token, state, at: new Date(changed[0].at).toISOString() });
   return true;
 }
 
-export const recordUnsubscribe = (inbox: string, token: string): Promise<boolean> => recordState(inbox, token, "unsubscribed");
-export const recordResubscribe = (inbox: string, token: string): Promise<boolean> => recordState(inbox, token, "resubscribed");
+type OnChange = Parameters<typeof recordState>[3];
+
+export const recordUnsubscribe = (inbox: string, token: string, onChange?: OnChange): Promise<boolean> => recordState(inbox, token, "unsubscribed", onChange);
+export const recordResubscribe = (inbox: string, token: string, onChange?: OnChange): Promise<boolean> => recordState(inbox, token, "resubscribed", onChange);
 
 export async function listUnsubscribes(userId: string, since?: string): Promise<{ token: string; at: string; state: SubscriptionState }[]> {
   const after = since && !Number.isNaN(Date.parse(since)) ? new Date(since) : new Date(0);

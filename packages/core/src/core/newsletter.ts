@@ -59,6 +59,7 @@ import {
   type Delivery,
   type Newsletter,
 } from "../store/newsletters.ts";
+import { relayEvents } from "../store/webhooks.ts";
 
 // ---------------------------------------------------------------- crawlproof tracking
 //
@@ -953,11 +954,31 @@ async function sendNewsletterUnlocked(id: string, options: SendNewsletterOptions
   const current = file.newsletters.find((entry) => entry.id === newsletter.id);
   if (current) {
     const done = report.remaining === 0;
+    const finished = done && !current.sentAt;
     current.status = done ? "sent" : "sending";
     if (done && !current.sentAt) current.sentAt = new Date().toISOString();
     current.updatedAt = new Date().toISOString();
     writeNewsletters(file);
     report.status = current.status;
+    // The issue just finished: tell the account's webhooks (only when the relay is on).
+    if (finished && !options.dryRun && !options.test) {
+      await relayEvents([
+        {
+          type: "newsletter.sent",
+          subject: `newsletter:${current.id}`,
+          data: {
+            id: current.id,
+            subject: current.subject,
+            list: current.list,
+            sent_at: current.sentAt,
+            audience: report.audience,
+            sent: report.sent.length + report.alreadySent,
+            failed: report.failed.length,
+            ...(report.via ? { via: report.via } : {}),
+          },
+        },
+      ]);
+    }
   }
   return report;
 }

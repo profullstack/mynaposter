@@ -35,6 +35,16 @@ test("the script keeps the token out of reach: no web storage, cookie sent same-
   expect(script).not.toMatch(/innerHTML/);
 });
 
+test("the webhooks section has every piece its script drives, and writes go to /v1/webhooks", () => {
+  const html = renderDashboardPage("/api");
+  for (const id of ["webhooks", "hooks", "hooks-empty", "hooks-note", "hook-form", "hook-url", "hook-events", "hook-description", "hook-add", "hook-form-note", "hook-secret", "hook-secret-url", "hook-secret-value", "hook-secret-copy", "hook-secret-hide"]) {
+    expect(html).toContain(`id="${id}"`);
+  }
+  const script = readFileSync(join(web, "assets", "dashboard.js"), "utf8");
+  expect(script).toContain('"/v1/webhooks"');
+  for (const id of ["hooks", "hook-form", "hook-events", "hook-secret"]) expect(script).toContain(`byId("${id}")`);
+});
+
 test("the card page links to the dashboard", () => {
   expect(renderHandoffPage("/api")).toContain('href="/dashboard"');
 });

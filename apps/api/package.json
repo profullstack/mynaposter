@@ -1,6 +1,6 @@
 {
   "name": "@profullstack/myna-api",
-  "version": "0.47.0",
+  "version": "0.48.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -10,9 +10,10 @@
   },
   "dependencies": {
     "@profullstack/myna-core": "workspace:*",
-    "hono": "^4.13.5",
-    "postgres": "^3.4.9",
     "@profullstack/myna-mcp": "workspace:*",
-    "@profullstack/synconfig": "workspace:*"
+    "@profullstack/synconfig": "workspace:*",
+    "@profullstack/webhooks": "0.2.1",
+    "hono": "^4.13.5",
+    "postgres": "^3.4.9"
   }
 }

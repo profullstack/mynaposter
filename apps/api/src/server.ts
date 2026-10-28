@@ -35,6 +35,7 @@ import * as newsletter from "./newsletter.ts";
 import * as hostedMail from "./mail.ts";
 import * as oc from "./openconnection.ts";
 import * as porkbunCallback from "./porkbun-callback.ts";
+import * as webhooks from "./webhooks.ts";
 import { store as synconfigStore } from "./synconfig.ts";
 import { handleGet as synconfigGet, handlePut as synconfigPut, handleRevisions as synconfigRevisions } from "@profullstack/synconfig/server";
 import { VERSION } from "@profullstack/myna-core";
@@ -66,7 +67,7 @@ app.use("/v1/*", async (context, next) => {
   // Porkbun cannot send the operator token (its webhook URLs refuse credentials);
   // its deliveries authenticate by HMAC in porkbun-callback.ts instead.
   if (context.req.method === "POST" && /^\/v1\/callbacks\/porkbun(\/[^/]+)?\/?$/.test(path)) return next();
-  if (path.startsWith("/v1/cloud") || path.startsWith("/v1/reshare") || path.startsWith("/v1/atproto") || path.startsWith("/v1/handoff") || path.startsWith("/v1/newsletter") || path.startsWith("/v1/mail") || path.startsWith("/v1/synconfig") || path.startsWith("/v1/syncfg") || path.startsWith("/v1/openconnection")) return next();
+  if (path.startsWith("/v1/cloud") || path.startsWith("/v1/reshare") || path.startsWith("/v1/atproto") || path.startsWith("/v1/handoff") || path.startsWith("/v1/newsletter") || path.startsWith("/v1/mail") || path.startsWith("/v1/synconfig") || path.startsWith("/v1/syncfg") || path.startsWith("/v1/openconnection") || path.startsWith("/v1/webhooks") || path === "/v1/events") return next();
 
   const expected = process.env.MYNA_API_TOKEN;
   const isRead = context.req.method === "GET";
@@ -201,6 +202,12 @@ app.get("/", (context) =>
       "PUT  /v1/synconfig {snapshot, ifRevision}",
       "GET  /v1/synconfig/revisions",
       "POST /v1/mail/send {kind, messages[]}   hosted sending, myna cloud account, daily cap",
+      "GET  /v1/webhooks             your endpoints + event_types (myna cloud token)",
+      "POST /v1/webhooks {url, events?, description?}   returns the signing secret once",
+      "GET|PATCH|DELETE /v1/webhooks/:id",
+      "GET  /v1/webhooks/:id/secret  POST /v1/webhooks/:id/rotate  POST /v1/webhooks/:id/test",
+      "GET  /v1/webhooks/deliveries  GET /v1/webhooks/:id/deliveries  POST /v1/webhooks/deliveries/:id/retry",
+      "POST /v1/events {events: [{type, data, subject?}]}   your myna reports post.published, post.failed, newsletter.sent",
     ],
     mcp: { endpoint: "/api/mcp", transport: "streamable-http", tools: 11 },
   }),
@@ -700,7 +707,9 @@ handoffRoutes.post("/", async (context) => {
   if (!user) return context.json({ ok: false, error: "Sign in with myna cloud login to publish a hand-off." }, 401);
   try {
     const input = (await context.req.json().catch(() => ({}))) as Record<string, unknown>;
-    return context.json({ ok: true, handoff: await handoff.createHandoff(user.id, input) }, 201);
+    const card = await handoff.createHandoff(user.id, input);
+    await webhooks.emit(user.id, "handoff.created", card, `handoff:${card.id}`);
+    return context.json({ ok: true, handoff: card }, 201);
   } catch (error) {
     return context.json({ ok: false, error: (error as Error).message }, 400);
   }
@@ -708,7 +717,11 @@ handoffRoutes.post("/", async (context) => {
 
 handoffRoutes.post("/:id/done", async (context) => {
   const input = (await context.req.json().catch(() => ({}))) as { done?: unknown };
-  const card = await handoff.finishHandoff(context.req.param("id"), input.done !== false);
+  const id = context.req.param("id");
+  const before = await handoff.getHandoff(id);
+  const card = await handoff.finishHandoff(id, input.done !== false);
+  // Only the moment it becomes done; marking a done card again says nothing new.
+  if (card?.doneAt && before && !before.doneAt) await webhooks.emit(await webhooks.handoffOwner(id), "handoff.completed", card, `handoff:${id}`);
   return card ? context.json({ ok: true, handoff: card }) : context.json({ ok: false, error: "No such hand-off." }, 404);
 });
 
@@ -753,6 +766,10 @@ newsletterRoutes.use("*", async (context, next) => {
   return next();
 });
 
+/** A reader left or came back: tell the list owner's webhooks (the token, never an address; the server has none). */
+const subscriptionChanged = async (change: { inbox: string; token: string; state: newsletter.SubscriptionState; at: string }): Promise<void> =>
+  webhooks.emit(await webhooks.inboxOwner(change.inbox), change.state === "unsubscribed" ? "newsletter.unsubscribed" : "newsletter.resubscribed", change, `unsubscribe:${change.token}`);
+
 // Actions are relative, so the pages work under mynaposter.com/api and on
 // the API's own host alike.
 const resubscribeAction = (token: string): string => `${token}/resubscribe`;
@@ -764,7 +781,7 @@ newsletterRoutes.get("/u/:inbox/:token", async (context) => {
   const { inbox, token } = context.req.param();
   const recorded = context.req.method === "HEAD"
     ? newsletter.PART_SHAPE.test(token) && (await newsletter.inboxExists(inbox))
-    : await newsletter.recordUnsubscribe(inbox, token);
+    : await newsletter.recordUnsubscribe(inbox, token, subscriptionChanged);
   return recorded ? htmlReply(newsletter.unsubscribedPage(resubscribeAction(token))) : htmlReply(newsletter.unknownPage(), 404);
 });
 
@@ -773,7 +790,7 @@ newsletterRoutes.get("/u/:inbox/:token", async (context) => {
 // here too, and wants a page back.
 newsletterRoutes.post("/u/:inbox/:token", async (context) => {
   const { inbox, token } = context.req.param();
-  const recorded = await newsletter.recordUnsubscribe(inbox, token);
+  const recorded = await newsletter.recordUnsubscribe(inbox, token, subscriptionChanged);
   const wantsHtml = (context.req.header("accept") ?? "").includes("text/html");
   if (wantsHtml) return recorded ? htmlReply(newsletter.unsubscribedPage(resubscribeAction(token))) : htmlReply(newsletter.unknownPage(), 404);
   return recorded ? context.json({ ok: true }) : context.json({ ok: false, error: "Unknown link." }, 404);
@@ -781,7 +798,7 @@ newsletterRoutes.post("/u/:inbox/:token", async (context) => {
 
 newsletterRoutes.post("/u/:inbox/:token/resubscribe", async (context) => {
   const { inbox, token } = context.req.param();
-  const recorded = await newsletter.recordResubscribe(inbox, token);
+  const recorded = await newsletter.recordResubscribe(inbox, token, subscriptionChanged);
   return recorded ? htmlReply(newsletter.resubscribedPage(unsubscribeAction(token))) : htmlReply(newsletter.unknownPage(), 404);
 });
 
@@ -1098,6 +1115,35 @@ ocRoutes.post("/v1/activity", limited(ocReadLimiter), scoped("activity:write"), 
 
 app.route("/openconnection", ocRoutes);
 
+/**
+ * Customer webhooks (webhooks.ts): the account's endpoints, keys, event
+ * filters, test pings and delivery log, at mynaposter.com/api/v1/webhooks.
+ * Signed in with the myna cloud token; the dashboard's cookie from the site.
+ */
+const webhooksApi = webhooks.webhooksHandler();
+const webhooksRoute = async (context: { req: { raw: Request }; notFound(): Response | Promise<Response> }) =>
+  (await webhooksApi(context.req.raw)) ?? context.notFound();
+app.all("/v1/webhooks", webhooksRoute as never);
+app.all("/v1/webhooks/*", webhooksRoute as never);
+
+/**
+ * What the account's own myna reports: a post went out or failed, an issue
+ * finished sending. Delivered to that account's endpoints and nobody else's.
+ */
+app.post("/v1/events", async (context) => {
+  if (!hasDatabase()) return context.json({ ok: false, error: "This instance has no DATABASE_URL, so webhooks are off." }, 503);
+  const header = context.req.header("authorization") ?? "";
+  const user = await cloud.whoami(header.startsWith("Bearer ") ? header.slice(7) : "");
+  if (!user) return context.json({ ok: false, error: "Unauthorized" }, 401);
+  const raw = await context.req.text();
+  if (raw.length > webhooks.MAX_RELAY_BYTES) return context.json({ ok: false, error: "Too large." }, 413);
+  try {
+    return context.json({ ok: true, ...(await webhooks.relay(user.id, JSON.parse(raw || "{}"))) });
+  } catch (error) {
+    return context.json({ ok: false, error: (error as Error).message }, 400);
+  }
+});
+
 app.notFound((context) => context.json({ ok: false, error: "Not found" }, 404));
 
 const port = Number(process.env.PORT ?? 8787);
@@ -1115,6 +1161,9 @@ if (process.env.MYNA_SCHEDULER === "1") {
   });
   console.log("Scheduler on.");
 }
+
+// Drain due webhook deliveries every few seconds, once per process.
+webhooks.hooks()?.start();
 
 console.log(`myna api ${VERSION} on :${port} (${hasDatabase() ? "postgres" : "local mode"}, config ${configDir()})`);
 
