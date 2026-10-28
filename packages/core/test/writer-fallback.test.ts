@@ -14,7 +14,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { worthFallingBackFrom, hasOpenAI, writerAvailable, FALLBACK_MODEL } from "../src/ai/writer.ts";
+import { worthFallingBackFrom, hasOpenAI, writerAvailable, providerComplete, FALLBACK_MODEL } from "../src/ai/writer.ts";
 import { loadSettings, saveSettings } from "../src/store/settings.ts";
 
 let dir = "";
@@ -29,6 +29,7 @@ beforeEach(() => {
   delete process.env.ANTHROPIC_API_KEY;
   delete process.env.ANTHROPIC_AUTH_TOKEN;
   delete process.env.OPENAI_API_KEY;
+  delete process.env.GEMINI_API_KEY;
 });
 
 afterEach(() => {
@@ -100,4 +101,30 @@ test("ollama never needs a key, and is never quietly sent elsewhere", () => {
 
 test("the understudy uses its own model, since the configured one is a Claude name", () => {
   expect(FALLBACK_MODEL).not.toContain("claude");
+});
+
+test("with Anthropic capped and OpenAI out of credits, Gemini writes; a refusal still stops the chain", async () => {
+  const settings = loadSettings();
+  settings.ai.provider = "anthropic";
+  saveSettings(settings);
+  process.env.ANTHROPIC_API_KEY = "sk-ant-test";
+  process.env.OPENAI_API_KEY = "sk-test";
+  process.env.GEMINI_API_KEY = "AQ.test";
+  expect(writerAvailable().ok).toBe(true);
+  const real = globalThis.fetch;
+  const hosts: string[] = [];
+  globalThis.fetch = (async (input: string | URL | Request) => {
+    const url = new URL(String(input instanceof Request ? input.url : input));
+    hosts.push(url.host);
+    if (url.host === "api.anthropic.com") return new Response(JSON.stringify({ type: "error", error: { type: "invalid_request_error", message: "You have reached your specified API usage limits." } }), { status: 400 });
+    if (url.host === "api.openai.com") return new Response(JSON.stringify({ error: { message: "You have no credits remaining." } }), { status: 429 });
+    return new Response(JSON.stringify({ candidates: [{ content: { parts: [{ text: "from gemini" }] } }] }), { status: 200, headers: { "content-type": "application/json" } });
+  }) as typeof fetch;
+  try {
+    expect(await providerComplete("system", "prompt", 50)).toBe("from gemini");
+    expect(hosts).toEqual(["api.anthropic.com", "api.openai.com", "generativelanguage.googleapis.com"]);
+  } finally {
+    globalThis.fetch = real;
+    delete process.env.GEMINI_API_KEY;
+  }
 });

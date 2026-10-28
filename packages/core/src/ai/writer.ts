@@ -10,7 +10,7 @@ import { getNetwork, requireNetwork } from "../net/registry.ts";
 import { fetchPage, type PageSummary } from "./extract.ts";
 import { writerContext } from "../core/brand.ts";
 import { complete as completeAnthropic, hasCredentials as hasAnthropic } from "./anthropic.ts";
-import { completeOpenAI, completeOllama } from "./openai.ts";
+import { completeGemini, completeOpenAI, completeOllama } from "./openai.ts";
 
 export interface Draft {
   /** Network id, or "" for a single draft meant for everywhere. */
@@ -44,6 +44,7 @@ Rules, all of them load-bearing:
 
 /** Whether OpenAI can be used as the understudy. */
 export const hasOpenAI = (): boolean => Boolean(process.env.OPENAI_API_KEY);
+export const hasGemini = (): boolean => Boolean(process.env.GEMINI_API_KEY);
 
 /** The model to fall back to, since the configured one names a Claude model. */
 export const FALLBACK_MODEL = "gpt-4o";
@@ -103,11 +104,21 @@ export async function providerComplete(system: string, prompt: string, maxTokens
     if (!hasAnthropic()) throw new Error("ANTHROPIC_API_KEY is not set.");
     return await completeAnthropic({ system, prompt, model: ai.model, maxTokens });
   } catch (error) {
-    const reason = error as Error;
-    if (!hasOpenAI() || !worthFallingBackFrom(reason)) throw reason;
-    // The configured model names a Claude model, which OpenAI has never heard
-    // of, so the understudy uses its own.
-    return completeOpenAI({ system, prompt, model: FALLBACK_MODEL, maxTokens });
+    let reason = error as Error;
+    const missing = /is not set/.test(reason.message);
+    if (!missing && !worthFallingBackFrom(reason)) throw reason;
+    if (hasOpenAI()) {
+      try {
+        // The configured model names a Claude model, which OpenAI has never heard
+        // of, so the understudy uses its own.
+        return await completeOpenAI({ system, prompt, model: FALLBACK_MODEL, maxTokens });
+      } catch (openaiError) {
+        reason = openaiError as Error;
+        if (!worthFallingBackFrom(reason)) throw reason;
+      }
+    }
+    if (!hasGemini()) throw reason;
+    return completeGemini({ system, prompt, maxTokens });
   }
 }
 
@@ -125,7 +136,7 @@ export function writerAvailable(): { ok: boolean; reason?: string } {
   if (ai.provider === "openai") {
     return hasOpenAI() ? { ok: true } : { ok: false, reason: "OPENAI_API_KEY is not set." };
   }
-  if (hasAnthropic() || hasOpenAI()) return { ok: true };
+  if (hasAnthropic() || hasOpenAI() || hasGemini()) return { ok: true };
   return {
     ok: false,
     reason: "Neither ANTHROPIC_API_KEY nor OPENAI_API_KEY is set. Run `myna config ai.provider ollama` to use a local model instead.",

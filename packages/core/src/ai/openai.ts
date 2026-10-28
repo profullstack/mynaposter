@@ -36,6 +36,29 @@ export async function completeOpenAI({ system, prompt, model, maxTokens = 4000 }
   return response.choices?.[0]?.message?.content?.trim() ?? "";
 }
 
+/**
+ * Gemini, as the last understudy. Called only when the configured provider
+ * and OpenAI have both failed for reasons of their own (a spend cap, no
+ * credits): on 2026-10-28 the shared Anthropic key hit its limit and OpenAI
+ * had no credits, and every drafted reply in myna stopped.
+ */
+export const GEMINI_MODEL = "gemini-flash-latest";
+
+export async function completeGemini({ system, prompt, model = GEMINI_MODEL, maxTokens = 4000 }: Partial<CompletionRequest> & Pick<CompletionRequest, "system" | "prompt">): Promise<string> {
+  const key = process.env.GEMINI_API_KEY;
+  if (!key) throw new Error("GEMINI_API_KEY is not set.");
+  const response = await postJson<{ candidates?: { content?: { parts?: { text?: string }[] } }[] }>(
+    `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
+    {
+      systemInstruction: { parts: [{ text: system }] },
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      generationConfig: { maxOutputTokens: maxTokens },
+    },
+    { headers: { "x-goog-api-key": key }, timeoutMs: 120_000 },
+  );
+  return (response.candidates?.[0]?.content?.parts ?? []).map((part) => part.text ?? "").join("").trim();
+}
+
 export async function completeOllama({ system, prompt, model }: CompletionRequest): Promise<string> {
   const host = process.env.OLLAMA_HOST || "http://127.0.0.1:11434";
   const response = await postJson<{ message: { content: string } }>(
