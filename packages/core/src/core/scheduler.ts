@@ -126,7 +126,7 @@ export async function runDuePosts(now = new Date()): Promise<RunResult[]> {
     });
     for (const target of plan.later) {
       if (plan.now.length || plan.later[0] !== target) {
-        enqueue({ scheduledFor: new Date(target.at).toISOString(), targets: [target.account.id], text: post.text, title: post.title, mediaPaths: post.mediaPaths, extra: post.extra, thread: post.thread, type: post.type });
+        enqueue({ scheduledFor: new Date(target.at).toISOString(), targets: [target.account.id], text: post.text, title: post.title, mediaPaths: post.mediaPaths, extra: post.extra, thread: post.thread, type: post.type, ...(post.replyTo ? { replyTo: post.replyTo } : {}) });
       }
     }
     if (!plan.now.length) {
@@ -154,6 +154,7 @@ export async function runDuePosts(now = new Date()): Promise<RunResult[]> {
           // this entry update the post it already wrote, not add a second.
           extra: { ...post.extra, queueId: post.id },
           type: post.type,
+          ...(post.replyTo ? { replyTo: post.replyTo } : {}),
         },
         // Booked at the tick, so the next gap is measured from when the
         // daemon acted, not from whatever the wall clock read.

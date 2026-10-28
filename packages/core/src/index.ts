@@ -552,6 +552,46 @@ export { asksPlugin, ASKS_SCAN_EVERY_MS, ASKS_STATS_EVERY_MS } from "./plugins/a
 export * as asksApi from "./core/asks-api.ts";
 export { askReplyDraft, askJudge, type AskReplyRequest, type AskJudgeInput, type AskJudgement } from "./ai/writer.ts";
 export { DEFAULT_ASKS, type AsksSettings } from "./store/settings.ts";
+export { PAIN_SCORE, byRank } from "./core/asks.ts";
+
+// Pain phrases: the words people use when the problem hits them.
+export {
+  normalizePain,
+  matchPain,
+  cleanPhrases,
+  templatePhrases,
+  draftPainPhrases,
+  editPainPhrases,
+  painQueries,
+  painOf,
+  type PainQuery,
+  type PhraseWriter,
+} from "./core/pain.ts";
+export { painPhrasesDraft, hubReplyDraft, type PainPhraseRequest, type HubReplyRequest } from "./ai/writer.ts";
+
+// Hubs: the accounts a campaign's buyers follow and answer, and reply drafts under their posts.
+export {
+  READABLE as HUB_NETWORKS,
+  importHubs,
+  rankedHubs,
+  removeHub,
+  findHub,
+  readHubPosts,
+  scanHubs,
+  listHubDrafts,
+  editHubDraft,
+  skipHubDraft,
+  approveHubDraft,
+  type HubInput,
+  type HubPost,
+  type HubFetcher,
+  type HubDrafter,
+  type HubScanOptions,
+  type HubScanResult,
+} from "./core/hubs.ts";
+export { readHubs, writeHubs, hubKey, type Hub, type HubDraft, type HubDraftStatus, type HubsFile } from "./store/hubs.ts";
+export * as hubsApi from "./core/hubs-api.ts";
+export { DEFAULT_HUBS, type HubsSettings } from "./store/settings.ts";
 
 // DIDs: proved at CoinPay, attached to accounts as owner or operator.
 export { loginWithCoinPay, loginWithCoinPayCli, assignDid, unassignDid, didStatus, resolveDidTargets, didFromUserInfo, coinpayCliSessionPath, DEFAULT_DID_SERVER, type DidRole, type DidStatus, type DidLoginOptions } from "./core/did.ts";

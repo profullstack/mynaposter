@@ -22,6 +22,7 @@ import {
   suggestPlaces,
   type ProjectBrief,
   asksApi,
+  hubsApi,
 } from "@profullstack/myna-core";
 import * as service from "./service.ts";
 import { handleMcpBody } from "./mcp.ts";
@@ -379,6 +380,22 @@ app.post("/v1/asks/scan", async (context) => {
   return guard(async () => await asksApi.asksScan(subs.map((sub) => String(sub).trim()).filter(Boolean)))(context);
 });
 
+/** A product's pain phrases: GET reads, PUT edits ({set, add, remove, generate}). */
+app.get("/v1/asks/products/:id/phrases", (context) => guard(async () => await asksApi.asksPhrases(context.req.param("id")))(context));
+
+app.put("/v1/asks/products/:id/phrases", async (context) => {
+  const body = (await context.req.json().catch(() => ({}))) as { set?: string[]; add?: string[]; remove?: string[]; generate?: boolean };
+  const strings = (value: unknown): string[] | undefined => (Array.isArray(value) ? value.map(String) : undefined);
+  return guard(async () =>
+    await asksApi.asksPhrases(context.req.param("id"), {
+      ...(strings(body.set) ? { set: strings(body.set) } : {}),
+      ...(strings(body.add) ? { add: strings(body.add) } : {}),
+      ...(strings(body.remove) ? { remove: strings(body.remove) } : {}),
+      generate: Boolean(body.generate),
+    }),
+  )(context);
+});
+
 app.get("/v1/asks/:id", (context) => guard(() => asksApi.asksShow(context.req.param("id")))(context));
 
 app.post("/v1/asks/:id/reply", async (context) => {
@@ -407,6 +424,64 @@ app.patch("/v1/asks/ideas/:id", async (context) => {
 app.post("/v1/asks/enabled", async (context) => {
   const body = (await context.req.json().catch(() => ({}))) as { enabled?: boolean };
   return guard(() => asksApi.asksSet({ enabled: Boolean(body.enabled) }))(context);
+});
+
+/**
+ * Hubs: the accounts a campaign's buyers follow and answer, and reply drafts
+ * under their posts. Same shape as `myna hubs`. Drafts only: approving queues
+ * a reply that pacing sends, or makes a hand-off card.
+ */
+app.get("/v1/hubs", (context) => guard(() => hubsApi.hubsOverview({ ...(context.req.query("campaign") ? { campaignId: context.req.query("campaign") } : {}) }))(context));
+
+app.post("/v1/hubs", async (context) => {
+  const body = (await context.req.json().catch(() => ({}))) as {
+    network?: string;
+    handle?: string;
+    score?: number;
+    campaignId?: string;
+    hubs?: Array<{ network: string; handle: string; score?: number; why?: string; displayName?: string; url?: string }>;
+    product?: { name: string; url: string; about?: string };
+    replace?: boolean;
+  };
+  return guard(() => {
+    if (Array.isArray(body.hubs)) {
+      return hubsApi.hubsImport({
+        hubs: body.hubs,
+        ...(body.campaignId ? { campaignId: body.campaignId } : {}),
+        ...(body.product ? { product: body.product } : {}),
+        ...(body.replace ? { replace: true } : {}),
+      });
+    }
+    if (!body.network || !body.handle) throw new Error("network and handle, or hubs[], are required.");
+    return hubsApi.hubsAdd({ network: body.network, handle: body.handle, ...(body.score !== undefined ? { score: body.score } : {}), ...(body.campaignId ? { campaignId: body.campaignId } : {}) });
+  })(context);
+});
+
+app.delete("/v1/hubs/:ref", (context) => guard(() => hubsApi.hubsRemove(decodeURIComponent(context.req.param("ref"))))(context));
+
+app.post("/v1/hubs/scan", async (context) => {
+  const body = (await context.req.json().catch(() => ({}))) as { hubs?: string[]; campaignId?: string };
+  return guard(async () =>
+    await hubsApi.hubsScan({
+      ...(Array.isArray(body.hubs) ? { hubs: body.hubs.map(String) } : {}),
+      ...(body.campaignId ? { campaignId: body.campaignId } : {}),
+    }),
+  )(context);
+});
+
+app.get("/v1/hubs/drafts", (context) => guard(() => hubsApi.hubsDrafts(context.req.query("status") ?? "pending"))(context));
+
+app.patch("/v1/hubs/drafts/:id", async (context) => {
+  const body = (await context.req.json().catch(() => ({}))) as { action?: string; text?: string; account?: string };
+  const action = body.action === "skip" || body.action === "edit" ? body.action : body.action === "approve" ? "approve" : undefined;
+  return guard(() => {
+    if (!action) throw new Error('action is "approve", "skip" or "edit".');
+    return hubsApi.hubsDecide(context.req.param("id"), {
+      action,
+      ...(body.text ? { text: body.text } : {}),
+      ...(body.account ? { account: body.account } : {}),
+    });
+  })(context);
 });
 
 /**

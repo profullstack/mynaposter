@@ -18,6 +18,9 @@
  *   myna outreachgraph people         what OutreachGraph ranks for you
  *   myna outreachgraph sync           pull them in as seeds
  *   myna outreachgraph push <acct>    hand who you follow (or --followers) over
+ *   myna outreachgraph hubs <campaign> rank the accounts the campaign's leads follow and
+ *                                     reply to (OutreachGraph does the reading) and import
+ *                                     them for `myna hubs scan` [--refresh] [--dry-run]
  *   myna follow ... --outreachgraph   hand each person followed over, as you go
  *   myna config graph.outreachgraph true   ...and from the graph and the daemon
  *   myna config upvote.leads true     ...and everybody the upvoter finds
@@ -78,6 +81,32 @@ interface IdentityRow {
   platform_user_id?: string | null;
   profile_url?: string | null;
   confidence: number;
+}
+
+/** OutreachGraph's `GET|POST /campaigns/:id/hubs`. */
+export interface CampaignHubs {
+  campaign?: { id: string; name: string };
+  product?: { name: string; url?: string | null; about?: string | null };
+  leads?: number;
+  handles?: number;
+  computedAt?: string | null;
+  hubs: Array<{ network: string; handle: string; displayName?: string | null; url?: string | null; score: number; followedBy?: number; repliedBy?: number; leadHub?: boolean; why?: string | null }>;
+}
+
+/** The ranking as `myna hubs` takes it. Pure, exported for the test. */
+export function hubInputs(ranked: CampaignHubs) {
+  return ranked.hubs
+    .filter((hub) => hub.handle && hub.network)
+    .map((hub) => ({
+      network: hub.network,
+      handle: hub.handle,
+      ...(hub.displayName ? { displayName: hub.displayName } : {}),
+      ...(hub.url ? { url: hub.url } : {}),
+      score: hub.score,
+      ...(hub.followedBy !== undefined ? { followedBy: hub.followedBy } : {}),
+      ...(hub.repliedBy !== undefined ? { repliedBy: hub.repliedBy } : {}),
+      ...(hub.why ? { why: hub.why } : {}),
+    }));
 }
 
 /** One person as OutreachGraph's `/people/from-social` takes them. */
@@ -310,6 +339,9 @@ const plugin: MynaPlugin = {
         "outreachgraph push <account> [handle] [--followers] [--limit N]",
         "                                     Hand who an account follows (or who follows it)",
         "                                     to OutreachGraph for assessment + an OpenProfile",
+        "outreachgraph hubs <campaign> [--refresh] [--dry-run]",
+        "                                     Rank the accounts a campaign's leads follow and",
+        "                                     reply to, and import them for myna hubs scan",
         "outreachgraph logout                 Forget the credentials",
       ],
       async run(args, ctx) {
@@ -402,8 +434,30 @@ const plugin: MynaPlugin = {
             for (const entry of result.rejected) ctx.out(`  rejected ${entry.handle}: ${entry.reason}`);
             return 0;
           }
+          case "hubs": {
+            // myna outreachgraph hubs <campaign> [--refresh] [--dry-run] [--limit N]
+            const campaign = args[1];
+            if (!campaign) throw new Error("Usage: myna outreachgraph hubs <campaign id> [--refresh] [--dry-run]");
+            const path = `/campaigns/${encodeURIComponent(campaign)}/hubs?limit=${limitFrom(ctx, 25)}`;
+            const ranked = ctx.flags.refresh
+              ? await api<CampaignHubs>(ctx, path, { method: "POST", body: {} })
+              : await api<CampaignHubs>(ctx, path);
+            const hubs = hubInputs(ranked);
+            ctx.out(
+              `${ranked.campaign?.name ?? campaign}: ${ranked.leads ?? 0} leads, ${ranked.handles ?? 0} with a social handle, ` +
+                `${ranked.hubs.length} hubs${ranked.computedAt ? ` (ranked ${ranked.computedAt.slice(0, 16).replace("T", " ")})` : ""}`,
+            );
+            for (const hub of ranked.hubs.slice(0, 15)) ctx.out(`  ${hub.score.toFixed(1).padStart(5)}  ${hub.network}:${hub.handle}  ${hub.why ?? ""}`);
+            if (!ranked.hubs.length) ctx.out(ctx.flags.refresh ? "No hubs: the leads have no readable follows or replies yet." : "No ranking yet: add --refresh to compute one.");
+            if (ctx.flags.dryRun || !hubs.length) return 0;
+            if (!ctx.hubs) throw new Error("This myna cannot import hubs for a plugin; update myna.");
+            const product = ranked.product?.url ? { name: ranked.product.name, url: ranked.product.url, ...(ranked.product.about ? { about: ranked.product.about } : {}) } : undefined;
+            const result = ctx.hubs.import(hubs, { campaignId: campaign, ...(product ? { product } : {}), replace: true });
+            ctx.out(`Imported: ${result.added} new, ${result.updated} refreshed. myna hubs scan --campaign ${campaign} drafts replies (drafts only).`);
+            return 0;
+          }
           default:
-            throw new Error(`Unknown outreachgraph command "${sub}". Try: login, status, people, sync, push, logout`);
+            throw new Error(`Unknown outreachgraph command "${sub}". Try: login, status, people, sync, push, hubs, logout`);
         }
       },
     },

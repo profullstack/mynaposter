@@ -45,6 +45,16 @@ export interface PluginContext {
     /** Who follows `handle`. Same rules. */
     followers?(account: Account, handle: string, limit: number): Promise<Profile[]>;
   };
+  /**
+   * Hubs to watch (`myna hubs`): the accounts a campaign's buyers follow and answer. Optional so an
+   * older host or a hand-built test context can leave it out.
+   */
+  hubs?: {
+    import(
+      hubs: Array<{ network: string; handle: string; displayName?: string; url?: string; score?: number; followedBy?: number; repliedBy?: number; why?: string }>,
+      options?: { campaignId?: string; product?: { name: string; url: string; about?: string }; replace?: boolean },
+    ): { added: number; updated: number };
+  };
   /** myna's config directory. A plugin that needs a file of its own puts it under `plugins/<id>/`. */
   configDir: string;
   /** Parsed `--flags` as the CLI saw them. */

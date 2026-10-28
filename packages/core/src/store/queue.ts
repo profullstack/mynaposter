@@ -27,6 +27,12 @@ export interface QueuedPost {
    * the send calls the network's repost API and nothing is composed.
    */
   repostOf?: string;
+  /**
+   * Post this as a reply under somebody else's post, in the form the
+   * target network's `replyTo` takes (a Bluesky `uri|cid`, a Mastodon status
+   * URL). Set by approved hub replies; paced like any other post.
+   */
+  replyTo?: string;
   extra?: Record<string, string>;
   /** Split over the character limit into a reply chain where supported. */
   thread?: boolean;

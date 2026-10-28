@@ -173,7 +173,24 @@ function make(id: string, name: string, blurb: string, charLimit: number): Netwo
 
     async post(account, input): Promise<PostResult> {
       const body: Record<string, unknown> = { status: input.text };
-      if (input.replyTo) body.in_reply_to_id = input.replyTo;
+      if (input.replyTo && /^https?:\/\//.test(input.replyTo)) {
+        // A post on another instance (a hub's, say) has no id here until this
+        // instance fetches it, so a URL is resolved the way a repost is.
+        const target = mastodonStatusRef(input.replyTo, base(account));
+        if ("id" in target) {
+          body.in_reply_to_id = target.id;
+        } else {
+          const found = await getJson<{ statuses: Status[] }>(
+            `${base(account)}/api/v2/search?type=statuses&resolve=true&limit=1&q=${encodeURIComponent(target.url)}`,
+            { headers: auth(account) },
+          );
+          const status = found.statuses[0];
+          if (!status) throw new Error(`${name} could not find the post to reply to: ${input.replyTo}`);
+          body.in_reply_to_id = status.id;
+        }
+      } else if (input.replyTo) {
+        body.in_reply_to_id = input.replyTo;
+      }
       if (input.extra?.visibility) body.visibility = input.extra.visibility;
       if (input.extra?.spoiler) body.spoiler_text = input.extra.spoiler;
       if (input.media?.length) {

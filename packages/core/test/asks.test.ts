@@ -349,7 +349,8 @@ test("with nothing of ours to offer, the reply asks the builder's question; a wr
   const result = await replyToAsk("h1", { settings: settings(), publish: false });
   expect(result.card.text).toContain("which would you drop first");
   expect(result.card.text).not.toContain("http");
-  expect(getHandoff(result.card.id)?.steps.length).toBe(3);
+  // Read, paste, comment-share their post, mark done.
+  expect(getHandoff(result.card.id)?.steps.length).toBe(4);
 });
 
 test("tagLink keeps a tag the link already has", () => {

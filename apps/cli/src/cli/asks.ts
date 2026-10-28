@@ -13,7 +13,10 @@
  *   myna asks idea <id> [--status building|shipped|ignored|watching] [--label "…"]
  *                       [--note "…"] [--product <id>] [--merge <other id>]
  *   myna asks stats [--refresh] [<id>…] what our replies did: score, answers, the threads
- *   myna asks product add <name> <url> [--keywords "a, b"] [--about "…"] | list | rm <id>
+ *   myna asks product add <name> <url> [--keywords "a, b"] [--about "…"] [--phrases "a, b"] | list | rm <id>
+ *   myna asks phrases <product> [--generate] [--set "a, b"] [--add "a, b"] [--remove "a, b"] [--subs "a,b"]
+ *                                      the words people use when the problem hits them; a post
+ *                                      matching one is a `pain` ask and lists first
  *   myna asks subs [add <sub>… | rm <sub>…]
  *   myna asks set <key> <value>
  *
@@ -22,6 +25,8 @@
  */
 import {
   DEFAULT_ASKS,
+  byRank,
+  editPainPhrases,
   findIn,
   listProducts,
   loadSettings,
@@ -54,6 +59,11 @@ type Flags = Record<string, unknown>;
 
 const day = (iso: string): string => iso.slice(0, 10);
 const str = (value: unknown): string | undefined => (typeof value === "string" && value.trim() ? value.trim() : undefined);
+const list = (value: unknown, separator: string | RegExp = /[,\n]/): string[] =>
+  String(value ?? "")
+    .split(separator)
+    .map((part) => part.trim())
+    .filter(Boolean);
 const num = (value: unknown, fallback: number): number => {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
@@ -70,7 +80,7 @@ function line(ask: Ask): void {
   const reply = mine ? `  ours score ${mine.score ?? "?"} answers ${mine.replies}` : "";
   out(`  ${ask.id}  ${day(ask.postedAt)}  ${ask.status.padEnd(7)}  r/${ask.sub}${numbers}${reply}`);
   out(`      ${ask.title.replace(/\s+/g, " ").slice(0, 110)}`);
-  out(`      wants: ${ask.wants.slice(0, 5).join("; ")}${ask.product ? `   → ours: ${ask.product.name}` : ""}`);
+  out(`      ${ask.pain ? `pain: "${ask.pain}"` : `wants: ${ask.wants.slice(0, 5).join("; ")}`}${ask.product ? `   → ours: ${ask.product.name}` : ""}`);
 }
 
 function ideaLine(summary: IdeaSummary, settings: AsksSettings): void {
@@ -180,6 +190,9 @@ export async function runAsks(positional: string[], flags: Flags): Promise<numbe
           (result.deferred ? `, ${result.deferred} left for the next scan` : "") +
           ".",
       );
+      if (result.pain.searches.length || result.pain.found) {
+        out(`Pain phrases: ${result.pain.searches.length} searches, ${result.pain.found} complaint${result.pain.found === 1 ? "" : "s"} found (listed first).`);
+      }
       for (const ask of result.found) line(ask);
       for (const idea of result.flagged) out(`\nWorth building: ${idea.label} (${idea.id}), ${asks.buildAt}+ people asked. myna asks ideas`);
       return 0;
@@ -198,7 +211,7 @@ export async function runAsks(positional: string[], flags: Flags): Promise<numbe
         .filter((ask) => status === "all" || ask.status === status)
         .filter((ask) => !wantSub || ask.sub.toLowerCase() === wantSub)
         .filter((ask) => !idea || ask.ideaId === idea || ask.ideaId.startsWith(idea))
-        .sort((a, b) => b.postedAt.localeCompare(a.postedAt))
+        .sort(byRank)
         .slice(0, limit);
       if (json) {
         out(JSON.stringify(list, null, 2));
@@ -342,9 +355,11 @@ export async function runAsks(positional: string[], flags: Flags): Promise<numbe
           url,
           keywords: (str(flags.keywords) ?? "").split(",").map((word) => word.trim()).filter(Boolean),
           ...(str(flags.about) ? { about: str(flags.about) } : {}),
+          ...(str(flags.phrases) ? { painPhrases: list(flags.phrases) } : {}),
         });
         out(`${product.id}: ${product.name} ${product.url}, matched on ${product.keywords.join(", ")}`);
         out("New asks it answers get a reply pointing at it. Asks already found keep what they had.");
+        if (!product.painPhrases?.length) out(`Next: myna asks phrases ${product.id} --generate (the complaints that find its buyers).`);
         return 0;
       }
       if (action === "rm" || action === "remove") {
@@ -353,6 +368,44 @@ export async function runAsks(positional: string[], flags: Flags): Promise<numbe
         return 0;
       }
       throw new Error("myna asks product add | list | rm");
+    }
+
+    case "phrases":
+    case "pain": {
+      const [ref] = rest;
+      if (!ref) throw new Error('Usage: myna asks phrases <product> [--generate] [--set "a, b"] [--add "a, b"] [--remove "a, b"] [--subs "a,b"]');
+      const changing = flags.generate || str(flags.set) || str(flags.add) || str(flags.remove);
+      let product = findIn(readAsks().products, ref);
+      if (!product) throw new Error(`No product ${ref}. myna asks product list`);
+      let by: string | undefined;
+      if (changing) {
+        const edited = await editPainPhrases(product.id, {
+          ...(str(flags.set) ? { set: list(flags.set) } : {}),
+          ...(str(flags.add) ? { add: list(flags.add) } : {}),
+          ...(str(flags.remove) ? { remove: list(flags.remove) } : {}),
+          generate: Boolean(flags.generate),
+        });
+        product = edited.product;
+        by = edited.by;
+      }
+      if (str(flags.subs)) {
+        const file = readAsks();
+        const stored = file.products.find((entry) => entry.id === product!.id)!;
+        stored.painSubs = list(flags.subs, ",").map((name) => name.replace(/^\/?r\//i, ""));
+        writeAsks(file);
+        product = stored;
+      }
+      if (json) {
+        out(JSON.stringify({ product: product.id, phrases: product.painPhrases ?? [], subs: product.painSubs ?? [], ...(by ? { drafted: by } : {}) }, null, 2));
+        return 0;
+      }
+      const phrases = product.painPhrases ?? [];
+      if (by === "template") out("No writer configured: these came from the keywords. Edit them, they are a start, not a list.");
+      out(`${product.name}: ${phrases.length} pain phrase${phrases.length === 1 ? "" : "s"}, searched in ${product.painSubs?.length ? product.painSubs.map((name) => `r/${name}`).join(", ") : "the asks subs"}`);
+      for (const phrase of phrases) out(`  "${phrase}"`);
+      if (!phrases.length) out(`  none yet: myna asks phrases ${product.id} --generate`);
+      out(`Each scan searches ${asks.painSearches} of them in turn (myna asks set painSearches N) and checks every post it reads.`);
+      return 0;
     }
 
     case "subs": {
@@ -403,7 +456,7 @@ export async function runAsks(positional: string[], flags: Flags): Promise<numbe
     }
 
     default: {
-      out(`No such thing as myna asks ${sub}. Try: status, on, off, scan, list, show, reply, skip, replied, ideas, idea, stats, product, subs, set`);
+      out(`No such thing as myna asks ${sub}. Try: status, on, off, scan, list, show, reply, skip, replied, ideas, idea, stats, product, phrases, subs, set`);
       return 1;
     }
   }

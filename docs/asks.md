@@ -134,6 +134,51 @@ A reply found in a thread also marks a card you forgot to close as pasted.
 `myna asks show <id>` prints the history of these numbers, and `myna asks stats`
 totals them.
 
+## Pain phrases
+
+Searching for "SaaS" or "startup" finds people talking about products.
+Searching for the complaint itself finds people who have the problem right
+now and already want a fix, and those threads take a reply far better. So
+each product carries a list of **pain phrases**: the words people use when
+the problem hits them.
+
+```
+myna asks phrases myna --generate          the writer drafts them from the product
+myna asks phrases myna --add "got only 2 users, nobody sees my posts"
+myna asks phrases myna --remove "struggling with posting"
+myna asks phrases myna --subs "micro_saas,SaaS,indiehackers"
+```
+
+Good phrases: "can't find communities", "nobody sees my posts", "no one
+replies to my cold emails". Bad: "social media tool", "SaaS marketing". The
+cleaner drops category words (saas, startup, platform, software, solution)
+and the product's own name.
+
+How a scan uses them:
+
+- **Every post it reads anyway** (RSS Amplifier mirror, archive fallback) is
+  checked against every phrase. Free.
+- **`asks.painSearches` archive searches per scan** (default 6): one phrase
+  inside one sub each, about 2.5 s apart. Arctic Shift refuses a text query
+  without a subreddit or an author, so there is no site-wide search. The
+  searches take turns (`painCursor` in `asks.json`), so a small budget still
+  reaches every phrase and sub. The archive matches words anywhere, so each
+  hit is re-checked for the phrase before it counts.
+
+A match is an ask with `kind: "pain"` and the phrase in `pain`. It:
+
+- scores 0.9 and lists **before every other ask** (`myna asks list`, REST and
+  MCP all sort pain first, then newest);
+- names the product whose phrase matched, ahead of any keyword match;
+- skips the ask judge (it is not asking for a tool) and never counts toward
+  an idea to build (it is demand for something we already sell);
+- gets a reply drafted as help with the problem first, product second, and a
+  card whose steps end with comment-share: crosspost *their* post to
+  r/fleetcoding, then the campaign's subs (social-promo's 75/25 rule).
+
+OutreachGraph does the same for buyer-lead monitors (`painPhrases` on a
+monitor, `og buyers phrases`).
+
 ## Leads
 
 Each asker is handed to the plugins that collect people through
@@ -161,6 +206,7 @@ off.
 | `myna asks idea <id> --status …` | `PATCH /v1/asks/ideas/:id` | `myna_asks_set` |
 | `myna asks stats` | `GET /v1/asks/stats?refresh=1` | `myna_asks_stats` |
 | `myna asks on/off` | `POST /v1/asks/enabled` | `myna_asks_set` |
+| `myna asks phrases <product>` | `GET/PUT /v1/asks/products/:id/phrases` | `myna_asks_phrases` |
 
 State lives in `asks.json` in the myna config directory, and settings live
 under `asks` in `settings.json`.
