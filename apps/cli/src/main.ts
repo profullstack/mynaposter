@@ -93,6 +93,10 @@ Posting:
                                     lists videos; comment with post --video
   run                               The daemon: sends due posts, runs the
                                     follow graph and every plugin's tasks
+  unlock [--ttl 7d]                 Unlock a running daemon's passphrase vault
+                                    (key kept in its memory; locked = posts wait)
+  lock                              Lock it again
+  vault [status|passphrase]         Vault mode; move a keyfile vault to a passphrase
 
 Brand, plan and autopilot (the parts that run without you):
   brand                             What myna thinks you sound like: audience,

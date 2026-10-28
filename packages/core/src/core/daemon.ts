@@ -7,7 +7,9 @@
  * lose one of them — and a job that throws is logged and retried on its next
  * turn rather than taking the loop down.
  */
+import { spawn } from "node:child_process";
 import { runDuePosts } from "./scheduler.ts";
+import { needsPassphrase } from "../store/accounts.ts";
 import { summarize } from "./poster.ts";
 import { addSeeds, expandSeeds, followNext } from "./graph.ts";
 import { effectiveLinks, effectiveRecap, loadSettings } from "../store/settings.ts";
@@ -50,6 +52,44 @@ export interface DaemonOptions {
 }
 
 const stamp = (): string => new Date().toISOString();
+
+/**
+ * The vault gate. A passphrase-mode vault with no unlock session (and no
+ * MYNA_PASSPHRASE) is LOCKED: every job pauses, due posts stay pending (never
+ * marked failed), and one alert goes out per lock: an `[alert]` log line, and
+ * MYNA_ALERT_CMD (e.g. `alert`) run with the message when it is set.
+ */
+export function createVaultGate(
+  log: (line: string) => void,
+  options: { locked?: () => boolean; alertCmd?: string | undefined } = {},
+) {
+  const locked = options.locked ?? needsPassphrase;
+  const alertCmd = options.alertCmd ?? process.env.MYNA_ALERT_CMD;
+  let alerted = false;
+  return {
+    /** True when jobs may run. */
+    open(): boolean {
+      if (!locked()) {
+        if (alerted) log("vault unlocked, resuming");
+        alerted = false;
+        return true;
+      }
+      if (!alerted) {
+        alerted = true;
+        const message = "myna: operator keys locked, unlock to resume (myna unlock)";
+        log(`[alert] ${message}`);
+        if (alertCmd) {
+          try {
+            spawn(alertCmd, [message], { stdio: "ignore", detached: true }).on("error", () => {}).unref();
+          } catch {
+            // the log line is the fallback
+          }
+        }
+      }
+      return false;
+    },
+  };
+}
 
 /** The jobs myna itself runs, given the current settings. */
 export function builtinJobs(log: (line: string) => void, tickMs: number): DaemonJob[] {
@@ -234,9 +274,11 @@ export function startDaemon(options: DaemonOptions = {}): () => void {
   const lastRun = new Map<string, number>();
   let running = false;
   let stopped = false;
+  const gate = createVaultGate(log);
 
   const tick = async () => {
     if (running || stopped) return;
+    if (!gate.open()) return;
     running = true;
     try {
       for (const job of jobs) {
@@ -272,6 +314,7 @@ export async function runDaemonOnce(options: Omit<DaemonOptions, "tickMs"> = {})
     lines.push(line);
     options.log?.(line);
   };
+  if (!createVaultGate(log).open()) return lines;
   const jobs = [...(options.builtins === false ? [] : builtinJobs(log, 0)), ...(options.jobs ?? [])];
   for (const job of jobs) {
     try {
