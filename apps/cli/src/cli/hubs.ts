@@ -47,7 +47,8 @@ function draftLine(draft: HubDraft): void {
 }
 
 export async function runHubs(positional: string[], flags: Flags): Promise<number> {
-  const [, sub = "status", ...rest] = positional;
+  // `positional` starts after the command, the same as every other runX.
+  const [sub = "status", ...rest] = positional;
   const json = Boolean(flags.json);
   const campaignId = str(flags.campaign);
 
