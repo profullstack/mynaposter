@@ -30,6 +30,10 @@ create table if not exists accounts (
   handle       text not null,
   display_name text,
   -- The encrypted envelope: {iv, tag, data}. Never plaintext.
+  -- UNUSED as of 2026-10-28 (no code writes it; 0 rows). Fleet rule: if hosted
+  -- accounts ever land here, seal creds under the USER's passphrase
+  -- (@profullstack/sealed-secrets) and open them only inside an unlock session
+  -- the user starts; never under a key the server holds.
   creds        jsonb not null,
   meta         jsonb not null default '{}'::jsonb,
   created_at   timestamptz not null default now(),

@@ -14,7 +14,7 @@
 import type { Account } from "../net/types.ts";
 import type { DirectoryAccount } from "../directories/types.ts";
 import { statSync } from "node:fs";
-import { readVault, writeVault, vaultExists, vaultMode } from "../util/crypto/vault.ts";
+import { readVault, writeVault, vaultExists, vaultMode, sessionStatus, onVaultLock } from "../util/crypto/vault.ts";
 import { configPath, VAULT_FILE } from "../util/paths.ts";
 import { getNetwork } from "../net/registry.ts";
 
@@ -40,6 +40,12 @@ let cache: VaultPayload | null = null;
 let cacheStamp = "";
 let passphrase: string | undefined;
 
+// The decrypted payload must not outlive an unlock session.
+onVaultLock(() => {
+  cache = null;
+  cacheStamp = "";
+});
+
 /** Supply the passphrase for a passphrase-mode vault. */
 export function unlock(value: string): void {
   passphrase = value;
@@ -53,7 +59,9 @@ export function activePassphrase(): string | undefined {
 }
 
 export function needsPassphrase(): boolean {
-  return vaultExists() && vaultMode() === "passphrase" && !passphrase && !process.env.MYNA_PASSPHRASE;
+  return (
+    vaultExists() && vaultMode() === "passphrase" && !passphrase && !process.env.MYNA_PASSPHRASE && !sessionStatus().unlocked
+  );
 }
 
 function vaultStamp(): string {

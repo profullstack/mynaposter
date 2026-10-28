@@ -44,6 +44,9 @@ import {
   slotsFor,
   type RotateMode,
   needsPassphrase,
+  borrowDaemonUnlock,
+  startUnlockServer,
+  VaultLockedError,
   openBrowser,
   postToAll,
   postPaced,
@@ -129,6 +132,7 @@ import { runUpvote } from "./upvote.ts";
 import { runAsks } from "./asks.ts";
 import { runHubs } from "./hubs.ts";
 import { runDid } from "./did.ts";
+import { runLock, runUnlock, runVault } from "./vault-cmd.ts";
 import { runContacts, runEmail, runSms, runSmtp } from "./outreach.ts";
 import { runNewsletter } from "./newsletter.ts";
 import { parseWhen, describeWhen, parseDuration } from "../tui/when.ts";
@@ -263,7 +267,12 @@ function printHooks(hooks: HookOutcome[]): void {
 }
 
 async function ensureUnlocked(): Promise<void> {
-  if (needsPassphrase()) unlock(await askSecret("Vault passphrase"));
+  if (!needsPassphrase()) return;
+  // A running daemon that an operator unlocked lends its session key, so a
+  // cron `myna post` needs neither a prompt nor a passphrase in its env.
+  if (await borrowDaemonUnlock()) return;
+  if (!process.stdin.isTTY) throw new VaultLockedError();
+  unlock(await askSecret("Vault passphrase"));
 }
 
 /**
@@ -664,6 +673,13 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
       await ensureUnlocked();
       return await runHubs(positional, flags);
     }
+
+    case "unlock":
+      return await runUnlock(flags);
+    case "lock":
+      return await runLock();
+    case "vault":
+      return await runVault(positional, flags);
 
     case "did": {
       await ensureUnlocked();
@@ -1370,8 +1386,12 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
     case "run": {
       // The daemon, for a systemd unit or a container: due posts, the follow
       // graph when it is on, and every plugin's tasks and seed providers.
-      await ensureUnlocked();
+      // A passphrase vault is NOT prompted for here: the daemon starts locked
+      // and an operator unlocks it over the socket (`myna unlock`); until then
+      // every job pauses and nothing in the queue is lost.
       const log = (line: string) => out(`${new Date().toISOString()}  ${line}`);
+      if (!flags.once) await startUnlockServer(log).catch((error) => log(`unlock socket did not start: ${(error as Error).message}`));
+      else await ensureUnlocked();
       if (flags.once) {
         const lines = await runDaemonOnce({ log });
         if (!lines.length) out("Nothing was due.");

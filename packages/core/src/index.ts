@@ -118,7 +118,21 @@ export {
   type BundlePayload,
   type ApplyResult,
 } from "./store/bundle.ts";
-export { vaultExists, vaultMode, rekeyVault, VaultLockedError } from "./util/crypto/vault.ts";
+export {
+  vaultExists,
+  vaultMode,
+  rekeyVault,
+  readVault,
+  VaultLockedError,
+  deriveVaultKey,
+  verifyVaultKey,
+  unlockSession,
+  lockSession,
+  sessionStatus,
+  parseUnlockTtl,
+  UNLOCK_DEFAULT_TTL_SECONDS,
+} from "./util/crypto/vault.ts";
+export { startUnlockServer, daemonRequest, borrowDaemonUnlock, unlockSocketPath } from "./core/unlock-socket.ts";
 export * as cloud from "./store/cloud.ts";
 // Settings sync with myna cloud, through @profullstack/synconfig.
 export * as synconfig from "./store/synconfig.ts";
@@ -275,7 +289,7 @@ export { runAfterPost, runAfterSchedule, runAfterCancel, runAfterDiscover, poste
 export { renderMarkdown, renderInline, firstParagraph, slugify, escapeHtml } from "./util/markdown.ts";
 export { loadMedia, loadAllMedia } from "./core/media.ts";
 export { runDuePosts, startScheduler } from "./core/scheduler.ts";
-export { startDaemon, runDaemonOnce, builtinJobs, type DaemonJob, type DaemonOptions } from "./core/daemon.ts";
+export { startDaemon, runDaemonOnce, builtinJobs, createVaultGate, type DaemonJob, type DaemonOptions } from "./core/daemon.ts";
 export {
   checkForUpdate,
   selfUpdate,
