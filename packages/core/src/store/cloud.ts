@@ -381,9 +381,12 @@ export async function cloudFetch(input: string, init: RequestInit = {}): Promise
   const target = new URL(input);
   if (!target.href.startsWith(`${current.server}/`)) return fetch(input, init);
 
-  let fresh = await refreshSession();
-  if (fresh.state === "expired") throw new CloudSessionExpiredError();
   let active = requireSession();
+  if (active.refreshToken) {
+    const health = await refreshSession();
+    if (health.state === "expired") throw new CloudSessionExpiredError();
+    active = requireSession();
+  }
   const send = (token: string) => {
     const headers = new Headers(init.headers);
     headers.set("authorization", `Bearer ${token}`);
@@ -395,8 +398,8 @@ export async function cloudFetch(input: string, init: RequestInit = {}): Promise
     markExpired(active);
     throw new CloudSessionExpiredError();
   }
-  fresh = await refreshSession({ force: true });
-  if (fresh.state === "expired") throw new CloudSessionExpiredError();
+  const refreshed = await refreshSession({ force: true });
+  if (refreshed.state === "expired") throw new CloudSessionExpiredError();
   active = requireSession();
   response = await send(active.token);
   if (response.status === 401) {
