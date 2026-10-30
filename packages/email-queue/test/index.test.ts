@@ -45,6 +45,28 @@ describe("email queue policy", () => {
     expect(mailJobId(identity, base, "bulk")).not.toBe(mailJobId("resend|other@example.com", base, "bulk"));
     expect(() => mailJobId(identity, { ...base, to: ["a@example.net", "b@example.net"] }, "bulk")).toThrow("exactly one recipient");
   });
+
+  it("refuses Gmail bulk delivery before connecting to Redis or calling the provider", async () => {
+    let calls = 0;
+    const gmail: DeliveryTransport = {
+      id: "gmail",
+      type: "smtp",
+      from: "owner@example.com",
+      async send() {
+        calls++;
+        return { ok: true };
+      },
+    };
+    const result = await queuedDelivery(gmail, {
+      from: gmail.from,
+      to: ["recipient@example.net"],
+      subject: "Bulk must use Resend",
+      text: "No external delivery",
+    }, "bulk", { redisUrl: "redis://127.0.0.1:1", smtpHost: "smtp.gmail.com" });
+    expect(result).toMatchObject({ ok: false, retryable: false, status: 403 });
+    expect(result.error).toContain("Gmail is reserved for one-off correspondence");
+    expect(calls).toBe(0);
+  });
 });
 
 const testRedisUrl = process.env.EMAIL_QUEUE_TEST_REDIS_URL;

@@ -104,7 +104,7 @@ export interface ResolveOptions extends ProviderDeps {
 function queueGuard(sender: MailSender, smtpHost = ""): MailSender {
   if (sender.type !== "resend" && !isGoogleSender(sender, smtpHost)) return sender;
   return {
-    id: sender.id, type: sender.type, from: sender.from,
+    id: sender.id, type: sender.type, from: sender.from, google: isGoogleSender(sender, smtpHost),
     batchSize: 1,
     send: async (message, context) => {
       const url = process.env.EMAIL_QUEUE_REDIS_URL ?? process.env.REDIS_URL ?? "";
@@ -156,6 +156,9 @@ export async function sendEach(
     stop?: () => boolean;
   } = {},
 ): Promise<MailResult[]> {
+  if (hooks.kind === "bulk" && sender.google) {
+    throw new Error("Bulk email must use Resend or another bulk provider; Gmail is reserved for one-off correspondence.");
+  }
   const size = sender.sendBatch && sender.batchSize > 1 ? sender.batchSize : 1;
   const results: MailResult[] = [];
   for (let start = 0; start < messages.length; start += size) {

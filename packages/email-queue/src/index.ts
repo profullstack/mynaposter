@@ -100,6 +100,9 @@ export async function queuedDelivery(
   options: EmailQueueOptions,
 ): Promise<DeliveryResult> {
   if (!options.redisUrl) throw new Error("EMAIL_QUEUE_REDIS_URL is required; refusing direct Gmail/Resend bulk sending.");
+  if (kind === "bulk" && isGoogleSender(sender, options.smtpHost)) {
+    return { ok: false, retryable: false, status: 403, error: "Bulk email must use Resend or another bulk provider; Gmail is reserved for one-off correspondence." };
+  }
   const identity = queueIdentity(sender, options.smtpHost);
   const limits = senderLimits(sender, options.smtpHost, options);
   const name = "profullstack-email-" + hash(identity).slice(0, 32);
