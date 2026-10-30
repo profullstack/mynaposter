@@ -15,7 +15,7 @@
 import { readJson, writeJson } from "../util/json.ts";
 import { RESHARE_FILE } from "../util/paths.ts";
 import { getJson, postJson, request } from "../util/http.ts";
-import { requireSession, session, type CloudSession } from "./cloud.ts";
+import { cloudFetch, requireSession, session, type CloudSession } from "./cloud.ts";
 
 export interface ResharePost {
   network: string;
@@ -122,6 +122,7 @@ export async function join(markdown: string): Promise<ReshareProfileStatus> {
     method: "PUT",
     headers: { ...auth(current), "content-type": "application/json" },
     body: JSON.stringify({ markdown }),
+    fetchImpl: cloudFetch,
   });
   const parsed = (await reply.json()) as Reply<{ profile: ReshareProfileStatus }> | Fail;
   const status = unwrap(parsed, "The network refused that profile.").profile;
@@ -133,7 +134,7 @@ export async function join(markdown: string): Promise<ReshareProfileStatus> {
 
 export async function leave(): Promise<boolean> {
   const current = requireSession();
-  const reply = await request(`${current.server}/v1/reshare/profile`, { method: "DELETE", headers: auth(current) });
+  const reply = await request(`${current.server}/v1/reshare/profile`, { method: "DELETE", headers: auth(current), fetchImpl: cloudFetch });
   const parsed = (await reply.json()) as { ok: boolean };
   const file = ledger();
   delete file.joinedAt;
@@ -144,7 +145,7 @@ export async function leave(): Promise<boolean> {
 export async function status(): Promise<ReshareProfileStatus> {
   const current = requireSession();
   const reply = await getJson<Reply<{ profile: ReshareProfileStatus }> | Fail>(`${current.server}/v1/reshare/profile`, {
-    headers: auth(current),
+    headers: auth(current), fetchImpl: cloudFetch,
   });
   return unwrap(reply, "Could not read the profile.").profile;
 }
@@ -152,7 +153,7 @@ export async function status(): Promise<ReshareProfileStatus> {
 export async function submit(input: ReshareRequestInput): Promise<{ id: string; matched: number }> {
   const current = requireSession();
   const reply = await postJson<Reply<{ id: string; matched: number }> | Fail>(`${current.server}/v1/reshare/requests`, input, {
-    headers: auth(current),
+    headers: auth(current), fetchImpl: cloudFetch,
   });
   return unwrap(reply, "The network refused that request.");
 }
@@ -160,7 +161,7 @@ export async function submit(input: ReshareRequestInput): Promise<{ id: string; 
 export async function requests(): Promise<ReshareRequestRow[]> {
   const current = requireSession();
   const reply = await getJson<Reply<{ requests: ReshareRequestRow[] }> | Fail>(`${current.server}/v1/reshare/requests`, {
-    headers: auth(current),
+    headers: auth(current), fetchImpl: cloudFetch,
   });
   return unwrap(reply, "Could not list requests.").requests;
 }
@@ -170,6 +171,7 @@ export async function close(id: string): Promise<boolean> {
   const reply = await request(`${current.server}/v1/reshare/requests/${encodeURIComponent(id)}`, {
     method: "DELETE",
     headers: auth(current),
+    fetchImpl: cloudFetch,
   });
   return ((await reply.json()) as { ok: boolean }).ok;
 }
@@ -178,7 +180,7 @@ export async function matches(limit = 10): Promise<ReshareMatch[]> {
   const current = requireSession();
   const reply = await getJson<Reply<{ matches: ReshareMatch[] }> | Fail>(
     `${current.server}/v1/reshare/matches?limit=${limit}`,
-    { headers: auth(current) },
+    { headers: auth(current), fetchImpl: cloudFetch },
   );
   return unwrap(reply, "Could not fetch matches.").matches;
 }
@@ -188,7 +190,7 @@ export async function claim(requestId: string, network: string): Promise<Reshare
   const reply = await postJson<Reply<{ claim: ReshareClaim }> | Fail>(
     `${current.server}/v1/reshare/claims`,
     { requestId, network },
-    { headers: auth(current) },
+    { headers: auth(current), fetchImpl: cloudFetch },
   );
   return unwrap(reply, "That request could not be claimed.").claim;
 }
@@ -199,6 +201,7 @@ export async function report(claimId: string, outcome: { ok: boolean; url?: stri
     method: "PATCH",
     headers: { ...auth(current), "content-type": "application/json" },
     body: JSON.stringify(outcome),
+    fetchImpl: cloudFetch,
   });
   unwrap((await reply.json()) as Reply<object> | Fail, "The outcome was not recorded.");
 }
@@ -207,7 +210,7 @@ export async function report(claimId: string, outcome: { ok: boolean; url?: stri
 export async function ledgerRemote(): Promise<{ owed: LedgerRow[]; earned: LedgerRow[] }> {
   const current = requireSession();
   const reply = await getJson<Reply<{ owed: LedgerRow[]; earned: LedgerRow[] }> | Fail>(`${current.server}/v1/reshare/ledger`, {
-    headers: auth(current),
+    headers: auth(current), fetchImpl: cloudFetch,
   });
   return unwrap(reply, "Could not read the ledger.");
 }
@@ -219,6 +222,7 @@ export async function markPaid(claimId: string, ref: string): Promise<void> {
     method: "PATCH",
     headers: { ...auth(current), "content-type": "application/json" },
     body: JSON.stringify({ ref }),
+    fetchImpl: cloudFetch,
   });
   unwrap((await reply.json()) as Reply<object> | Fail, "The payment was not recorded.");
 }

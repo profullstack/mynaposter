@@ -177,7 +177,7 @@ export function parseFlags(argv: string[]): { positional: string[]; flags: Flags
     // much switches as `--json`; without them here the parser eats the next
     // argument, so `myna post all "hi" --now` died asking for a value.
     const BOOLS = new Set([
-      "json", "yes", "thread", "dryRun", "noThread", "force", "now", "off", "on", "noOpen", "front", "skipQueue", "send", "check", "noAi", "allowDuplicate",
+      "json", "yes", "thread", "dryRun", "noThread", "force", "now", "off", "on", "noOpen", "front", "skipQueue", "send", "check", "noAi", "allowDuplicate", "device",
       // follow, followers, graph expand and outreachgraph push
       "outreachgraph", "followers", "allFollowing", "allFollowers", "both",
       // handoff list --all, handoff add --local
@@ -1833,15 +1833,27 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
       switch (sub) {
         case "signup":
         case "login": {
-          const email = positional[1] ?? (await ask("Email"));
-          const password = await askSecret("Password");
+          const email = positional[1] ?? (sub === "signup" ? await ask("Email") : undefined);
           if (sub === "signup") {
+            const password = await askSecret("Password");
             const again = await askSecret("Again");
             if (again !== password) throw new Error("Those did not match.");
+            if (!email) throw new Error("Email is required.");
+            const created = await cloud.signup(email, password, server);
+            out(`Signed in as ${created.email} on ${created.server}`);
+            out("");
+            out("Backups are encrypted here before they are uploaded, with a passphrase");
+            out("that never leaves this machine. Push one with:  myna cloud push");
+            return 0;
           }
-          const created = sub === "signup"
-            ? await cloud.signup(email, password, server)
-            : await cloud.login(email, password, server);
+          const device = flags.device === true || !process.stdin.isTTY || Boolean(process.env.SSH_CONNECTION || process.env.CI);
+          const created = await cloud.authorizeLogin({
+            ...(email ? { email } : {}),
+            server,
+            device,
+            ...(!device ? { openBrowser } : {}),
+            output: out,
+          });
           out(`Signed in as ${created.email} on ${created.server}`);
           out("");
           out("Backups are encrypted here before they are uploaded, with a passphrase");
@@ -1902,6 +1914,12 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
 
         case "status": {
           const current = cloud.session();
+          const health = cloud.sessionHealth();
+          if (health.state === "expired") {
+            out(`The myna cloud session${health.email ? ` for ${health.email}` : ""} has expired.`);
+            out("Sign in again: myna cloud login");
+            return 1;
+          }
           if (!current) {
             out("Not signed in. Cloud backup is optional; myna works fully without it.");
             out("");

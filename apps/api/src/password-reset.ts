@@ -147,6 +147,7 @@ export async function resetPassword(token: string, password: string): Promise<{ 
       returning id, email
     `) as unknown as { id: string; email: string }[];
     await sql`update password_resets set used_at = now() where user_id = ${userId} and used_at is null`;
+    await sql`update oauth_sessions set revoked_at = coalesce(revoked_at, now()) where user_id = ${userId}`;
     await sql`delete from api_tokens where user_id = ${userId}`;
 
     const session = newToken();

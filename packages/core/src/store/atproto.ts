@@ -6,7 +6,7 @@
  * by whoever put it up.
  */
 import { getJson, postJson, request } from "../util/http.ts";
-import { requireSession, session, DEFAULT_SERVER } from "./cloud.ts";
+import { cloudFetch, requireSession, session, DEFAULT_SERVER } from "./cloud.ts";
 import type { AtprotoKind } from "../core/atproto.ts";
 
 export interface AtprotoListing {
@@ -47,14 +47,14 @@ export async function listServers(options: { kind?: AtprotoKind; online?: boolea
 }
 
 export async function addServer(url: string, input: { description?: string; tags?: string[] } = {}): Promise<AtprotoListing> {
-  return unwrap(await postJson<Reply<{ server: AtprotoListing }>>(`${base()}/v1/atproto`, { url, ...input }, { headers: auth() }), "The directory refused that server.").server;
+  return unwrap(await postJson<Reply<{ server: AtprotoListing }>>(`${base()}/v1/atproto`, { url, ...input }, { headers: auth(), fetchImpl: cloudFetch }), "The directory refused that server.").server;
 }
 
 export async function refreshServer(id: string): Promise<AtprotoListing> {
-  return unwrap(await postJson<Reply<{ server: AtprotoListing }>>(`${base()}/v1/atproto/${encodeURIComponent(id)}/refresh`, {}, { headers: auth() }), "Could not refresh.").server;
+  return unwrap(await postJson<Reply<{ server: AtprotoListing }>>(`${base()}/v1/atproto/${encodeURIComponent(id)}/refresh`, {}, { headers: auth(), fetchImpl: cloudFetch }), "Could not refresh.").server;
 }
 
 export async function removeServer(id: string): Promise<boolean> {
-  const reply = await request(`${base()}/v1/atproto/${encodeURIComponent(id)}`, { method: "DELETE", headers: auth() });
+  const reply = await request(`${base()}/v1/atproto/${encodeURIComponent(id)}`, { method: "DELETE", headers: auth(), fetchImpl: cloudFetch });
   return ((await reply.json()) as { ok: boolean }).ok;
 }

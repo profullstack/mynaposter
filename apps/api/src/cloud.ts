@@ -62,6 +62,12 @@ export async function signup(email: string, password: string): Promise<{ user: C
 
 /** Sign in. `name` labels the token: "cli" for a terminal, "web" for the dashboard's cookie. */
 export async function login(email: string, password: string, name = "cli"): Promise<{ user: CloudUser; token: string }> {
+  const user = await authenticatePassword(email, password);
+  return { user, token: await mintToken(user.id, name) };
+}
+
+/** Verify the account credentials without minting a bearer token. */
+export async function authenticatePassword(email: string, password: string): Promise<CloudUser> {
   const address = normalizeEmail(email);
   const rows = await db()`
     select id, email, password_hash, password_salt, password_params
@@ -83,7 +89,7 @@ export async function login(email: string, password: string, name = "cli"): Prom
     throw wrong;
   }
 
-  return { user: { id: row.id, email: row.email }, token: await mintToken(row.id, name) };
+  return { id: row.id, email: row.email };
 }
 
 /** Resolve a bearer token to its owner, or null. */
@@ -92,6 +98,11 @@ export async function whoami(token: string): Promise<CloudUser | null> {
   const rows = await db()`
     update api_tokens set last_used_at = now()
     where token_hash = ${hashToken(token)}
+      and (expires_at is null or expires_at > now())
+      and (oauth_session_id is null or exists (
+        select 1 from oauth_sessions s
+        where s.id = api_tokens.oauth_session_id and s.revoked_at is null and s.expires_at > now()
+      ))
     returning user_id
   `;
   const userId = (rows[0] as { user_id: string } | undefined)?.user_id;
@@ -102,8 +113,24 @@ export async function whoami(token: string): Promise<CloudUser | null> {
 }
 
 export async function logout(token: string): Promise<boolean> {
-  const rows = await db()`delete from api_tokens where token_hash = ${hashToken(token)} returning id`;
-  return rows.length > 0;
+  const digest = hashToken(token);
+  return db().begin(async (sql) => {
+    const access = (await sql`
+      select oauth_session_id from api_tokens where token_hash = ${digest} for update
+    `) as unknown as { oauth_session_id: string | null }[];
+    const refresh = (await sql`
+      select session_id from oauth_refresh_tokens where token_hash = ${digest} for update
+    `) as unknown as { session_id: string }[];
+    const sessionId = access[0]?.oauth_session_id ?? refresh[0]?.session_id;
+    if (sessionId) {
+      await sql`update oauth_sessions set revoked_at = coalesce(revoked_at, now()) where id = ${sessionId}`;
+      await sql`delete from api_tokens where oauth_session_id = ${sessionId}`;
+      await sql`delete from oauth_refresh_tokens where session_id = ${sessionId}`;
+      return true;
+    }
+    const rows = await sql`delete from api_tokens where token_hash = ${digest} returning id`;
+    return rows.length > 0;
+  }) as Promise<boolean>;
 }
 
 export async function putBackup(

@@ -12,7 +12,7 @@
  */
 import { loadSettings } from "../../store/settings.ts";
 import { mailProviderSecret, readOutreach, smtpServer } from "../../store/outreach.ts";
-import { DEFAULT_SERVER, session } from "../../store/cloud.ts";
+import { cloudFetch, DEFAULT_SERVER, session } from "../../store/cloud.ts";
 import type { SmtpOptions } from "../smtp.ts";
 import {
   brevoProvider,
@@ -60,7 +60,7 @@ export function providerSender(config: MailProviderConfig, secret: string, deps:
     case "myna-cloud": {
       const current = session();
       const server = config.server ?? current?.server ?? process.env.MYNA_SERVER ?? DEFAULT_SERVER;
-      return mynaCloudProvider(config, current?.token ?? "", server, deps);
+      return mynaCloudProvider(config, current?.token ?? "", server, { ...deps, fetch: deps.fetch ?? cloudFetch });
     }
     case "smtp":
       throw new Error(`${config.id} is an SMTP server: myna smtp list shows it.`);

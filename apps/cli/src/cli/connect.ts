@@ -20,7 +20,7 @@ const base = (): string => (cloud.session()?.server ?? process.env.MYNA_SERVER ?
 
 async function call<T>(path: string, options: { method?: string; body?: unknown } = {}): Promise<T> {
   const session = cloud.requireSession();
-  const reply = await fetch(`${base()}${path}`, {
+  const reply = await cloud.cloudFetch(`${base()}${path}`, {
     method: options.method ?? (options.body ? "POST" : "GET"),
     headers: {
       accept: "application/json",

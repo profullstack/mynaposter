@@ -40,7 +40,7 @@ export interface ClientOptions {
   /** The route under it. */
   path?: string;
   token: string;
-  fetchImpl?: typeof fetch;
+  fetchImpl?: (input: string, init?: RequestInit) => Promise<Response>;
   timeoutMs?: number;
   /** Extra headers, for a tool that identifies itself. */
   headers?: Record<string, string>;

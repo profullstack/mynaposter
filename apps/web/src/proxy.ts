@@ -42,6 +42,7 @@ export async function forward(request: Request, target: string, upstream = proce
   for (const [key, value] of request.headers) if (!HOP.has(key.toLowerCase())) headers.set(key, value);
   headers.set("x-forwarded-host", incoming.host);
   headers.set("x-forwarded-proto", incoming.protocol.replace(":", ""));
+  headers.set("x-forwarded-prefix", "/api");
   const body = request.method === "GET" || request.method === "HEAD" ? undefined : await request.arrayBuffer();
   let answer: Response;
   try {
