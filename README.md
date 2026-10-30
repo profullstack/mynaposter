@@ -1463,10 +1463,16 @@ arrangement under which keeping tokens for 26 social networks on somebody
 else's computer is a reasonable thing to do — a full compromise of the server
 yields nothing.
 
-Sign-in is email and password. The house pattern is magic link and passkey, with
-an optional password for devices those cannot reach; a terminal has no mail
-client to open a link in and no authenticator to hold a passkey, which is that
-exception exactly.
+`myna cloud login` signs in through mynaposter.com using OAuth 2.1 authorization
+code with PKCE. On a machine with a browser, myna opens the account page and
+receives the return through a temporary loopback listener. Over SSH or in a
+headless shell, use `myna cloud login --device`: enter the short code on the
+verification page, then return to the terminal. The CLI never asks for your
+cloud password. Access tokens last 15 minutes and rotate through refresh tokens;
+the daemon checks a revoked session, writes an `[alert]` log line, and includes
+the expired sign-in in its daily recap.
+
+New accounts can still be created with `myna cloud signup [email]`.
 
 Self-host it by pointing `MYNA_SERVER` at your own instance.
 

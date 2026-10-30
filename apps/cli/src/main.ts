@@ -409,7 +409,7 @@ Cloud backup (optional; myna works fully without it):
   synconfig load [--force|--dry-run] Pull them; a local edit stops it unless forced
   synconfig revisions | on | off    The last ten; let the daemon do it (default on)
   cloud signup [email]              Create an account
-  cloud login [email]               Sign in on this machine
+  cloud login [email] [--device]    Sign in in a browser; use a device code on headless machines
   cloud push                        Encrypt a bundle here, then upload it
   cloud pull                        Fetch it and merge it in
   cloud status                      What is stored, and when
@@ -442,6 +442,7 @@ Flags:
   --overwrite       On load, replace accounts that already exist here
   --settings        On load, take the bundle's settings too
   --yes             Skip the confirmation on load
+  --device          cloud login: use a browser device code instead of a loopback callback
 
 Examples:
   myna login bluesky

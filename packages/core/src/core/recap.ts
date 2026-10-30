@@ -26,6 +26,7 @@ import { listHandoffs, type Handoff } from "../store/handoffs.ts";
 import { readJson, writeJson } from "../util/json.ts";
 import * as R from "./report-email.ts";
 import { RECAP_FILE } from "../util/paths.ts";
+import { refreshSession, sessionHealth } from "../store/cloud.ts";
 
 export interface RecapSettings {
   /**
@@ -141,6 +142,8 @@ export interface Recap {
   days?: RecapDay[];
   /** One row per network, busiest first, with its own seven-window strip. */
   channels?: RecapChannel[];
+  /** A cloud login that needs a person, included in the daemon's daily mail. */
+  cloudSession?: { state: "expired"; email?: string };
 }
 
 export interface RecapPrev {
@@ -190,6 +193,7 @@ export interface RecapInput {
   history?: HistoryEntry[];
   queue?: QueuedPost[];
   handoffs?: Handoff[];
+  cloudSession?: { state: "expired"; email?: string };
 }
 
 /**
@@ -352,6 +356,7 @@ export function buildRecap(input: RecapInput = {}): Recap {
     prev,
     days,
     channels: channelRows,
+    ...(input.cloudSession ? { cloudSession: input.cloudSession } : {}),
   };
 }
 
@@ -363,6 +368,7 @@ const day = (iso: string, tz?: string): string =>
 
 export function recapSubject(recap: Recap, tz?: string): string {
   const parts = [`${recap.sent} sent`];
+  if (recap.cloudSession?.state === "expired") parts.unshift("cloud sign-in expired");
   if (recap.failed) parts.push(`${recap.failed} failed`);
   parts.push(`${recap.upcoming.length} coming up`);
   if (recap.handoffs?.length) parts.push(`${recap.handoffs.length} waiting on you`);
@@ -384,6 +390,10 @@ export function renderRecapText(recap: Recap, tz?: string): string {
   const lines: string[] = [];
   const hours = Math.round(recap.windowMs / 3_600_000);
   lines.push(`myna — ${day(recap.now, tz)}`, "");
+
+  if (recap.cloudSession?.state === "expired") {
+    lines.push(`ACTION NEEDED: myna cloud sign-in${recap.cloudSession.email ? ` for ${recap.cloudSession.email}` : ""} expired. Run: myna cloud login`, "");
+  }
 
   if (!recap.sent && !recap.failed) {
     lines.push(`Nothing went out in the last ${hours} hours.`);
@@ -469,6 +479,10 @@ export function renderRecapHtml(recap: Recap, tz?: string, meta: { host?: string
   const channels = recap.channels ?? [];
   const handoffs = recap.handoffs ?? [];
   const parts: string[] = [];
+
+  if (recap.cloudSession?.state === "expired") {
+    parts.push(`<div style="margin:0 0 18px;padding:14px 16px;border:1px solid ${R.DOWN};border-radius:10px;color:${R.INK};background:#fff8f6"><strong style="color:${R.DOWN}">Action needed: myna cloud sign-in expired</strong><div style="margin-top:5px">${recap.cloudSession.email ? `${R.esc(recap.cloudSession.email)} · ` : ""}Run <code>myna cloud login</code> to reconnect. Cloud sync and newsletter unsubscribe checks need this sign-in.</div></div>`);
+  }
 
   parts.push(
     R.tiles([
@@ -756,7 +770,11 @@ export async function runRecap(
   const state = loadRecapState();
   if (!options.force && !recapDue(settings, now, state.lastSentAt)) return { idle: "not due" };
 
-  const recap = buildRecap({ now, windowMs: options.windowMs });
+  await refreshSession({ force: true }).catch(() => {
+    // A transient outage is not proof that the person's sign-in is dead.
+  });
+  const cloud = sessionHealth();
+  const recap = buildRecap({ now, windowMs: options.windowMs, ...(cloud.state === "expired" ? { cloudSession: { state: "expired" as const, ...(cloud.email ? { email: cloud.email } : {}) } } : {}) });
   const result = await sendRecap(settings, recap);
   // Stamp only on success, so a mail outage retries on the next tick rather
   // than costing the day's recap entirely.

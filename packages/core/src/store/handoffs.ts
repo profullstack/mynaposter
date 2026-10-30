@@ -16,7 +16,7 @@ import { randomBytes } from "node:crypto";
 import { readJson, writeJson } from "../util/json.ts";
 import { HANDOFFS_FILE } from "../util/paths.ts";
 import { getJson, postJson, request } from "../util/http.ts";
-import { requireSession, session, DEFAULT_SERVER } from "./cloud.ts";
+import { cloudFetch, requireSession, session, DEFAULT_SERVER } from "./cloud.ts";
 
 export interface Handoff {
   id: string;
@@ -189,7 +189,7 @@ export const cloudSignedIn = (): boolean => Boolean(session()?.token);
 
 export async function publishHandoff(card: Handoff): Promise<CloudHandoff> {
   const body = { place: card.place, title: card.title, text: card.text, openUrl: card.openUrl, steps: card.steps, account: card.account };
-  return unwrap(await postJson<Reply<{ handoff: CloudHandoff }>>(`${base()}/v1/handoff`, body, { headers: auth() }), "myna cloud refused the card.").handoff;
+  return unwrap(await postJson<Reply<{ handoff: CloudHandoff }>>(`${base()}/v1/handoff`, body, { headers: auth(), fetchImpl: cloudFetch }), "myna cloud refused the card.").handoff;
 }
 
 export async function readCloudHandoff(cloudId: string): Promise<CloudHandoff> {
@@ -201,10 +201,10 @@ export async function finishCloudHandoff(cloudId: string, done = true): Promise<
 }
 
 export async function listCloudHandoffs(options: { all?: boolean } = {}): Promise<CloudHandoff[]> {
-  return unwrap(await getJson<Reply<{ handoffs: CloudHandoff[] }>>(`${base()}/v1/handoff${options.all ? "?all=1" : ""}`, { headers: auth() }), "Could not list hand-offs.").handoffs;
+  return unwrap(await getJson<Reply<{ handoffs: CloudHandoff[] }>>(`${base()}/v1/handoff${options.all ? "?all=1" : ""}`, { headers: auth(), fetchImpl: cloudFetch }), "Could not list hand-offs.").handoffs;
 }
 
 export async function removeCloudHandoff(cloudId: string): Promise<boolean> {
-  const reply = await request(`${base()}/v1/handoff/${encodeURIComponent(cloudId)}`, { method: "DELETE", headers: auth() });
+  const reply = await request(`${base()}/v1/handoff/${encodeURIComponent(cloudId)}`, { method: "DELETE", headers: auth(), fetchImpl: cloudFetch });
   return ((await reply.json()) as { ok: boolean }).ok;
 }

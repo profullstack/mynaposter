@@ -14,7 +14,7 @@ import { hostname } from "node:os";
 import { createClient, load, save, status, syncOnce, type LoadResult, type SaveResult, type StatusResult, type SyncContext, type SyncPolicy } from "@profullstack/synconfig";
 import { configDir } from "../util/paths.ts";
 import { VERSION } from "../version.ts";
-import { requireSession, session, DEFAULT_SERVER } from "./cloud.ts";
+import { cloudFetch, requireSession, session, DEFAULT_SERVER } from "./cloud.ts";
 
 export const MYNA_SYNC_POLICY: SyncPolicy = {
   files: [
@@ -55,7 +55,7 @@ export function syncContext(): SyncContext {
   return {
     rootDir: configDir(),
     policy: MYNA_SYNC_POLICY,
-    client: createClient({ baseUrl: api, token: requireSession().token, headers: { "user-agent": `myna/${VERSION}` } }),
+    client: createClient({ baseUrl: api, token: requireSession().token, fetchImpl: cloudFetch, headers: { "user-agent": `myna/${VERSION}` } }),
     api,
     host: hostname(),
     app: `myna ${VERSION}`,

@@ -28,6 +28,7 @@ import * as service from "./service.ts";
 import { handleMcpBody } from "./mcp.ts";
 import * as cloud from "./cloud.ts";
 import { sessionRoutes, sessionCookie, tokenFrom } from "./session.ts";
+import { oauthRoutes, CLI_CLIENT_ID, ACCESS_TOKEN_SECONDS, DEVICE_POLL_SECONDS } from "./oauth.ts";
 import * as passwordReset from "./password-reset.ts";
 import * as reshare from "./reshare.ts";
 import * as atproto from "./atproto.ts";
@@ -68,7 +69,7 @@ app.use("/v1/*", async (context, next) => {
   // Porkbun cannot send the operator token (its webhook URLs refuse credentials);
   // its deliveries authenticate by HMAC in porkbun-callback.ts instead.
   if (context.req.method === "POST" && /^\/v1\/callbacks\/porkbun(\/[^/]+)?\/?$/.test(path)) return next();
-  if (path.startsWith("/v1/cloud") || path.startsWith("/v1/reshare") || path.startsWith("/v1/atproto") || path.startsWith("/v1/handoff") || path.startsWith("/v1/newsletter") || path.startsWith("/v1/mail") || path.startsWith("/v1/synconfig") || path.startsWith("/v1/syncfg") || path.startsWith("/v1/openconnection") || path.startsWith("/v1/webhooks") || path === "/v1/events") return next();
+  if (path.startsWith("/v1/cloud") || path.startsWith("/v1/oauth") || path.startsWith("/v1/reshare") || path.startsWith("/v1/atproto") || path.startsWith("/v1/handoff") || path.startsWith("/v1/newsletter") || path.startsWith("/v1/mail") || path.startsWith("/v1/synconfig") || path.startsWith("/v1/syncfg") || path.startsWith("/v1/openconnection") || path.startsWith("/v1/webhooks") || path === "/v1/events") return next();
 
   const expected = process.env.MYNA_API_TOKEN;
   const isRead = context.req.method === "GET";
@@ -177,6 +178,11 @@ app.get("/", (context) =>
       "POST /v1/cloud/login",
       "POST /v1/cloud/session {email, password}   browser sign-in, HttpOnly cookie, reads only",
       "DELETE /v1/cloud/session",
+      "GET  /v1/oauth/authorize       OAuth 2.1 authorization code + PKCE",
+      "POST /v1/oauth/token           authorization_code, refresh_token, device_code",
+      "POST /v1/oauth/revoke          revoke an OAuth token and its session",
+      "POST /v1/oauth/device_authorization   headless CLI sign-in",
+      "GET  /v1/oauth/device          approve a headless CLI sign-in",
       "POST /v1/cloud/password/forgot {email}   mail a reset link (same answer either way)",
       "POST /v1/cloud/password/reset {token, password}   set it, revoke old tokens, set the cookie",
       "GET  /v1/cloud/me",
@@ -533,7 +539,9 @@ cloudRoutes.post("/login", async (context) => {
 cloudRoutes.post("/logout", async (context) => {
   const header = context.req.header("authorization") ?? "";
   const token = header.startsWith("Bearer ") ? header.slice(7) : "";
-  return context.json({ ok: await cloud.logout(token) });
+  const input = await body(context);
+  const ok = token ? await cloud.logout(token) : input.token ? await cloud.logout(input.token) : false;
+  return context.json({ ok });
 });
 
 cloudRoutes.get("/me", async (context) => {
@@ -593,6 +601,24 @@ cloudRoutes.post("/password/reset", async (context) => {
 cloudRoutes.route("/session", sessionRoutes);
 
 app.route("/v1/cloud", cloudRoutes);
+
+app.get("/.well-known/oauth-authorization-server", (context) => context.json({
+  issuer: "https://mynaposter.com/api",
+  authorization_endpoint: "https://mynaposter.com/api/v1/oauth/authorize",
+  token_endpoint: "https://mynaposter.com/api/v1/oauth/token",
+  revocation_endpoint: "https://mynaposter.com/api/v1/oauth/revoke",
+  device_authorization_endpoint: "https://mynaposter.com/api/v1/oauth/device_authorization",
+  response_types_supported: ["code"],
+  grant_types_supported: ["authorization_code", "refresh_token", "urn:ietf:params:oauth:grant-type:device_code"],
+  code_challenge_methods_supported: ["S256"],
+  token_endpoint_auth_methods_supported: ["none"],
+  service_documentation: "https://mynaposter.com",
+  cli_client_id: CLI_CLIENT_ID,
+  access_token_lifetime: ACCESS_TOKEN_SECONDS,
+  device_poll_interval: DEVICE_POLL_SECONDS,
+}));
+
+app.route("/v1/oauth", oauthRoutes);
 
 /**
  * The reshare network. Same sign-in as cloud backup, same database, and the

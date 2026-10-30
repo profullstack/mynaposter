@@ -41,18 +41,22 @@ function firstLine(body: string): string {
 
 export const USER_AGENT = "myna/0.1.0 (+https://github.com/profullstack/myna)";
 
+export type HttpFetch = (input: string, init?: RequestInit) => Promise<Response>;
+
 export interface RequestOptions {
   method?: string;
   headers?: Record<string, string>;
   body?: string | Uint8Array | ArrayBuffer | URLSearchParams;
   timeoutMs?: number;
+  /** Optional transport override, e.g. myna cloud's refresh-aware fetch. */
+  fetchImpl?: HttpFetch;
 }
 
 export async function request(url: string, options: RequestOptions = {}): Promise<Response> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), options.timeoutMs ?? 30_000);
   try {
-    const response = await fetch(url, {
+    const response = await (options.fetchImpl ?? fetch)(url, {
       method: options.method ?? "GET",
       headers: { "user-agent": USER_AGENT, ...options.headers },
       body: options.body as never,

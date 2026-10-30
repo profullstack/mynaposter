@@ -23,6 +23,78 @@ create table if not exists api_tokens (
 
 create index if not exists api_tokens_user_idx on api_tokens(user_id);
 
+-- OAuth sessions bind short lived access tokens to a refresh-token family. A
+-- password reset or token revoke kills the family, including refresh tokens
+-- that have not yet been exchanged.
+create table if not exists oauth_sessions (
+  id           uuid primary key,
+  user_id      uuid not null references users(id) on delete cascade,
+  client_id    text not null,
+  created_at   timestamptz not null default now(),
+  expires_at   timestamptz not null,
+  revoked_at   timestamptz
+);
+
+alter table api_tokens add column if not exists expires_at timestamptz;
+alter table api_tokens add column if not exists oauth_session_id uuid references oauth_sessions(id) on delete cascade;
+create index if not exists api_tokens_oauth_expiry_idx on api_tokens(expires_at) where oauth_session_id is not null;
+
+create table if not exists oauth_refresh_tokens (
+  id           uuid primary key,
+  session_id   uuid not null references oauth_sessions(id) on delete cascade,
+  token_hash   text not null unique,
+  created_at   timestamptz not null default now(),
+  expires_at   timestamptz not null,
+  used_at      timestamptz
+);
+
+create index if not exists oauth_refresh_session_idx on oauth_refresh_tokens(session_id);
+create index if not exists oauth_refresh_expiry_idx on oauth_refresh_tokens(expires_at) where used_at is not null;
+
+create table if not exists oauth_authorization_requests (
+  id               uuid primary key,
+  csrf_hash        text not null,
+  client_id        text not null,
+  redirect_uri     text not null,
+  code_challenge   text not null,
+  state            text not null,
+  login_hint       text not null default '',
+  created_at       timestamptz not null default now(),
+  expires_at       timestamptz not null
+);
+
+create index if not exists oauth_authorization_requests_expiry_idx on oauth_authorization_requests(expires_at);
+
+create table if not exists oauth_authorization_codes (
+  id               uuid primary key,
+  code_hash        text not null unique,
+  user_id          uuid not null references users(id) on delete cascade,
+  client_id        text not null,
+  redirect_uri     text not null,
+  code_challenge   text not null,
+  expires_at       timestamptz not null,
+  used_at          timestamptz,
+  created_at       timestamptz not null default now()
+);
+
+create index if not exists oauth_authorization_codes_expiry_idx on oauth_authorization_codes(expires_at);
+
+create table if not exists oauth_device_codes (
+  id               uuid primary key,
+  device_code_hash text not null unique,
+  user_code_hash   text not null unique,
+  client_id        text not null,
+  status           text not null default 'pending',
+  user_id          uuid references users(id) on delete cascade,
+  expires_at       timestamptz not null,
+  interval_seconds integer not null default 5,
+  last_polled_at   timestamptz,
+  consumed_at      timestamptz,
+  created_at       timestamptz not null default now()
+);
+
+create index if not exists oauth_device_codes_expiry_idx on oauth_device_codes(expires_at);
+
 create table if not exists accounts (
   id           text primary key,
   user_id      uuid not null references users(id) on delete cascade,

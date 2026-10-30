@@ -24,6 +24,7 @@ import { brainDaemonTurn } from "./brain.ts";
 import { runDueNewsletters, syncAllUnsubscribes, unsubscribePullError } from "./newsletter.ts";
 import { readNewsletters } from "../store/newsletters.ts";
 import { publishDueNewsletters } from "./newsletter-publish.ts";
+import { markSessionAlerted, refreshSession, session as cloudSession, sessionHealth } from "../store/cloud.ts";
 
 export interface DaemonJob {
   id: string;
@@ -91,6 +92,35 @@ export function createVaultGate(
   };
 }
 
+/** Keep cloud sign-in fresh and make a revoked account visible to the operator. */
+async function monitorCloudSession(log: (line: string) => void): Promise<void> {
+  const before = sessionHealth();
+  if (before.state === "signed-out") return;
+  let health = before;
+  try {
+    health = await refreshSession();
+  } catch (error) {
+    // A temporary network failure is not a revoked session; jobs that need
+    // cloud data report their own failure and the next monitor turn retries.
+    log(`cloud session check failed: ${(error as Error).message}`);
+    return;
+  }
+  if (health.state !== "expired") return;
+  const current = cloudSession();
+  if (current?.sessionAlertedAt) return;
+  markSessionAlerted();
+  const message = `myna cloud sign-in${health.email ? ` for ${health.email}` : ""} expired; run myna cloud login`;
+  log(`[alert] ${message}`);
+  const alertCmd = process.env.MYNA_ALERT_CMD;
+  if (alertCmd) {
+    try {
+      spawn(alertCmd, [message], { stdio: "ignore", detached: true }).on("error", () => {}).unref();
+    } catch {
+      // The daemon log is the fallback when no alert command is configured.
+    }
+  }
+}
+
 /** The jobs myna itself runs, given the current settings. */
 export function builtinJobs(log: (line: string) => void, tickMs: number): DaemonJob[] {
   const settings = loadSettings();
@@ -112,6 +142,7 @@ export function builtinJobs(log: (line: string) => void, tickMs: number): Daemon
     // a scheduled send never reaches someone who left since.
     everyMs: 600_000,
     async run() {
+      await monitorCloudSession(log);
       if (!readNewsletters().newsletters.some((entry) => entry.scheduledFor && entry.status !== "sent")) {
         const synced = await syncAllUnsubscribes();
         if (synced.errors.length) throw unsubscribePullError(synced.errors);

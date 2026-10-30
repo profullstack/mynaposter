@@ -12,7 +12,7 @@
  */
 import { readJson, writeJson } from "../util/json.ts";
 import { getJson, postJson, request } from "../util/http.ts";
-import { requireSession, session, DEFAULT_SERVER } from "./cloud.ts";
+import { cloudFetch, requireSession, session, DEFAULT_SERVER } from "./cloud.ts";
 import type { PostedEvent } from "../plugins/types.ts";
 
 export interface WebhookEndpoint {
@@ -72,44 +72,44 @@ const url = (path = ""): string => `${base()}/v1/webhooks${path}`;
 const enc = encodeURIComponent;
 
 export async function listWebhooks(): Promise<{ endpoints: WebhookEndpoint[]; event_types: string[] }> {
-  return getJson(url(), { headers: auth() });
+  return getJson(url(), { headers: auth(), fetchImpl: cloudFetch });
 }
 
 export async function addWebhook(input: { url: string; events?: string[]; description?: string }): Promise<{ endpoint: WebhookEndpoint; secret: string }> {
-  return postJson(url(), input, { headers: auth() });
+  return postJson(url(), input, { headers: auth(), fetchImpl: cloudFetch });
 }
 
 export async function getWebhook(id: string): Promise<WebhookEndpoint> {
-  return getJson(url(`/${enc(id)}`), { headers: auth() });
+  return getJson(url(`/${enc(id)}`), { headers: auth(), fetchImpl: cloudFetch });
 }
 
 export async function updateWebhook(id: string, patch: { url?: string; events?: string[]; description?: string; enabled?: boolean }): Promise<WebhookEndpoint> {
-  return postJson(url(`/${enc(id)}`), patch, { method: "PATCH", headers: auth() });
+  return postJson(url(`/${enc(id)}`), patch, { method: "PATCH", headers: auth(), fetchImpl: cloudFetch });
 }
 
 export async function removeWebhook(id: string): Promise<{ deleted: true }> {
-  return (await request(url(`/${enc(id)}`), { method: "DELETE", headers: auth() })).json() as Promise<{ deleted: true }>;
+  return (await request(url(`/${enc(id)}`), { method: "DELETE", headers: auth(), fetchImpl: cloudFetch })).json() as Promise<{ deleted: true }>;
 }
 
 export async function webhookSecret(id: string): Promise<{ secret: string }> {
-  return getJson(url(`/${enc(id)}/secret`), { headers: auth() });
+  return getJson(url(`/${enc(id)}/secret`), { headers: auth(), fetchImpl: cloudFetch });
 }
 
 export async function rotateWebhook(id: string): Promise<{ secret: string }> {
-  return postJson(url(`/${enc(id)}/rotate`), {}, { headers: auth() });
+  return postJson(url(`/${enc(id)}/rotate`), {}, { headers: auth(), fetchImpl: cloudFetch });
 }
 
 export async function testWebhook(id: string): Promise<{ ok: boolean; status: number | null; error: string | null; delivery_id: string }> {
-  return postJson(url(`/${enc(id)}/test`), {}, { headers: auth() });
+  return postJson(url(`/${enc(id)}/test`), {}, { headers: auth(), fetchImpl: cloudFetch });
 }
 
 export async function webhookDeliveries(id?: string, limit = 20): Promise<WebhookDelivery[]> {
   const path = id ? `/${enc(id)}/deliveries` : "/deliveries";
-  return (await getJson<{ deliveries: WebhookDelivery[] }>(`${url(path)}?limit=${limit}`, { headers: auth() })).deliveries;
+  return (await getJson<{ deliveries: WebhookDelivery[] }>(`${url(path)}?limit=${limit}`, { headers: auth(), fetchImpl: cloudFetch })).deliveries;
 }
 
 export async function retryDelivery(deliveryId: string): Promise<WebhookDelivery> {
-  return postJson(url(`/deliveries/${enc(deliveryId)}/retry`), {}, { headers: auth() });
+  return postJson(url(`/deliveries/${enc(deliveryId)}/retry`), {}, { headers: auth(), fetchImpl: cloudFetch });
 }
 
 // ---------------------------------------------------------------- the relay
@@ -153,7 +153,7 @@ export async function relayEvents(events: RelayEvent[], options: { timeoutMs?: n
     // The server takes 50 at a time.
     for (let at = 0; at < events.length; at += 50) {
       const batch = events.slice(at, at + 50);
-      const reply = await postJson<{ ok: boolean; queued?: number }>(`${base()}/v1/events`, { events: batch }, { headers: auth(), timeoutMs: options.timeoutMs ?? 5_000 });
+      const reply = await postJson<{ ok: boolean; queued?: number }>(`${base()}/v1/events`, { events: batch }, { headers: auth(), timeoutMs: options.timeoutMs ?? 5_000, fetchImpl: cloudFetch });
       if (!reply.ok) return null;
       queued += reply.queued ?? 0;
     }

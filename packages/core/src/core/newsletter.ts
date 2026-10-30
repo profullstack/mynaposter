@@ -47,7 +47,7 @@ import { loadSettings, saveSettings, type NewsletterCta } from "../store/setting
 import { addToList, optIn, optOut, readContacts, recipients, upsertContact, removeFromList, contactId, type Contact } from "../store/contacts.ts";
 import { outreachSentToday, recordSent } from "../store/outreach.ts";
 import { getPluginSecrets, setPluginSecrets } from "../store/accounts.ts";
-import { session, DEFAULT_SERVER } from "../store/cloud.ts";
+import { cloudFetch, requireSession, session, DEFAULT_SERVER } from "../store/cloud.ts";
 import {
   claimOptChange,
   contactForToken,
@@ -431,9 +431,12 @@ type Reply<T> = ({ ok: true } & T) | { ok: false; error?: string };
 
 const cloudBase = (): string => (session()?.server ?? process.env.MYNA_SERVER ?? DEFAULT_SERVER).replace(/\/+$/, "");
 const cloudAuth = (): Record<string, string> => {
-  const token = session()?.token;
-  if (!token) throw new Error("No unsubscribe link: sign in with `myna cloud login` so mynaposter.com hosts it, or set your own with `myna config newsletter.unsubscribeUrl https://…/{token}`.");
-  return { authorization: `Bearer ${token}` };
+  try {
+    return { authorization: `Bearer ${requireSession().token}` };
+  } catch (error) {
+    if ((error as Error).message.includes("session has expired")) throw error;
+    throw new Error("No unsubscribe link: sign in with `myna cloud login` so mynaposter.com hosts it, or set your own with `myna config newsletter.unsubscribeUrl https://…/{token}`.");
+  }
 };
 
 /** The myna cloud inbox the links point at, made once and kept. */
@@ -441,7 +444,7 @@ export async function ensureInbox(): Promise<string> {
   const file = readNewsletters();
   const server = cloudBase();
   if (file.inbox && file.inbox.server === server) return file.inbox.id;
-  const reply = await postJson<Reply<{ inbox: string }>>(`${server}/v1/newsletter/inbox`, {}, { headers: cloudAuth() });
+  const reply = await postJson<Reply<{ inbox: string }>>(`${server}/v1/newsletter/inbox`, {}, { headers: cloudAuth(), fetchImpl: cloudFetch });
   if (!reply.ok) throw new Error(reply.error ?? "myna cloud would not open an unsubscribe inbox.");
   const fresh = readNewsletters();
   fresh.inbox = { id: reply.inbox, server };
@@ -478,9 +481,13 @@ export interface SyncResult {
 export async function syncUnsubscribes(): Promise<SyncResult> {
   const file = readNewsletters();
   const result: SyncResult = { pulled: 0, optedOut: [], resubscribed: [], unknown: 0 };
-  if (!file.inbox || !session()?.token) return result;
+  if (!file.inbox) return result;
+  if (!session()?.token) {
+    if (session()?.status === "expired") requireSession();
+    return result;
+  }
   const since = file.unsubscribesSince ? `?since=${encodeURIComponent(file.unsubscribesSince)}` : "";
-  const reply = await getJson<Reply<{ unsubscribes: { token: string; at: string; state?: "unsubscribed" | "resubscribed" }[] }>>(`${file.inbox.server}/v1/newsletter/unsubscribes${since}`, { headers: cloudAuth() });
+  const reply = await getJson<Reply<{ unsubscribes: { token: string; at: string; state?: "unsubscribed" | "resubscribed" }[] }>>(`${file.inbox.server}/v1/newsletter/unsubscribes${since}`, { headers: cloudAuth(), fetchImpl: cloudFetch });
   if (!reply.ok) throw new Error(reply.error ?? "Could not read unsubscribes from myna cloud.");
   const contacts = readContacts();
   let newest = file.unsubscribesSince;
