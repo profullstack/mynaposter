@@ -3,6 +3,13 @@ name: Publish email queue to npm
 on:
   push:
     tags: ["email-queue-v*"]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: Git ref whose package version should be published
+        required: true
+        default: main
+        type: string
 
 permissions:
   contents: read
@@ -26,24 +33,26 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.ref }}
+          ref: ${{ inputs.ref || github.ref }}
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version-file: package.json
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 24
           registry-url: https://registry.npmjs.org
+      - run: npm install --global npm@11.5.1
       - run: bun install --frozen-lockfile
       - run: bun x tsc --noEmit -p tsconfig.json
       - run: bun test packages/email-queue/test
-      - name: Build and check tag version
+      - name: Check tag version
+        if: github.event_name == 'push'
         working-directory: packages/email-queue
         run: |
           test "${GITHUB_REF_NAME#email-queue-v}" = "$(node -p 'require("./package.json").version')"
-          bun run build
+      - name: Build
+        working-directory: packages/email-queue
+        run: bun run build
       - name: Publish
         working-directory: packages/email-queue
-        run: npm publish --access public --provenance
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: npm publish --access public
