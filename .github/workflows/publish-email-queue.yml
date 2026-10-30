@@ -56,3 +56,5 @@ jobs:
       - name: Publish
         working-directory: packages/email-queue
         run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
