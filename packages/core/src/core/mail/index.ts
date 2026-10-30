@@ -11,6 +11,7 @@
  * always did), then the first mail provider.
  */
 import { loadSettings } from "../../store/settings.ts";
+import { queuedDelivery, isGoogleSender } from "@profullstack/email-queue";
 import { mailProviderSecret, readOutreach, smtpServer } from "../../store/outreach.ts";
 import { cloudFetch, DEFAULT_SERVER, session } from "../../store/cloud.ts";
 import type { SmtpOptions } from "../smtp.ts";
@@ -95,18 +96,39 @@ export interface ResolveOptions extends ProviderDeps {
 }
 
 /** The sender for an id (or the default). Throws with the command that fixes it. */
+/**
+ * A single account-scoped BullMQ path for real Gmail/Resend calls, including
+ * newsletters, one-off CLI sends and other callers of resolveSender.
+ * Missing Redis fails closed; never silently fall back to direct delivery.
+ */
+function queueGuard(sender: MailSender, smtpHost = ""): MailSender {
+  if (sender.type !== "resend" && !isGoogleSender(sender, smtpHost)) return sender;
+  return {
+    id: sender.id, type: sender.type, from: sender.from,
+    batchSize: 1,
+    send: async (message, context) => {
+      const url = process.env.EMAIL_QUEUE_REDIS_URL ?? process.env.REDIS_URL ?? "";
+      if (!url) return { ok: false, retryable: true, status: 429, error: "Email queue requires EMAIL_QUEUE_REDIS_URL (Redis); Gmail/Resend direct sending is disabled." };
+      try {
+        return await queuedDelivery(sender, message, context?.kind ?? "transactional", { redisUrl: url, smtpHost });
+      } catch (error) {
+        return { ok: false, retryable: true, status: 0, error: "Email queue unavailable; no direct send attempted: " + String(error) };
+      }
+    },
+  };
+}
 export function resolveSender(via?: string | null, options: ResolveOptions = {}): MailSender {
   const file = readOutreach();
   const id = via?.trim() || defaultProviderId();
   if (id) {
     const provider = file.mail.find((entry) => entry.id === id);
-    if (provider) return providerSender(provider, mailProviderSecret(provider.id), options);
-    if (file.smtp.some((server) => server.id === id)) return smtpProvider(smtpServer(id), options.smtp);
+    if (provider) return queueGuard(providerSender(provider, mailProviderSecret(provider.id), options));
+    if (file.smtp.some((server) => server.id === id)) { const conf = smtpServer(id); return queueGuard(smtpProvider(conf, options.smtp), conf.host); }
     throw new Error(`No mail provider "${id}". myna mail provider list shows them.`);
   }
-  if (file.smtp.length) return smtpProvider(smtpServer(), options.smtp);
+  if (file.smtp.length) { const conf = smtpServer(); return queueGuard(smtpProvider(conf, options.smtp), conf.host); }
   const first = file.mail[0];
-  if (first) return providerSender(first, mailProviderSecret(first.id), options);
+  if (first) return queueGuard(providerSender(first, mailProviderSecret(first.id), options));
   throw new Error("No way to send mail yet. Add one: myna mail provider add <id> --type resend|mailgun|postmark|... or myna smtp add <id> --host ...");
 }
 
