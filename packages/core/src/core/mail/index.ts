@@ -110,7 +110,14 @@ function queueGuard(sender: MailSender, smtpHost = ""): MailSender {
       const url = process.env.EMAIL_QUEUE_REDIS_URL ?? process.env.REDIS_URL ?? "";
       if (!url) return { ok: false, retryable: true, status: 429, error: "Email queue requires EMAIL_QUEUE_REDIS_URL (Redis); Gmail/Resend direct sending is disabled." };
       try {
-        return await queuedDelivery(sender, message, context?.kind ?? "transactional", { redisUrl: url, smtpHost });
+        return await queuedDelivery(sender, message, context?.kind ?? "transactional", {
+          redisUrl: url,
+          smtpHost,
+          applicationId: "mynaposter",
+          providerId: process.env.EMAIL_QUEUE_PROVIDER_ID || sender.id,
+          encryptionKey: process.env.EMAIL_QUEUE_ENCRYPTION_KEY,
+          requireEncryption: true,
+        });
       } catch (error) {
         return { ok: false, retryable: true, status: 0, error: "Email queue unavailable; no direct send attempted: " + String(error) };
       }
