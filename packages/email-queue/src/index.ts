@@ -86,7 +86,7 @@ export function mailJobId(identity: string, message: QueuedMessage, kind: EmailK
       : "new|" + randomUUID();
   return hash(identity + "|" + to[0].trim().toLowerCase() + "|" + key);
 }
-const quotaScript = String.raw
+const quotaScript =
   "local n = redis.call('INCR', KEYS[1]); if n == 1 then redis.call('PEXPIRE', KEYS[1], ARGV[2]) end; if n > tonumber(ARGV[1]) then redis.call('DECR', KEYS[1]); return 0 end; return 1";
 
 /** Adds ONE job and waits for its durable result, without retrying uncertain sends.
