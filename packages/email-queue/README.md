@@ -18,7 +18,7 @@ per-sender queue and rate limiter. Install Redis before resuming a newsletter bl
 Existing Gmail restrictions must clear at Google's discretion.
 
 Run \`bun install\` to resolve the new workspace dependencies and refresh \`bun.lock\` before merging.
-Run \`bun run typecheck\` and \`bun test packages/core/test\` against Redis in CI.
+Run \`bun run typecheck\` and \`bun test packages/email-queue/test\` against Redis in CI.
 
 **Publish:** \`cd packages/email-queue && bun run build && npm publish --access public\`
 before using this package outside the MyNaPoster workspace.

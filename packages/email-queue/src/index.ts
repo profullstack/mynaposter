@@ -10,7 +10,7 @@
  */
 import { createHash, randomUUID } from "node:crypto";
 import { Queue, QueueEvents, Worker } from "bullmq";
-import Redis from "ioredis";
+import { Redis } from "ioredis";
 
 export type EmailKind = "transactional" | "bulk";
 export interface QueuedMessage {
@@ -105,7 +105,7 @@ export async function queuedDelivery(
   const name = "profullstack-email-" + hash(identity).slice(0, 32);
   const jobId = mailJobId(identity, message, kind);
   const connect = () => new Redis(options.redisUrl, {
-    maxRetriesPerRequest: null, connectTimeout: 5000, retryStrategy: (attempt) => attempt <= 3 ? Math.min(attempt * 200, 1000) : null,
+    maxRetriesPerRequest: null, connectTimeout: 5000, retryStrategy: (attempt: number) => attempt <= 3 ? Math.min(attempt * 200, 1000) : null,
   });
   const producerRedis = connect();
   const workerRedis = connect();
