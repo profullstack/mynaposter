@@ -38,6 +38,8 @@ export interface MailMessage {
   replyTo?: string;
   /** Extra headers: List-Unsubscribe, List-Unsubscribe-Post, List-Id, Precedence. */
   headers?: Record<string, string>;
+  /** Durable per-recipient delivery idempotency key for queued providers. */
+  dedupeKey?: string;
 }
 
 export interface MailResult {

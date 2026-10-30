@@ -903,7 +903,7 @@ async function sendNewsletterUnlocked(id: string, options: SendNewsletterOptions
       const variant = variantOf(contact);
       const { message, msgId } = messageFor(to, variant, tokenFor(contact.id), link, from, "", productOf(contact));
       const tag: Prepared["tag"] = { msgId, variant: variant.key, subjectKey: variant.subjectKey, ...(variant.cta ? { cta: variant.cta.label } : {}) };
-      return { contact, to, variant, msgId, message: { ...message, to: [to] }, tag };
+      return { contact, to, variant, msgId, message: { ...message, to: [to], dedupeKey: `newsletter:${newsletter.id}:${contact.id}` }, tag };
     });
     let stopped = false;
     let reached = 0;
