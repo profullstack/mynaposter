@@ -88,6 +88,8 @@ export interface MailSender {
   type: MailProviderType;
   /** The sender used when a message names none. */
   from?: string;
+  /** True when the transport routes through a Google mailbox. */
+  google?: boolean;
   /** How many messages one API call may carry. 1 means no batch endpoint is used. */
   batchSize: number;
   send(message: MailMessage, options?: MailSendOptions): Promise<MailResult>;

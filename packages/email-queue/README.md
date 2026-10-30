@@ -1,9 +1,9 @@
 # @profullstack/email-queue
 
-BullMQ + Redis rate-limited delivery of Gmail SMTP and Resend. Used by MyNaPoster.
+BullMQ + Redis rate-limited delivery for MyNaPoster. Gmail is reserved for one-off correspondence; newsletters and other bulk mail must use Resend or another bulk provider.
 
 ## Safety defaults
-- Gmail SMTP (including custom-domain mail through smtp.gmail.com): **100 emails per mailbox per 24 hours, one every 10 minutes**.
+- Gmail SMTP (including custom-domain mail through smtp.gmail.com): **100 one-off emails per mailbox per 24 hours, one every 10 minutes**. Bulk sends are refused.
 - Resend: **1,000 per From address per 24 hours, one per second** (lower according to your actual plan).
 - Limits share Redis keys across processes. No provider credentials in jobs.
 - Idempotent newsletter delivery keyed by issue + contact, with a retained receipt.
@@ -18,7 +18,7 @@ per-sender queue and rate limiter. Install Redis before resuming a newsletter bl
 Existing Gmail restrictions must clear at Google's discretion.
 
 Run \`bun install\` to resolve the new workspace dependencies and refresh \`bun.lock\` before merging.
-Run \`bun run typecheck\` and \`bun test packages/core/test\` against Redis in CI.
+Run \`bun run typecheck\` and \`bun test packages/email-queue/test\` against Redis in CI.
 
 **Publish:** \`cd packages/email-queue && bun run build && npm publish --access public\`
 before using this package outside the MyNaPoster workspace.

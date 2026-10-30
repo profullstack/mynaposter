@@ -17,7 +17,8 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.build.json"
+    "build": "tsc -p tsconfig.build.json",
+    "test": "bun test test"
   },
   "dependencies": {
     "bullmq": "^5.58.0",

@@ -594,3 +594,25 @@ test("sendEach batches where it can, calls before/after in order, pauses between
   const stopped = await sendEach(batchy, [message(), message(), message()], { after: () => void (stop = true), stop: () => stop });
   expect(stopped).toHaveLength(2);
 });
+
+test("sendEach refuses Gmail bulk mail before marking recipients pending", async () => {
+  let markedPending = false;
+  let delivered = false;
+  const gmail: MailSender = {
+    id: "gmail",
+    type: "smtp",
+    from: "owner@example.com",
+    google: true,
+    batchSize: 1,
+    send: async () => {
+      delivered = true;
+      return { ok: true };
+    },
+  };
+  await expect(sendEach(gmail, [message()], {
+    kind: "bulk",
+    before: () => void (markedPending = true),
+  })).rejects.toThrow("Gmail is reserved for one-off correspondence");
+  expect(markedPending).toBe(false);
+  expect(delivered).toBe(false);
+});

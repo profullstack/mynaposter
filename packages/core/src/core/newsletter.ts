@@ -831,7 +831,7 @@ async function sendNewsletterUnlocked(id: string, options: SendNewsletterOptions
       report.wouldSend.push(options.test);
       return report;
     }
-    const result = await sender.send({ ...message, to: [options.test] }, { kind: "bulk" });
+    const result = await sender.send({ ...message, to: [options.test] }, { kind: "transactional" });
     if (result.ok) {
       recordSent([{ at: now.toISOString(), kind: "email", to: options.test, via: sender.id, subject: message.subject, ok: true, id: result.id ?? msgId }]);
       report.sent.push(options.test);

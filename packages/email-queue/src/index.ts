@@ -10,7 +10,7 @@
  */
 import { createHash, randomUUID } from "node:crypto";
 import { Queue, QueueEvents, Worker } from "bullmq";
-import Redis from "ioredis";
+import { Redis } from "ioredis";
 
 export type EmailKind = "transactional" | "bulk";
 export interface QueuedMessage {
@@ -100,12 +100,15 @@ export async function queuedDelivery(
   options: EmailQueueOptions,
 ): Promise<DeliveryResult> {
   if (!options.redisUrl) throw new Error("EMAIL_QUEUE_REDIS_URL is required; refusing direct Gmail/Resend bulk sending.");
+  if (kind === "bulk" && isGoogleSender(sender, options.smtpHost)) {
+    return { ok: false, retryable: false, status: 403, error: "Bulk email must use Resend or another bulk provider; Gmail is reserved for one-off correspondence." };
+  }
   const identity = queueIdentity(sender, options.smtpHost);
   const limits = senderLimits(sender, options.smtpHost, options);
   const name = "profullstack-email-" + hash(identity).slice(0, 32);
   const jobId = mailJobId(identity, message, kind);
   const connect = () => new Redis(options.redisUrl, {
-    maxRetriesPerRequest: null, connectTimeout: 5000, retryStrategy: (attempt) => attempt <= 3 ? Math.min(attempt * 200, 1000) : null,
+    maxRetriesPerRequest: null, connectTimeout: 5000, retryStrategy: (attempt: number) => attempt <= 3 ? Math.min(attempt * 200, 1000) : null,
   });
   const producerRedis = connect();
   const workerRedis = connect();
