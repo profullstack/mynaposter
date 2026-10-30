@@ -388,8 +388,12 @@ export async function cloudFetch(input: string, init: RequestInit = {}): Promise
     active = requireSession();
   }
   const send = (token: string) => {
-    const headers = new Headers(init.headers);
-    headers.set("authorization", `Bearer ${token}`);
+    if (init.headers instanceof Headers || Array.isArray(init.headers)) {
+      const headers = new Headers(init.headers);
+      headers.set("authorization", `Bearer ${token}`);
+      return fetch(input, { ...init, headers });
+    }
+    const headers = { ...(init.headers as Record<string, string> | undefined), authorization: `Bearer ${token}` };
     return fetch(input, { ...init, headers });
   };
   let response = await send(active.token);
