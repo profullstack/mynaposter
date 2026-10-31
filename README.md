@@ -1244,10 +1244,15 @@ myna newsletter send weekly-1 --yes --via rs
 
 Every provider passes the message's own headers through, so a newsletter's
 `List-Unsubscribe` and `List-Unsubscribe-Post` reach the inbox whichever door
-it used. A 429 or a 5xx from any of them is a retryable failure; a refusal is
-final. Every SMTP server is a provider already, under its own id, and `--smtp`
-still works where `--via` does. With no `--via` and no default set, mail goes
-through the first SMTP server, then the first mail provider.
+it used. A 429 throttle or explicit SMTP rate-limit refusal is retried up to
+three total attempts with Fibonacci delays of one and two seconds, honoring a
+provider's `Retry-After` when present. After three throttle refusals the
+result is no longer marked for automatic retry; other retryable provider
+errors remain available to their caller. Every SMTP server is a provider
+already, under its own id, and `--smtp` still works where `--via` does. With
+no `--via` and no usable default, mail goes through the first API provider,
+then the first non-Google SMTP server. Google SMTP is only used when an
+explicit per-send `--via` names it. Uncertain SMTP sends are never retried.
 
 **Sending through myna cloud.** `myna-cloud` needs no key of your own:
 mynaposter.com sends through Profullstack's Resend account for the signed-in

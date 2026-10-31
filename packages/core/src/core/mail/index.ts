@@ -6,9 +6,9 @@
  *
  * A provider id names either a `myna mail provider` (an HTTP API, or
  * myna cloud) or an SMTP server from `myna smtp add`; both live in
- * outreach.json with their secrets in the vault. With no id, the default
- * is settings.outreach.mailProvider, then the first SMTP server (what myna
- * always did), then the first mail provider.
+ * outreach.json with their secrets in the vault. With no id, the default is
+ * settings.outreach.mailProvider, then the first API provider, then the first
+ * non-Google SMTP server. Google SMTP requires an explicit `--via` selection.
  */
 import { loadSettings } from "../../store/settings.ts";
 import { queuedDelivery, isGoogleSender } from "@profullstack/email-queue";
@@ -75,6 +75,23 @@ export function defaultProviderId(): string | undefined {
   return loadSettings().outreach.mailProvider?.trim() || undefined;
 }
 
+/** The provider resolveSender() chooses when no usable default is configured. */
+export function implicitDefaultProviderId(file = readOutreach()): string | undefined {
+  const api = file.mail[0];
+  if (api) return api.id;
+  return file.smtp.find((server) => !isGoogleSender({ type: "smtp", from: server.from }, server.host))?.id;
+}
+
+/** The sender list should show the same effective choice as resolveSender(). */
+export function selectedDefaultProviderId(file = readOutreach()): string | undefined {
+  const configured = defaultProviderId();
+  if (!configured) return implicitDefaultProviderId(file);
+  if (file.mail.some((provider) => provider.id === configured)) return configured;
+  const smtp = file.smtp.find((server) => server.id === configured);
+  if (smtp && isGoogleSender({ type: "smtp", from: smtp.from }, smtp.host)) return implicitDefaultProviderId(file);
+  return configured;
+}
+
 /** Every provider there is: the HTTP ones and the SMTP servers, as {id, type, from}. */
 export function listMailProviders(): { id: string; type: string; from?: string; detail: string }[] {
   const file = readOutreach();
@@ -126,16 +143,29 @@ function queueGuard(sender: MailSender, smtpHost = ""): MailSender {
 }
 export function resolveSender(via?: string | null, options: ResolveOptions = {}): MailSender {
   const file = readOutreach();
-  const id = via?.trim() || defaultProviderId();
+  const explicitId = via?.trim();
+  const id = explicitId || selectedDefaultProviderId(file);
   if (id) {
     const provider = file.mail.find((entry) => entry.id === id);
     if (provider) return queueGuard(providerSender(provider, mailProviderSecret(provider.id), options));
-    if (file.smtp.some((server) => server.id === id)) { const conf = smtpServer(id); return queueGuard(smtpProvider(conf, options.smtp), conf.host); }
-    throw new Error(`No mail provider "${id}". myna mail provider list shows them.`);
+    if (file.smtp.some((server) => server.id === id)) {
+      const conf = smtpServer(id);
+      if (explicitId || !isGoogleSender({ type: "smtp", from: conf.from }, conf.host)) {
+        return queueGuard(smtpProvider(conf, options.smtp), conf.host);
+      }
+      // Treat a saved Google SMTP default as stale unless this send opts in
+      // with --via. Continue through safer configured fallbacks.
+    } else {
+      throw new Error(`No mail provider "${id}". myna mail provider list shows them.`);
+    }
   }
-  if (file.smtp.length) { const conf = smtpServer(); return queueGuard(smtpProvider(conf, options.smtp), conf.host); }
   const first = file.mail[0];
   if (first) return queueGuard(providerSender(first, mailProviderSecret(first.id), options));
+  const smtp = file.smtp.find((server) => !isGoogleSender({ type: "smtp", from: server.from }, server.host));
+  if (smtp) return queueGuard(smtpProvider(smtpServer(smtp.id), options.smtp), smtp.host);
+  if (file.smtp.length) {
+    throw new Error("Google SMTP is not selected automatically. Set an API provider with `myna mail provider default <id>`, or opt in per send with `--via <smtp-id>`.");
+  }
   throw new Error("No way to send mail yet. Add one: myna mail provider add <id> --type resend|mailgun|postmark|... or myna smtp add <id> --host ...");
 }
 

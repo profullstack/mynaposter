@@ -6,7 +6,7 @@ BullMQ + Redis delivery scheduling with PostgreSQL audit storage, sender authori
 
 - New `queueEmail()` jobs require an idempotency key, a PostgreSQL audit store, and a 32-byte message encryption key. Email bodies are AES-256-GCM encrypted before they enter Redis. Provider credentials stay in the worker process.
 - A message `From` must match the transport's configured sender or an explicit `authorizedSenders` list. `EMAIL_QUEUE_BLOCKED_SENDERS` adds a comma-separated sender denylist.
-- Gmail bulk mail is refused. A Google sending restriction or provider `429` pauses that sender's shared BullMQ queue and blocks new submissions. Waiting jobs remain in Redis for administrator review.
+- Gmail bulk mail is refused. Definite throttles are retried up to three total attempts using Fibonacci delays from the sender's minimum gap, honoring `Retry-After` when supplied. After three throttling responses, that sender's shared BullMQ queue pauses and blocks new submissions. Waiting jobs remain in Redis for administrator review.
 - `resumeEmailQueue()` is an administrative operation. Verify provider health and record the action in the calling admin service before resuming.
 - Provider API acceptance is reported as `PROVIDER_ACCEPTED`; only a verified provider webhook can move a record to `DELIVERED`. A connection loss after submission is `UNKNOWN` and is never automatically resent.
 - Default budgets are conservative local safeguards, not provider guarantees. Configure provider, application, tenant, and mailbox budgets from the actual provider account and service policy.
@@ -87,7 +87,7 @@ Use the route's authentication and request-size controls as well. Do not parse a
 
 ## MyNaPoster
 
-The existing `queuedDelivery()` API remains available for compatibility. It refuses direct delivery when Redis is unavailable and never retries uncertain sends. The MyNaPoster queue path now requires `EMAIL_QUEUE_ENCRYPTION_KEY` as a service secret for its Resend/Gmail sends. The key must be 32 random bytes encoded as base64 or 64 hexadecimal characters. Configure it in the approved secret manager before enabling queued sends; do not commit it or put it in a job payload.
+The existing `queuedDelivery()` API remains available for compatibility. It refuses direct delivery when Redis is unavailable, retries definite throttles up to three attempts, and never retries uncertain sends. The MyNaPoster queue path now requires `EMAIL_QUEUE_ENCRYPTION_KEY` as a service secret for its Resend/Gmail sends. The key must be 32 random bytes encoded as base64 or 64 hexadecimal characters. Configure it in the approved secret manager before enabling queued sends; do not commit it or put it in a job payload.
 
 Set `EMAIL_QUEUE_BLOCKED_SENDERS=ettinger@gmail.com` on any confirmed MyNaPoster sender worker to prevent that restricted mailbox from being scheduled. The global blocklist must also be configured in each independent sender application; package code cannot change already deployed services.
 

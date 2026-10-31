@@ -54,6 +54,7 @@ const UNSUB = {
   "List-Unsubscribe": "<https://example.com/u/tok>, <mailto:news@example.com?subject=unsubscribe>",
   "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
 };
+const noWait = async (): Promise<void> => undefined;
 
 const message = (overrides: Partial<MailMessage> = {}): MailMessage => ({
   to: ["ada@example.com"],
@@ -70,7 +71,7 @@ const config = (type: MailProviderConfig["type"], extra: Partial<MailProviderCon
 /** The shared failure mapping every HTTP provider must follow. */
 async function expectErrorMapping(make: (fetcher: Fetch) => MailSender) {
   for (const [status, retryable] of [
-    [429, true],
+    [429, false],
     [500, true],
     [503, true],
     [400, false],
@@ -82,6 +83,7 @@ async function expectErrorMapping(make: (fetcher: Fetch) => MailSender) {
     expect(result.ok).toBe(false);
     expect(result.retryable).toBe(retryable);
     expect(result.error).toBeTruthy();
+    if (status === 429) expect(result.attempts).toBe(3);
   }
   const down = stub(new Error("ECONNRESET"));
   const result = await make(down.fetch).send(message());
@@ -130,11 +132,57 @@ describe("Resend", () => {
     expect(body[1]?.headers["List-Unsubscribe-Post"]).toBe("List-Unsubscribe=One-Click");
     const tooMany = await sender.sendBatch!(Array.from({ length: 101 }, () => message()));
     expect(tooMany.every((r) => !r.ok && /at most 100/.test(r.error ?? ""))).toBe(true);
-    const limited = await resendProvider(config("resend"), "k", { fetch: stub({ status: 429, body: { message: "slow down" } }).fetch }).sendBatch!([message(), message()]);
-    expect(limited.every((r) => !r.ok && r.retryable)).toBe(true);
+    const limited = await resendProvider(config("resend"), "k", { fetch: stub({ status: 429, body: { message: "slow down" } }).fetch, sleep: noWait }).sendBatch!([message(), message()]);
+    expect(limited.every((r) => !r.ok && !r.retryable && r.attempts === 3)).toBe(true);
   });
 
-  test("errors map", () => expectErrorMapping((f) => resendProvider(config("resend"), "k", { fetch: f })));
+  test("a provider 429 recovers on the third attempt using Fibonacci delays", async () => {
+    const s = stub(
+      { status: 429, body: { message: "rate limit" } },
+      { status: 429, body: { message: "rate limit" } },
+      { status: 200, body: { id: "recovered" } },
+    );
+    const waits: number[] = [];
+    const sender = resendProvider(config("resend"), "k", { fetch: s.fetch, sleep: async (milliseconds) => void waits.push(milliseconds) });
+    expect(await sender.send(message())).toMatchObject({ ok: true, id: "recovered" });
+    expect(s.calls).toHaveLength(3);
+    expect(waits).toEqual([1_000, 2_000]);
+  });
+
+  test("a fully throttled batch retries, but a mixed batch does not risk duplicating accepted mail", async () => {
+    const s = stub(
+      { status: 429, body: { message: "rate limit" } },
+      { status: 200, body: { data: [{ id: "a" }, { id: "b" }] } },
+    );
+    const waits: number[] = [];
+    const sender = resendProvider(config("resend"), "k", { fetch: s.fetch, sleep: async (milliseconds) => void waits.push(milliseconds) });
+    const results = await sender.sendBatch!([message(), message({ to: "b@example.com" })]);
+    expect(results.map((result) => result.id)).toEqual(["a", "b"]);
+    expect(s.calls).toHaveLength(2);
+    expect(waits).toEqual([1_000]);
+
+    const partial = stub({ status: 200, body: { data: [{ id: "a" }] } });
+    const partialSender = resendProvider(config("resend"), "k", { fetch: partial.fetch, sleep: noWait });
+    const partialResult = await partialSender.sendBatch!([message(), message({ to: "b@example.com" })]);
+    expect(partialResult[0]).toMatchObject({ ok: true, id: "a" });
+    expect(partial.calls).toHaveLength(1);
+  });
+
+  test("errors map", () => expectErrorMapping((f) => resendProvider(config("resend"), "k", { fetch: f, sleep: noWait })));
+
+  test("carries Retry-After through a rate-limit response", async () => {
+    const s = stub(
+      { status: 429, body: { message: "slow down" }, headers: { "retry-after": "7" } },
+      { status: 200, body: { id: "recovered" } },
+    );
+    const waits: number[] = [];
+    const result = await resendProvider(config("resend"), "k", {
+      fetch: s.fetch,
+      sleep: async (milliseconds) => void waits.push(milliseconds),
+    }).send(message());
+    expect(result).toMatchObject({ ok: true, id: "recovered", attempts: 2 });
+    expect(waits).toEqual([7000]);
+  });
 
   test("no sender and no key are failures, not throws", async () => {
     const s = stub({ body: { id: "x" } });
@@ -169,7 +217,7 @@ describe("Mailgun", () => {
     expect(eu.calls[0]?.url).toBe("https://api.eu.mailgun.net/v3/example.com/messages");
   });
 
-  test("errors map", () => expectErrorMapping((f) => mailgunProvider(config("mailgun"), "k", { fetch: f })));
+  test("errors map", () => expectErrorMapping((f) => mailgunProvider(config("mailgun"), "k", { fetch: f, sleep: noWait })));
 });
 
 describe("Mailchimp Transactional (Mandrill)", () => {
@@ -206,7 +254,7 @@ describe("Mailchimp Transactional (Mandrill)", () => {
     expect(queued).toMatchObject({ ok: true, id: "q" });
   });
 
-  test("errors map", () => expectErrorMapping((f) => mandrillProvider(config("mandrill"), "k", { fetch: f })));
+  test("errors map", () => expectErrorMapping((f) => mandrillProvider(config("mandrill"), "k", { fetch: f, sleep: noWait })));
 });
 
 describe("SendGrid", () => {
@@ -233,7 +281,7 @@ describe("SendGrid", () => {
   });
 
   test("errors map, in SendGrid's errors[] shape too", async () => {
-    await expectErrorMapping((f) => sendgridProvider(config("sendgrid"), "k", { fetch: f }));
+    await expectErrorMapping((f) => sendgridProvider(config("sendgrid"), "k", { fetch: f, sleep: noWait }));
     const result = await sendgridProvider(config("sendgrid"), "k", { fetch: stub({ status: 400, body: { errors: [{ message: "The from address does not match a verified Sender Identity." }] } }).fetch }).send(message());
     expect(result.error).toContain("verified Sender Identity");
   });
@@ -266,7 +314,7 @@ describe("Postmark", () => {
     expect((custom.json() as { MessageStream: string }).MessageStream).toBe("news");
   });
 
-  test("the batch endpoint answers per message; an inactive recipient (406) is final, a 429 retryable", async () => {
+  test("the batch endpoint answers per message; inactive recipients are final and throttles stop after three tries", async () => {
     const s = stub({
       body: [
         { ErrorCode: 0, MessageID: "one" },
@@ -280,14 +328,14 @@ describe("Postmark", () => {
     expect(results[0]).toMatchObject({ ok: true, id: "one" });
     expect(results[1]).toMatchObject({ ok: false, retryable: false });
     expect(results[1]?.error).toContain("406");
-    const limited = await postmarkProvider(config("postmark"), "t", { fetch: stub({ status: 429, body: { ErrorCode: 429, Message: "Rate limit exceeded" } }).fetch }).send(message());
-    expect(limited).toMatchObject({ ok: false, retryable: true });
+    const limited = await postmarkProvider(config("postmark"), "t", { fetch: stub({ status: 429, body: { ErrorCode: 429, Message: "Rate limit exceeded" } }).fetch, sleep: noWait }).send(message());
+    expect(limited).toMatchObject({ ok: false, retryable: false, attempts: 3 });
     const bad = await postmarkProvider(config("postmark"), "t", { fetch: stub({ status: 422, body: { ErrorCode: 300, Message: "Invalid email request" } }).fetch }).send(message());
     expect(bad).toMatchObject({ ok: false, retryable: false });
     expect(bad.error).toBe("Postmark 300: Invalid email request");
   });
 
-  test("errors map", () => expectErrorMapping((f) => postmarkProvider(config("postmark"), "t", { fetch: f })));
+  test("errors map", () => expectErrorMapping((f) => postmarkProvider(config("postmark"), "t", { fetch: f, sleep: noWait })));
 });
 
 describe("Amazon SES v2", () => {
@@ -338,9 +386,9 @@ describe("Amazon SES v2", () => {
     });
   });
 
-  test("throttling and the sending quota are retryable, a rejected message is not, and a key id is required", async () => {
-    const make = (answer: Parameters<typeof stub>[0]) => sesProvider(config("ses", { keyId: "AKIA" }), "s", { fetch: stub(answer).fetch });
-    expect(await make({ status: 400, headers: { "x-amzn-errortype": "LimitExceededException:http://internal" }, body: { message: "Daily message quota exceeded" } }).send(message())).toMatchObject({ ok: false, retryable: true });
+  test("throttling and quota refusals stop after three tries, ordinary rejection is final, and a key id is required", async () => {
+    const make = (answer: Parameters<typeof stub>[0]) => sesProvider(config("ses", { keyId: "AKIA" }), "s", { fetch: stub(answer).fetch, sleep: noWait });
+    expect(await make({ status: 400, headers: { "x-amzn-errortype": "LimitExceededException:http://internal" }, body: { message: "Daily message quota exceeded" } }).send(message())).toMatchObject({ ok: false, retryable: false, attempts: 3 });
     const rejected = await make({ status: 400, headers: { "x-amzn-errortype": "MessageRejected" }, body: { message: "Email address is not verified." } }).send(message());
     expect(rejected).toMatchObject({ ok: false, retryable: false });
     expect(rejected.error).toContain("MessageRejected");
@@ -349,7 +397,7 @@ describe("Amazon SES v2", () => {
     expect(noKeyId.error).toMatch(/access key id/);
     const many = await make({ body: { MessageId: "x" } }).send(message({ headers: Object.fromEntries(Array.from({ length: 16 }, (_, i) => [`X-H${i}`, "v"])) }));
     expect(many.error).toMatch(/15/);
-    await expectErrorMapping((f) => sesProvider(config("ses", { keyId: "AKIA" }), "s", { fetch: f }));
+    await expectErrorMapping((f) => sesProvider(config("ses", { keyId: "AKIA" }), "s", { fetch: f, sleep: noWait }));
   });
 });
 
@@ -373,7 +421,7 @@ describe("Brevo", () => {
     expect((s.json(1) as { htmlContent: string }).htmlContent).toContain("a &lt; b");
   });
 
-  test("errors map", () => expectErrorMapping((f) => brevoProvider(config("brevo"), "k", { fetch: f })));
+  test("errors map", () => expectErrorMapping((f) => brevoProvider(config("brevo"), "k", { fetch: f, sleep: noWait })));
 });
 
 describe("SparkPost", () => {
@@ -405,7 +453,7 @@ describe("SparkPost", () => {
   test("every recipient rejected is a failure; errors map", async () => {
     const rejected = await sparkpostProvider(config("sparkpost"), "k", { fetch: stub({ body: { results: { total_rejected_recipients: 1, total_accepted_recipients: 0, id: "x" } } }).fetch }).send(message());
     expect(rejected).toMatchObject({ ok: false, retryable: false });
-    await expectErrorMapping((f) => sparkpostProvider(config("sparkpost"), "k", { fetch: f }));
+    await expectErrorMapping((f) => sparkpostProvider(config("sparkpost"), "k", { fetch: f, sleep: noWait }));
   });
 });
 
@@ -443,7 +491,7 @@ describe("Mailjet", () => {
     expect(results[1]?.error).toContain("Type mismatch");
     const noKey = await mailjetProvider(config("mailjet"), "s", { fetch: stub({}).fetch }).send(message());
     expect(noKey.error).toMatch(/no API key/);
-    await expectErrorMapping((f) => mailjetProvider(config("mailjet", { keyId: "p" }), "s", { fetch: f }));
+    await expectErrorMapping((f) => mailjetProvider(config("mailjet", { keyId: "p" }), "s", { fetch: f, sleep: noWait }));
   });
 });
 
@@ -471,7 +519,7 @@ describe("SMTP2GO", () => {
     const eu = stub({ body: { data: { succeeded: 1, failed: 0, email_id: "x" } } });
     await smtp2goProvider(config("smtp2go", { region: "eu" }), "k", { fetch: eu.fetch }).send(message());
     expect(eu.calls[0]?.url).toBe("https://eu-api.smtp2go.com/v3/email/send");
-    await expectErrorMapping((f) => smtp2goProvider(config("smtp2go"), "k", { fetch: f }));
+    await expectErrorMapping((f) => smtp2goProvider(config("smtp2go"), "k", { fetch: f, sleep: noWait }));
   });
 });
 
@@ -495,8 +543,9 @@ describe("myna cloud", () => {
   test("the daily cap (429) is retryable; signed out is a failure before any request", async () => {
     const capped = await mynaCloudProvider({ id: "c", type: "myna-cloud" }, "tok", "https://myna.test/api", {
       fetch: stub({ status: 429, body: { ok: false, error: "Daily cap", retryable: true } }).fetch,
+      sleep: noWait,
     }).send(message());
-    expect(capped).toMatchObject({ ok: false, retryable: true, status: 429 });
+    expect(capped).toMatchObject({ ok: false, retryable: false, status: 429, attempts: 3 });
     expect(capped.error).toContain("Daily cap");
     const s = stub({});
     const out = await mynaCloudProvider({ id: "c", type: "myna-cloud" }, "", "https://myna.test/api", { fetch: s.fetch }).send(message());
@@ -509,6 +558,7 @@ describe("SMTP as a provider", () => {
   /** A server that takes one address, defers one (450) and refuses one (550). */
   function fakeSmtp() {
     const data: string[] = [];
+    let quotaAttempts = 0;
     const server = createServer((socket: Socket) => {
       let buffer = "";
       let inData = false;
@@ -530,6 +580,10 @@ describe("SMTP as a provider", () => {
           else if (line.startsWith("MAIL")) socket.write("250 ok\r\n");
           else if (line.includes("later@")) socket.write("450 4.2.1 try later\r\n");
           else if (line.includes("gone@")) socket.write("550 5.1.1 no such user\r\n");
+          else if (line.includes("quota@")) {
+            quotaAttempts++;
+            socket.write("550 5.4.5 You have reached a limit for sending mail. Your message was not sent.\r\n");
+          }
           else if (line.startsWith("RCPT")) socket.write("250 ok\r\n");
           else if (line === "DATA") {
             inData = true;
@@ -543,6 +597,7 @@ describe("SMTP as a provider", () => {
     });
     return {
       data,
+      quotaAttempts: () => quotaAttempts,
       listen: () => new Promise<number>((resolve) => server.listen(0, "127.0.0.1", () => resolve((server.address() as { port: number }).port))),
       close: () => new Promise<void>((resolve) => server.close(() => resolve())),
     };
@@ -552,16 +607,22 @@ describe("SMTP as a provider", () => {
     const fake = fakeSmtp();
     const port = await fake.listen();
     try {
-      const sender = smtpProvider({ id: "s", host: "127.0.0.1", port, secure: "none", user: "", pass: "", from: "News <news@example.com>" });
+      const server = { id: "s", host: "127.0.0.1", port, secure: "none" as const, user: "", pass: "", from: "News <news@example.com>" };
+      const sender = smtpProvider(server, { sleep: noWait });
       expect(await sender.send(message())).toMatchObject({ ok: true, status: 250 });
       expect(fake.data[0]).toContain("List-Unsubscribe-Post: List-Unsubscribe=One-Click");
       expect(fake.data[0]).toContain("Reply-To: reply@example.com");
-      expect(await sender.send(message({ to: "later@example.com" }))).toMatchObject({ ok: false, retryable: true, status: 450 });
+      expect(await sender.send(message({ to: "later@example.com" }))).toMatchObject({ ok: false, retryable: false, status: 450, attempts: 3 });
       expect(await sender.send(message({ to: "gone@example.com" }))).toMatchObject({ ok: false, retryable: false, status: 550 });
+      const waits: number[] = [];
+      const recovering = smtpProvider(server, { sleep: async (milliseconds) => void waits.push(milliseconds) });
+      expect(await recovering.send(message({ to: "quota@example.com" }))).toMatchObject({ ok: false, retryable: false, status: 550, attempts: 3 });
+      expect(fake.quotaAttempts()).toBe(3);
+      expect(waits).toEqual([1_000, 2_000]);
     } finally {
       await fake.close();
     }
-    const refused = await smtpProvider({ id: "s", host: "127.0.0.1", port: 1, secure: "none", user: "", pass: "", from: "n@example.com" }).send(message());
+    const refused = await smtpProvider({ id: "s", host: "127.0.0.1", port: 1, secure: "none", user: "", pass: "", from: "n@example.com" }, { sleep: noWait }).send(message());
     expect(refused).toMatchObject({ ok: false, retryable: true, status: 0 });
   });
 });

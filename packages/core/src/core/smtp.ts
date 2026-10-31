@@ -44,6 +44,8 @@ export interface SmtpResult {
 
 export interface SmtpOptions {
   timeoutMs?: number;
+  /** Injectable delay for deterministic throttling recovery tests. */
+  sleep?: (milliseconds: number) => Promise<void>;
   /** Open the connection. Tests hand in a fake. */
   connect?: (host: string, port: number, tls: boolean) => Socket | TLSSocket;
   /** Upgrade a plain socket after STARTTLS. */

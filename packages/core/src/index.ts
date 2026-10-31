@@ -648,6 +648,7 @@ export {
   providerSender,
   listMailProviders,
   defaultProviderId,
+  selectedDefaultProviderId,
   smtpProvider,
   mynaCloudProvider,
   parseAddress,

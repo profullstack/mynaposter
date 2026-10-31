@@ -19,6 +19,7 @@
  */
 import { randomBytes } from "node:crypto";
 import { addressOf, sendSmtp, SmtpError, type SmtpOptions, type SmtpServer } from "../smtp.ts";
+import { recoverThrottledBatch, recoverThrottledSend } from "./retry.ts";
 import { signV4 } from "./sigv4.ts";
 import type { Fetch, MailKind, MailMessage, MailProviderConfig, MailResult, MailSender, MailSendOptions, ProviderDeps } from "./types.ts";
 
@@ -93,11 +94,28 @@ export function errorWords(body: unknown, text: string): string {
   return text.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim().slice(0, 200);
 }
 
+/** Parse HTTP Retry-After as seconds or an HTTP date. */
+function retryAfterMs(headers: Headers): number | undefined {
+  const value = headers.get("retry-after")?.trim();
+  if (!value) return undefined;
+  const seconds = Number(value);
+  const delay = Number.isFinite(seconds) && seconds >= 0 ? seconds * 1000 : Date.parse(value) - Date.now();
+  return Number.isFinite(delay) && delay > 0 ? Math.ceil(delay) : undefined;
+}
+
 /** The shared failure for a non-2xx answer or a dropped connection. */
 function failure(provider: string, answer: HttpAnswer | { status: 0; error: string }): MailResult {
   if (answer.status === 0) return { ok: false, retryable: true, status: 0, error: `${provider}: ${(answer as { error: string }).error}` };
-  const words = errorWords((answer as HttpAnswer).body, (answer as HttpAnswer).text);
-  return { ok: false, status: answer.status, retryable: retryableStatus(answer.status), error: `${provider} ${answer.status}${words ? `: ${words}` : ""}` };
+  const response = answer as HttpAnswer;
+  const words = errorWords(response.body, response.text);
+  const retryAfter = retryAfterMs(response.headers);
+  return {
+    ok: false,
+    status: answer.status,
+    retryable: retryableStatus(answer.status),
+    ...(retryAfter !== undefined ? { retryAfterMs: retryAfter } : {}),
+    error: `${provider} ${answer.status}${words ? `: ${words}` : ""}`,
+  };
 }
 
 const isHttp = (answer: HttpAnswer | { status: 0; error: string }): answer is HttpAnswer => answer.status !== 0;
@@ -137,21 +155,23 @@ function prepare(message: MailMessage, fallbackFrom: string | undefined, provide
 }
 
 /** A send that turns a thrown precondition into a failed result, so callers get one shape. */
-function guarded(send: (message: MailMessage, options: MailSendOptions) => Promise<MailResult>) {
+function guarded(send: (message: MailMessage, options: MailSendOptions) => Promise<MailResult>, sleep?: ProviderDeps["sleep"]) {
   return async (message: MailMessage, options: MailSendOptions = {}): Promise<MailResult> => {
     try {
-      return await send(message, options);
+      const execute = () => send(message, options);
+      return options.skipThrottleRecovery ? await execute() : await recoverThrottledSend(execute, sleep);
     } catch (error) {
       return { ok: false, retryable: false, error: (error as Error).message };
     }
   };
 }
 
-function guardedBatch(send: (messages: MailMessage[], options: MailSendOptions) => Promise<MailResult[]>) {
+function guardedBatch(send: (messages: MailMessage[], options: MailSendOptions) => Promise<MailResult[]>, sleep?: ProviderDeps["sleep"]) {
   return async (messages: MailMessage[], options: MailSendOptions = {}): Promise<MailResult[]> => {
     if (!messages.length) return [];
     try {
-      return await send(messages, options);
+      const execute = () => send(messages, options);
+      return options.skipThrottleRecovery ? await execute() : await recoverThrottledBatch(execute, sleep);
     } catch (error) {
       return messages.map(() => ({ ok: false, retryable: false, error: (error as Error).message }));
     }
@@ -188,7 +208,7 @@ export function resendProvider(config: MailProviderConfig, secret: string, deps:
       const answer = await call(deps, `${RESEND_API}/emails`, withHeaders(json(shape(prepare(message, config.from, "Resend"))), auth()));
       if (!isHttp(answer) || !answer.ok) return failure("Resend", answer);
       return { ok: true, status: answer.status, id: (answer.body as { id?: string } | null)?.id };
-    }),
+    }, deps.sleep),
     sendBatch: guardedBatch(async (messages) => {
       if (messages.length > 100) throw new Error("Resend takes at most 100 emails per batch.");
       const body = messages.map((message) => shape(prepare(message, config.from, "Resend")));
@@ -202,7 +222,7 @@ export function resendProvider(config: MailProviderConfig, secret: string, deps:
         const id = data[index]?.id;
         return id ? { ok: true, status: answer.status, id } : { ok: false, retryable: false, status: answer.status, error: "Resend: the batch answer had no id for this message." };
       });
-    }),
+    }, deps.sleep),
   };
 }
 
@@ -240,7 +260,7 @@ export function mailgunProvider(config: MailProviderConfig, secret: string, deps
       });
       if (!isHttp(answer) || !answer.ok) return failure("Mailgun", answer);
       return { ok: true, status: answer.status, id: (answer.body as { id?: string } | null)?.id };
-    }),
+    }, deps.sleep),
   };
 }
 
@@ -291,7 +311,7 @@ export function mandrillProvider(config: MailProviderConfig, secret: string, dep
       if (refused.length)
         return { ok: false, retryable: false, status: answer.status, error: `Mandrill ${refused.map((row) => `${row.status} ${row.email ?? ""}${row.reject_reason ? ` (${row.reject_reason})` : ""}`.trim()).join("; ")}` };
       return { ok: true, status: answer.status, id: rows[0]?._id };
-    }),
+    }, deps.sleep),
   };
 }
 
@@ -326,7 +346,7 @@ export function sendgridProvider(config: MailProviderConfig, secret: string, dep
       );
       if (!isHttp(answer) || !answer.ok) return failure("SendGrid", answer);
       return { ok: true, status: answer.status, id: answer.headers.get("x-message-id") ?? undefined };
-    }),
+    }, deps.sleep),
   };
 }
 
@@ -372,7 +392,7 @@ export function postmarkProvider(config: MailProviderConfig, secret: string, dep
         return failure("Postmark", answer);
       }
       return fromRow(answer.body as Row, answer.status);
-    }),
+    }, deps.sleep),
     sendBatch: guardedBatch(async (messages, options) => {
       if (messages.length > 500) throw new Error("Postmark takes at most 500 emails per batch.");
       const body = messages.map((message) => shape(prepare(message, config.from, "Postmark"), options.kind));
@@ -383,7 +403,7 @@ export function postmarkProvider(config: MailProviderConfig, secret: string, dep
       }
       const rows = (Array.isArray(answer.body) ? answer.body : []) as Row[];
       return messages.map((_, index) => fromRow(rows[index], answer.status));
-    }),
+    }, deps.sleep),
   };
 }
 
@@ -435,7 +455,7 @@ export function sesProvider(config: MailProviderConfig, secret: string, deps: Pr
         return { ok: false, status: answer.status, retryable: retryableStatus(answer.status) || SES_RETRY.test(type), error: `SES ${answer.status}${type ? ` ${type}` : ""}${words ? `: ${words}` : ""}` };
       }
       return { ok: true, status: answer.status, id: (answer.body as { MessageId?: string } | null)?.MessageId };
-    }),
+    }, deps.sleep),
   };
 }
 
@@ -472,7 +492,7 @@ export function brevoProvider(config: MailProviderConfig, secret: string, deps: 
       if (!isHttp(answer) || !answer.ok) return failure("Brevo", answer);
       const body = answer.body as { messageId?: string; messageIds?: string[] } | null;
       return { ok: true, status: answer.status, id: body?.messageId ?? body?.messageIds?.[0] };
-    }),
+    }, deps.sleep),
   };
 }
 
@@ -513,7 +533,7 @@ export function sparkpostProvider(config: MailProviderConfig, secret: string, de
       if (results && (results.total_accepted_recipients ?? 0) === 0 && (results.total_rejected_recipients ?? 0) > 0)
         return { ok: false, retryable: false, status: answer.status, error: `SparkPost rejected ${results.total_rejected_recipients} recipient(s).` };
       return { ok: true, status: answer.status, id: results?.id };
-    }),
+    }, deps.sleep),
   };
 }
 
@@ -572,11 +592,11 @@ export function mailjetProvider(config: MailProviderConfig, secret: string, deps
     type: "mailjet",
     from: config.from,
     batchSize: 50,
-    send: guarded(async (message) => (await post([message]))[0] as MailResult),
+    send: guarded(async (message) => (await post([message]))[0] as MailResult, deps.sleep),
     sendBatch: guardedBatch(async (messages) => {
       if (messages.length > 50) throw new Error("Mailjet takes at most 50 messages per call.");
       return post(messages);
-    }),
+    }, deps.sleep),
   };
 }
 
@@ -623,7 +643,7 @@ export function smtp2goProvider(config: MailProviderConfig, secret: string, deps
       if (!data || (data.failed ?? 0) > 0 || (data.succeeded ?? 0) === 0)
         return { ok: false, status: answer.status, retryable: false, error: `SMTP2GO: ${(data?.failures ?? []).map(String).join("; ") || "not accepted"}` };
       return { ok: true, status: answer.status, id: data.email_id };
-    }),
+    }, deps.sleep),
   };
 }
 
@@ -647,9 +667,10 @@ export function smtpProvider(server: SmtpServer & { pass: string }, options: Smt
         return { ok: true, id: result.messageId, status: 250 };
       } catch (error) {
         const code = error instanceof SmtpError ? error.code : 0;
-        return { ok: false, status: code, retryable: code === 0 || (code >= 400 && code < 500), error: (error as Error).message };
+        const message = (error as Error).message;
+        return { ok: false, status: code, retryable: code === 0 || (code >= 400 && code < 500) || /rate[ -]?limit|throttl|quota|limit.{0,40}(?:send|mail|message|email)/i.test(message), error: message };
       }
-    }),
+    }, options.sleep),
   };
 }
 
@@ -693,10 +714,10 @@ export function mynaCloudProvider(config: MailProviderConfig, token: string, ser
     type: "myna-cloud",
     from: config.from,
     batchSize: 100,
-    send: guarded(async (message, options) => (await post([message], options.kind))[0] as MailResult),
+    send: guarded(async (message, options) => (await post([message], options.kind))[0] as MailResult, deps.sleep),
     sendBatch: guardedBatch(async (messages, options) => {
       if (messages.length > 100) throw new Error("myna cloud takes at most 100 messages per call.");
       return post(messages, options.kind);
-    }),
+    }, deps.sleep),
   };
 }
