@@ -11,7 +11,7 @@ import { join } from "node:path";
 import { saveMailProvider, removeMailProvider, mailProviderSecret, readOutreach, saveSmtpServer, readOutreach as outreach } from "../src/store/outreach.ts";
 import { getPluginSecrets, resetAccountCache } from "../src/store/accounts.ts";
 import { loadSettings, saveSettings } from "../src/store/settings.ts";
-import { listMailProviders, resolveSender } from "../src/core/mail/index.ts";
+import { listMailProviders, resolveSender, selectedDefaultProviderId } from "../src/core/mail/index.ts";
 import { createNewsletter, readNewsletters } from "../src/store/newsletters.ts";
 import { sendNewsletter, subscribe } from "../src/core/newsletter.ts";
 import type { MailMessage, MailResult, MailSender } from "../src/core/mail/types.ts";
@@ -45,13 +45,15 @@ test("a provider's key goes to the vault, never outreach.json; rm takes both", (
   expect(readOutreach().mail).toEqual([]);
 });
 
-test("which provider a send uses: --via, then the default setting, then the first SMTP server, then the first provider", () => {
+test("which provider a send uses: --via, saved default, then API provider before non-Google SMTP", () => {
   expect(() => resolveSender()).toThrow(/No way to send mail yet/);
   saveMailProvider({ id: "pm", type: "postmark", from: "a@example.com" }, "t");
   expect(resolveSender().id).toBe("pm");
+  expect(selectedDefaultProviderId()).toBe("pm");
   saveSmtpServer({ id: "box", host: "127.0.0.1", port: 25, secure: "none", user: "", from: "b@example.com" }, "");
-  expect(resolveSender().id).toBe("box");
-  expect(resolveSender().type).toBe("smtp");
+  expect(resolveSender().id).toBe("pm");
+  expect(selectedDefaultProviderId()).toBe("pm");
+  expect(resolveSender().type).toBe("postmark");
   const settings = loadSettings();
   settings.outreach.mailProvider = "pm";
   saveSettings(settings);
@@ -60,6 +62,25 @@ test("which provider a send uses: --via, then the default setting, then the firs
   expect(() => resolveSender("nope")).toThrow(/No mail provider "nope"/);
   expect(listMailProviders().map((entry) => `${entry.id}:${entry.type}`)).toEqual(["pm:postmark", "box:smtp"]);
   expect(outreach().smtp).toHaveLength(1);
+});
+
+test("a Google SMTP default is skipped unless that send explicitly selects it", () => {
+  saveMailProvider({ id: "pm", type: "postmark", from: "a@example.com" }, "t");
+  saveSmtpServer({ id: "gmail", host: "smtp.gmail.com", port: 465, secure: "tls", user: "a@gmail.com", from: "a@gmail.com" }, "app-password");
+  const settings = loadSettings();
+  settings.outreach.mailProvider = "gmail";
+  saveSettings(settings);
+
+  expect(resolveSender().id).toBe("pm");
+  expect(selectedDefaultProviderId()).toBe("pm");
+  expect(resolveSender("gmail").type).toBe("smtp");
+});
+
+test("Google SMTP is not an automatic fallback when it is the only configured sender", () => {
+  saveSmtpServer({ id: "gmail", host: "smtp.gmail.com", port: 465, secure: "tls", user: "a@gmail.com", from: "a@gmail.com" }, "app-password");
+  expect(() => resolveSender()).toThrow(/Google SMTP is not selected automatically/);
+  expect(selectedDefaultProviderId()).toBeUndefined();
+  expect(resolveSender("gmail").type).toBe("smtp");
 });
 
 /** A batch provider that records each call and answers from a script. */

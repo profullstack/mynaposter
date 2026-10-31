@@ -15,6 +15,7 @@ import { readFileSync } from "node:fs";
 import {
   MAIL_PROVIDER_TYPES,
   defaultProviderId,
+  selectedDefaultProviderId,
   listMailProviders,
   loadSettings,
   readOutreach,
@@ -129,7 +130,7 @@ export async function runMailProvider(positional: string[], flags: Flags): Promi
         out("No mail provider yet.  myna mail provider add <id> --type resend --from \"You <you@example.com>\" < key.txt");
         return 0;
       }
-      const chosen = defaultProviderId() ?? providers.find((entry) => entry.type === "smtp")?.id ?? providers[0]?.id;
+      const chosen = selectedDefaultProviderId();
       if (flags.json) {
         out(JSON.stringify(providers.map((entry) => ({ ...entry, default: entry.id === chosen })), null, 2));
         return 0;
@@ -157,13 +158,13 @@ export async function runMailProvider(positional: string[], flags: Flags): Promi
       const settings = loadSettings();
       const id = rest[0];
       if (!id) {
-        out(settings.outreach.mailProvider || "(none set: the first SMTP server, then the first mail provider)");
+        out(settings.outreach.mailProvider || "(none set: first API provider, then first non-Google SMTP server; Google SMTP requires an explicit --via)");
         return 0;
       }
       if (id !== "none" && !listMailProviders().some((entry) => entry.id === id)) throw new Error(`No provider ${id}. myna mail provider list shows them.`);
       settings.outreach.mailProvider = id === "none" ? "" : id;
       saveSettings(settings);
-      out(id === "none" ? "No default: the first SMTP server, then the first mail provider." : `Mail goes out through ${id} unless a send says --via.`);
+      out(id === "none" ? "No default: first API provider, then first non-Google SMTP server; Google SMTP requires an explicit --via." : `Mail goes out through ${id} unless a send says --via.`);
       return 0;
     }
     case "test": {

@@ -35,10 +35,8 @@ import {
   saveSms,
   saveSmtpServer,
   sendSms,
-  sendSmtp,
   outreachSentToday,
   smsConfig,
-  smtpServer,
   upsertContact,
   type Contact,
   type SentRecord,
@@ -92,9 +90,10 @@ export async function runSmtp(positional: string[], flags: Flags): Promise<numbe
     case "test": {
       const [id, to] = rest;
       if (!id || !to) throw new Error("Usage: myna smtp test <id> <to>");
-      const server = smtpServer(id);
-      const sent = await sendSmtp(server, { to: [to], subject: "myna smtp test", text: `This is myna testing ${server.id} (${server.host}) at ${new Date().toISOString()}.` });
-      out(`Delivered to ${to}: ${sent.response.split("\n")[0]}`);
+      const sender = resolveSender(id);
+      const sent = await sender.send({ to: [to], subject: "myna smtp test", text: `This is myna testing ${sender.id} (${sender.type}) at ${new Date().toISOString()}.` });
+      if (!sent.ok) throw new Error(`${sender.id} refused it${sent.retryable ? " (worth trying again later)" : ""}: ${sent.error ?? "no provider response"}`);
+      out(`Delivered to ${to}${sent.id ? `: ${sent.id}` : "."}`);
       return 0;
     }
     default:

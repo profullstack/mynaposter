@@ -383,8 +383,9 @@ export interface OutreachSettings {
   maxSmsPerDay: number;
   /**
    * The mail provider `myna email` and newsletters use when none is named:
-   * a `myna mail provider` id or an SMTP server id. Empty means the first
-   * SMTP server, then the first mail provider.
+   * a `myna mail provider` id or a non-Google SMTP server id. Empty means the
+   * first API provider, then the first non-Google SMTP server. Google SMTP
+   * requires an explicit per-send selection.
    */
   mailProvider: string;
 }

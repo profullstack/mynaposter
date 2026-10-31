@@ -51,6 +51,10 @@ export interface MailResult {
   retryable?: boolean;
   /** The HTTP status (or SMTP reply code) behind the answer. */
   status?: number;
+  /** Provider supplied minimum delay before another attempt, when available. */
+  retryAfterMs?: number;
+  /** Number of provider calls made for this delivery. */
+  attempts?: number;
 }
 
 /**
@@ -80,6 +84,9 @@ export interface MailProviderConfig {
 
 export interface MailSendOptions {
   kind?: MailKind;
+  idempotencyKey?: string;
+  /** Internal: a Redis queue owns retries for this send. */
+  skipThrottleRecovery?: boolean;
 }
 
 /** One provider, ready to send. */
@@ -104,4 +111,6 @@ export interface ProviderDeps {
   timeoutMs?: number;
   /** The clock, for SigV4 signatures. */
   now?: () => Date;
+  /** Injectable delay for deterministic throttling recovery tests. */
+  sleep?: (milliseconds: number) => Promise<void>;
 }

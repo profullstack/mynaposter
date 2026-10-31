@@ -6,7 +6,7 @@ export interface ResendTransportOptions {
   apiKey: string;
   /** Must be an address on a domain verified by Resend. */
   from: string;
-  fetchImpl?: typeof fetch;
+  fetchImpl?: (input: string, init?: RequestInit) => Promise<Response>;
 }
 
 /** Resend API adapter. The key is captured in this worker-side closure, never in a job. */
@@ -48,10 +48,18 @@ export function createResendTransport(options: ResendTransportOptions): Delivery
       try { body = text ? JSON.parse(text) as typeof body : {}; } catch { body = {}; }
       if (!response.ok) {
         const messageText = body.message || body.name || text.slice(0, 500) || `HTTP ${response.status}`;
+        const retryAfterHeader = response.headers.get("retry-after")?.trim();
+        const retryAfterSeconds = Number(retryAfterHeader);
+        const retryAfter = retryAfterHeader
+          ? Number.isFinite(retryAfterSeconds) && retryAfterSeconds >= 0
+            ? retryAfterSeconds * 1000
+            : Date.parse(retryAfterHeader) - Date.now()
+          : 0;
         return {
           ok: false,
           status: response.status,
           retryable: response.status === 408 || response.status === 429 || response.status >= 500,
+          ...(Number.isFinite(retryAfter) && retryAfter > 0 ? { retryAfterMs: Math.ceil(retryAfter) } : {}),
           error: `Resend ${response.status}: ${messageText}`,
         };
       }

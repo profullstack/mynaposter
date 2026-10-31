@@ -3,11 +3,14 @@ import { createHash, createHmac, randomBytes, randomUUID } from "node:crypto";
 import { Queue } from "bullmq";
 import { Redis } from "ioredis";
 import {
+  fibonacciBackoffMs,
   emailAuditSchema,
   PostgresEmailAuditStore,
   createResendTransport,
   getEmailStatus,
   isGoogleSender,
+  isThrottleFailure,
+  MAX_THROTTLE_ATTEMPTS,
   mailJobId,
   processResendWebhook,
   providerCircuitReason,
@@ -15,6 +18,7 @@ import {
   queueIdentity,
   queuedDelivery,
   resumeEmailQueue,
+  sendWithThrottleRecovery,
   senderLimits,
   startEmailWorker,
   type DeliveryTransport,
@@ -41,6 +45,88 @@ describe("email queue policy", () => {
       maxPer24Hours: 10_000,
       minGapMs: 1,
     })).toEqual({ google: false, maxPer24Hours: 1000, minGapMs: 1000 });
+  });
+
+  it("uses Fibonacci backoff for three definite throttling failures, then stops", async () => {
+    expect([1, 2, 3, 4, 5].map((failure) => fibonacciBackoffMs(failure, 1000))).toEqual([1000, 2000, 3000, 5000, 8000]);
+    expect(MAX_THROTTLE_ATTEMPTS).toBe(3);
+    let calls = 0;
+    const waits: number[] = [];
+    const sender: DeliveryTransport = {
+      id: "gmail",
+      type: "smtp",
+      from: "owner@gmail.com",
+      async send() {
+        calls++;
+        return { ok: false, status: 451, retryable: true, error: "You have reached a limit for sending mail. Your message was not sent." };
+      },
+    };
+    const result = await sendWithThrottleRecovery(sender, {
+      to: "person@example.net",
+      subject: "Throttle recovery",
+      text: "No external delivery",
+    }, {
+      kind: "transactional",
+      minGapMs: 600_000,
+      sleep: async (milliseconds) => { waits.push(milliseconds); },
+    });
+    expect(calls).toBe(3);
+    expect(waits).toEqual([600_000, 1_200_000]);
+    expect(result).toMatchObject({ ok: false, retryable: false, attempts: 3 });
+    expect(result.error).toContain("Stopped after 3 consecutive throttling responses");
+    expect(providerCircuitReason(result, sender, "smtp.gmail.com")).toContain("paused for administrator review");
+  });
+
+  it("does not retry uncertain transport outcomes or ordinary refusals", async () => {
+    let calls = 0;
+    const waits: number[] = [];
+    const sender: DeliveryTransport = {
+      id: "gmail",
+      type: "smtp",
+      from: "owner@gmail.com",
+      async send() {
+        calls++;
+        return { ok: false, status: 0, retryable: true, error: "connection reset" };
+      },
+    };
+    expect(isThrottleFailure({ ok: false, status: 0, error: "rate limit" }, sender, "smtp.gmail.com")).toBe(false);
+    const result = await sendWithThrottleRecovery(sender, {
+      to: "person@example.net",
+      subject: "No retry",
+      text: "No external delivery",
+    }, { kind: "transactional", sleep: async (milliseconds) => { waits.push(milliseconds); } });
+    expect(result).toMatchObject({ ok: false, status: 0 });
+    expect(calls).toBe(1);
+    expect(waits).toEqual([]);
+    expect(isThrottleFailure({ ok: false, status: 535, error: "Authentication failed" }, sender, "smtp.gmail.com")).toBe(false);
+  });
+
+  it("honors Retry-After and stops retrying when a throttled send succeeds", async () => {
+    let calls = 0;
+    const waits: number[] = [];
+    const sender: DeliveryTransport = {
+      id: "resend",
+      type: "resend",
+      from: "owner@example.com",
+      async send() {
+        calls++;
+        return calls === 1
+          ? { ok: false, status: 429, retryable: true, retryAfterMs: 2500, error: "Too many requests" }
+          : { ok: true, id: "accepted" };
+      },
+    };
+    const result = await sendWithThrottleRecovery(sender, {
+      to: "person@example.net",
+      subject: "Recovered",
+      text: "No external delivery",
+    }, {
+      kind: "transactional",
+      minGapMs: 1000,
+      sleep: async (milliseconds) => { waits.push(milliseconds); },
+    });
+    expect(calls).toBe(2);
+    expect(waits).toEqual([2500]);
+    expect(result).toMatchObject({ ok: true, id: "accepted", attempts: 2 });
   });
 
   it("scopes identity by sender and makes bulk recipient jobs idempotent", () => {
@@ -100,8 +186,9 @@ describe("email queue policy", () => {
   });
 
   it("opens a circuit for provider restrictions and rate limits", () => {
-    expect(providerCircuitReason({ ok: false, status: 429, error: "You have reached a limit for sending mail." }, { type: "smtp", from: "owner@gmail.com" }, "smtp.gmail.com")).toContain("Google sending restriction");
-    expect(providerCircuitReason({ ok: false, status: 429, error: "Too many requests" }, { type: "resend", from: "mail@example.com" })).toContain("Provider rate limit");
+    expect(providerCircuitReason({ ok: false, status: 429, attempts: 1, error: "You have reached a limit for sending mail." }, { type: "smtp", from: "owner@gmail.com" }, "smtp.gmail.com")).toBeUndefined();
+    expect(providerCircuitReason({ ok: false, status: 429, attempts: 3, error: "You have reached a limit for sending mail." }, { type: "smtp", from: "owner@gmail.com" }, "smtp.gmail.com")).toContain("Google sending restriction");
+    expect(providerCircuitReason({ ok: false, status: 429, attempts: 3, error: "Too many requests" }, { type: "resend", from: "mail@example.com" })).toContain("Provider throttling persisted");
     expect(providerCircuitReason({ ok: false, status: 400, error: "Bad request" }, { type: "resend", from: "mail@example.com" })).toBeUndefined();
   });
 
@@ -254,6 +341,38 @@ if (testRedisUrl) {
       expect(calls).toBe(1);
     });
 
+    it("pauses after three definite throttle responses and records them as rejected", async () => {
+      const fake = fakeSender();
+      let calls = 0;
+      fake.sender.send = async () => {
+        calls++;
+        return { ok: false, status: 429, retryable: true, error: "Provider rate limit" };
+      };
+      const options = { redisUrl: testRedisUrl!, minGapMs: 1000 };
+      const first = await queuedDelivery(fake.sender, {
+        from: fake.sender.from,
+        to: [`throttled-${randomUUID()}@example.test`],
+        subject: "Throttle recovery test",
+        text: "No external delivery",
+        dedupeKey: `throttle:${randomUUID()}`,
+      }, "transactional", options);
+      expect(first).toMatchObject({ ok: false, state: "REJECTED", retryable: false, status: 429, attempts: 3 });
+      expect(first.error).toContain("Stopped after 3 consecutive throttling responses");
+      expect(calls).toBe(3);
+      expect(providerCircuitReason(first, fake.sender)).toContain("paused for administrator review");
+
+      const second = await queuedDelivery(fake.sender, {
+        from: fake.sender.from,
+        to: [`after-throttle-${randomUUID()}@example.test`],
+        subject: "Throttle circuit test",
+        text: "No external delivery",
+        dedupeKey: `throttle-after:${randomUUID()}`,
+      }, "transactional", options);
+      expect(second).toMatchObject({ ok: false, state: "SUPPRESSED", status: 403 });
+      expect(calls).toBe(3);
+      await resumeEmailQueue(fake.sender, options);
+    });
+
     it("encrypts Redis payloads, keeps transport secrets out, and decrypts only in the worker", async () => {
       const from = `encrypted-${randomUUID()}@example.test`;
       const providerId = `resend-${randomUUID()}`;
@@ -372,7 +491,7 @@ if (testRedisUrl) {
         from,
         async send() {
           calls++;
-          return { ok: false, status: 429, retryable: false, error: "You have reached a limit for sending mail." };
+          return { ok: false, status: 403, retryable: false, error: "Google sending restriction" };
         },
       };
       const options = { redisUrl: testRedisUrl!, smtpHost: "smtp.gmail.com", minGapMs: 1000 };
@@ -383,7 +502,7 @@ if (testRedisUrl) {
         text: "No external delivery",
         dedupeKey: `restricted:first:${randomUUID()}`,
       }, "transactional", options);
-      expect(first).toMatchObject({ ok: false, state: "REJECTED", status: 429 });
+      expect(first).toMatchObject({ ok: false, state: "REJECTED", status: 403 });
       const second = await queuedDelivery(sender, {
         from,
         to: [`second-${randomUUID()}@example.test`],

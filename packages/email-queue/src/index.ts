@@ -2,8 +2,8 @@
  * @profullstack/email-queue
  *
  * One Redis-backed, account-scoped BullMQ queue for Gmail/Resend senders
- * across processes. The durable BullMQ job is the receipt: completed jobs
- * are never automatically retried, including ambiguous SMTP disconnects.
+ * across processes. Definite throttle refusals get three attempts with
+ * Fibonacci backoff; ambiguous SMTP disconnects are never automatically retried.
  *
  * Provider credentials stay in the worker process and are NEVER copied into
  * Redis. V2 callers encrypt the job content with an application-held key.
@@ -47,12 +47,16 @@ export interface DeliveryResult {
   error?: string;
   retryable?: boolean;
   status?: number;
+  /** Provider supplied minimum delay before another attempt, when available. */
+  retryAfterMs?: number;
+  /** Number of provider calls made for this delivery. */
+  attempts?: number;
 }
 export interface DeliveryTransport {
   id: string;
   type: string;
   from?: string;
-  send(message: QueuedMessage, options?: { kind?: EmailKind; idempotencyKey?: string }): Promise<DeliveryResult>;
+  send(message: QueuedMessage, options?: { kind?: EmailKind; idempotencyKey?: string; skipThrottleRecovery?: boolean }): Promise<DeliveryResult>;
 }
 export interface EmailQueueOptions {
   redisUrl: string;
@@ -86,6 +90,7 @@ export interface Limits {
   google: boolean;
 }
 const DAY_MS = 24 * 60 * 60 * 1000;
+export const MAX_THROTTLE_ATTEMPTS = 3;
 interface EncryptedMessage {
   version: 1;
   iv: string;
@@ -147,6 +152,69 @@ for i = 1, #KEYS do
   end
 end
 return 0`;
+
+const THROTTLE_ERROR = /rate.?limit|too many (?:requests|messages|emails)|throttl|sending (?:mail )?limit|limit for sending mail|quota.{0,30}(?:exceed|reach)|temporarily blocked/i;
+
+/** Only retry a provider's definite throttle refusal; never retry an ambiguous send. */
+export function isThrottleFailure(
+  result: DeliveryResult,
+  sender: Pick<DeliveryTransport, "type" | "from">,
+  smtpHost = "",
+): boolean {
+  if (result.ok || result.status === 0) return false;
+  if (result.status === 429 || THROTTLE_ERROR.test(result.error ?? "")) return true;
+  if (sender.type !== "smtp") return false;
+  if (result.status === 421) return true;
+  return isGoogleSender(sender, smtpHost) && [450, 451, 452].includes(result.status ?? 0);
+}
+
+/** Fibonacci delays start at 1x, 2x, 3x, 5x the provider's base send gap. */
+export function fibonacciBackoffMs(failureNumber: number, baseMs = 1000): number {
+  if (!Number.isInteger(failureNumber) || failureNumber < 1) throw new Error("failureNumber must be a positive integer.");
+  let previous = 1;
+  let current = 2;
+  for (let index = 1; index < failureNumber; index++) {
+    [previous, current] = [current, previous + current];
+  }
+  return Math.max(0, Math.floor(baseMs)) * previous;
+}
+
+/** Retry only definite throttles; uncertain transport failures remain one-shot. */
+export async function sendWithThrottleRecovery(
+  sender: DeliveryTransport,
+  message: QueuedMessage,
+  options: {
+    kind: EmailKind;
+    idempotencyKey?: string;
+    smtpHost?: string;
+    minGapMs?: number;
+    sleep?: (milliseconds: number) => Promise<void>;
+  },
+): Promise<DeliveryResult> {
+  const sleep = options.sleep ?? ((milliseconds: number) => new Promise<void>((resolve) => setTimeout(resolve, milliseconds)));
+  const baseMs = Math.max(1000, options.minGapMs ?? 1000);
+  for (let attempt = 1; attempt <= MAX_THROTTLE_ATTEMPTS; attempt++) {
+    const result = await sender.send(message, {
+      kind: options.kind,
+      ...(options.idempotencyKey ? { idempotencyKey: options.idempotencyKey } : {}),
+      skipThrottleRecovery: true,
+    });
+    if (!isThrottleFailure(result, sender, options.smtpHost)) {
+      return attempt === 1 ? result : { ...result, attempts: attempt };
+    }
+    if (attempt === MAX_THROTTLE_ATTEMPTS) {
+      return {
+        ...result,
+        retryable: false,
+        attempts: attempt,
+        error: `${result.error ?? "Provider throttled the send."} Stopped after ${MAX_THROTTLE_ATTEMPTS} consecutive throttling responses.`,
+      };
+    }
+    const delay = fibonacciBackoffMs(attempt, baseMs);
+    await sleep(Math.max(delay, result.retryAfterMs ?? 0));
+  }
+  throw new Error("Unreachable throttle recovery state.");
+}
 
 const queueName = (identity: string): string => "profullstack-email-" + hash(identity).slice(0, 32);
 const circuitKey = (identity: string): string => "profullstack:email-circuit:" + hash(identity);
@@ -214,16 +282,23 @@ function quotaScopes(identity: string, sender: DeliveryTransport, options: Email
 
 /** A restriction/rate-limit is an operator action, never a reason to route elsewhere. */
 export function providerCircuitReason(result: DeliveryResult, sender: Pick<DeliveryTransport, "type" | "from">, smtpHost = ""): string | undefined {
-  const message = result.error ?? "";
-  if (isGoogleSender(sender, smtpHost) && (
-    result.status === 421 || result.status === 429 || result.status === 403 ||
-    /sending (?:mail )?limit|quota.{0,30}(?:exceed|reach)|account.{0,30}restrict|temporarily blocked/i.test(message)
-  )) return "Google sending restriction reported; mailbox paused for administrator review.";
-  if (result.status === 429) return "Provider rate limit reported; queue paused for administrator review.";
+  if (isGoogleSender(sender, smtpHost) && result.status === 403) return "Google sending restriction reported; mailbox paused for administrator review.";
+  if (isThrottleFailure(result, sender, smtpHost) && (result.attempts ?? 0) >= MAX_THROTTLE_ATTEMPTS) {
+    if (isGoogleSender(sender, smtpHost)) return "Google sending restriction persisted after three attempts; mailbox paused for administrator review.";
+    return "Provider throttling persisted after three attempts; queue paused for administrator review.";
+  }
   return undefined;
 }
 
-/** Adds ONE job and waits for its durable result, without retrying uncertain sends.
+function deliveryState(result: DeliveryResult, sender: DeliveryTransport, smtpHost = ""): DeliveryState {
+  if (result.ok) return "PROVIDER_ACCEPTED";
+  if (result.status === 0) return "UNKNOWN";
+  if (result.status === 403 || result.status === 429 || result.retryable) return "REJECTED";
+  if ((result.attempts ?? 0) >= MAX_THROTTLE_ATTEMPTS && isThrottleFailure(result, sender, smtpHost)) return "REJECTED";
+  return "FAILED";
+}
+
+/** Adds ONE job and waits for its durable result, retrying only definite throttles.
  * Production daemons should keep a worker alive; this convenience API starts
  * a worker with the account's credential-bearing provider for CLI use.
  */
@@ -281,8 +356,13 @@ export async function queuedDelivery(
         const idempotencyKey = decoded.idempotencyKey ?? decoded.dedupeKey;
         const { dedupeKey: _dedupeKey, idempotencyKey: _idempotencyKey, ...mail } = decoded;
         try {
-          const result = await sender.send(mail, { kind: activeJob.data.kind, ...(idempotencyKey ? { idempotencyKey } : {}) });
-          const state: DeliveryState = result.ok ? "PROVIDER_ACCEPTED" : result.status === 0 ? "UNKNOWN" : result.status === 403 || result.status === 429 || result.retryable ? "REJECTED" : "FAILED";
+          const result = await sendWithThrottleRecovery(sender, mail, {
+            kind: activeJob.data.kind,
+            idempotencyKey,
+            smtpHost: options.smtpHost,
+            minGapMs: limits.minGapMs,
+          });
+          const state = deliveryState(result, sender, options.smtpHost);
           const normalized = { ...result, state, ...(result.id ? { providerMessageId: result.id } : {}) };
           const reason = providerCircuitReason(normalized, sender, options.smtpHost);
           if (reason) {
@@ -471,8 +551,13 @@ export async function startEmailWorker(sender: DeliveryTransport, options: Email
       const { dedupeKey: _dedupeKey, idempotencyKey: _idempotencyKey, ...message } = decoded;
       if (options.auditStore) await options.auditStore.transition(String(job.id), "PROCESSING");
       try {
-        const result = await sender.send(message, { kind: job.data.kind, ...(idempotencyKey ? { idempotencyKey } : {}) });
-        const normalized = { ...result, state: result.ok ? "PROVIDER_ACCEPTED" as const : result.status === 0 ? "UNKNOWN" as const : result.status === 403 || result.status === 429 || result.retryable ? "REJECTED" as const : "FAILED" as const, ...(result.id ? { providerMessageId: result.id } : {}) };
+        const result = await sendWithThrottleRecovery(sender, message, {
+          kind: job.data.kind,
+          idempotencyKey,
+          smtpHost: options.smtpHost,
+          minGapMs: limits.minGapMs,
+        });
+        const normalized = { ...result, state: deliveryState(result, sender, options.smtpHost), ...(result.id ? { providerMessageId: result.id } : {}) };
         const reason = providerCircuitReason(normalized, sender, options.smtpHost);
         if (reason) {
           await connection.set(circuitKey(identity), reason);
