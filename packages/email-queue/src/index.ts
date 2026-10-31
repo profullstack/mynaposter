@@ -290,6 +290,14 @@ export function providerCircuitReason(result: DeliveryResult, sender: Pick<Deliv
   return undefined;
 }
 
+function deliveryState(result: DeliveryResult, sender: DeliveryTransport, smtpHost = ""): DeliveryState {
+  if (result.ok) return "PROVIDER_ACCEPTED";
+  if (result.status === 0) return "UNKNOWN";
+  if (result.status === 403 || result.status === 429 || result.retryable) return "REJECTED";
+  if ((result.attempts ?? 0) >= MAX_THROTTLE_ATTEMPTS && isThrottleFailure(result, sender, smtpHost)) return "REJECTED";
+  return "FAILED";
+}
+
 /** Adds ONE job and waits for its durable result, retrying only definite throttles.
  * Production daemons should keep a worker alive; this convenience API starts
  * a worker with the account's credential-bearing provider for CLI use.
@@ -354,7 +362,7 @@ export async function queuedDelivery(
             smtpHost: options.smtpHost,
             minGapMs: limits.minGapMs,
           });
-          const state: DeliveryState = result.ok ? "PROVIDER_ACCEPTED" : result.status === 0 ? "UNKNOWN" : result.status === 403 || result.status === 429 || result.retryable || ((result.attempts ?? 0) >= MAX_THROTTLE_ATTEMPTS && isThrottleFailure(result, sender, options.smtpHost)) ? "REJECTED" : "FAILED";
+          const state = deliveryState(result, sender, options.smtpHost);
           const normalized = { ...result, state, ...(result.id ? { providerMessageId: result.id } : {}) };
           const reason = providerCircuitReason(normalized, sender, options.smtpHost);
           if (reason) {
@@ -549,7 +557,7 @@ export async function startEmailWorker(sender: DeliveryTransport, options: Email
           smtpHost: options.smtpHost,
           minGapMs: limits.minGapMs,
         });
-        const normalized = { ...result, state: result.ok ? "PROVIDER_ACCEPTED" as const : result.status === 0 ? "UNKNOWN" as const : result.status === 403 || result.status === 429 || result.retryable || ((result.attempts ?? 0) >= MAX_THROTTLE_ATTEMPTS && isThrottleFailure(result, sender, options.smtpHost)) ? "REJECTED" as const : "FAILED" as const, ...(result.id ? { providerMessageId: result.id } : {}) };
+        const normalized = { ...result, state: deliveryState(result, sender, options.smtpHost), ...(result.id ? { providerMessageId: result.id } : {}) };
         const reason = providerCircuitReason(normalized, sender, options.smtpHost);
         if (reason) {
           await connection.set(circuitKey(identity), reason);

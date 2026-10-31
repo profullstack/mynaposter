@@ -341,6 +341,38 @@ if (testRedisUrl) {
       expect(calls).toBe(1);
     });
 
+    it("pauses after three definite throttle responses and records them as rejected", async () => {
+      const fake = fakeSender();
+      let calls = 0;
+      fake.sender.send = async () => {
+        calls++;
+        return { ok: false, status: 429, retryable: true, error: "Provider rate limit" };
+      };
+      const options = { redisUrl: testRedisUrl!, minGapMs: 1000 };
+      const first = await queuedDelivery(fake.sender, {
+        from: fake.sender.from,
+        to: [`throttled-${randomUUID()}@example.test`],
+        subject: "Throttle recovery test",
+        text: "No external delivery",
+        dedupeKey: `throttle:${randomUUID()}`,
+      }, "transactional", options);
+      expect(first).toMatchObject({ ok: false, state: "REJECTED", retryable: false, status: 429, attempts: 3 });
+      expect(first.error).toContain("Stopped after 3 consecutive throttling responses");
+      expect(calls).toBe(3);
+      expect(providerCircuitReason(first, fake.sender)).toContain("paused for administrator review");
+
+      const second = await queuedDelivery(fake.sender, {
+        from: fake.sender.from,
+        to: [`after-throttle-${randomUUID()}@example.test`],
+        subject: "Throttle circuit test",
+        text: "No external delivery",
+        dedupeKey: `throttle-after:${randomUUID()}`,
+      }, "transactional", options);
+      expect(second).toMatchObject({ ok: false, state: "SUPPRESSED", status: 403 });
+      expect(calls).toBe(3);
+      await resumeEmailQueue(fake.sender, options);
+    });
+
     it("encrypts Redis payloads, keeps transport secrets out, and decrypts only in the worker", async () => {
       const from = `encrypted-${randomUUID()}@example.test`;
       const providerId = `resend-${randomUUID()}`;
