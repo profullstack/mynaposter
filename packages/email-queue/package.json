@@ -1,6 +1,6 @@
 {
   "name": "@profullstack/email-queue",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "BullMQ account-wide Gmail, Resend and SMTP sending queue with provider-agnostic suppression, bulk compliance gates, circuit breakers and safe budgets",
   "license": "MIT",
   "type": "module",
@@ -14,7 +14,8 @@
     }
   },
   "files": [
-    "dist"
+    "dist",
+    "src"
   ],
   "scripts": {
     "build": "tsc -p tsconfig.build.json",
