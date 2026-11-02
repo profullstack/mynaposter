@@ -15,7 +15,7 @@
  * so someone who replies four times gets one answer, not four.
  */
 import { getNetwork } from "../net/registry.ts";
-import { listAccounts } from "../store/accounts.ts";
+import { describeArchive, getAccount, listAccounts } from "../store/accounts.ts";
 import { listHistory } from "../store/history.ts";
 import { recordHistory } from "../store/history.ts";
 import { loadSettings, type EngageSettings } from "../store/settings.ts";
@@ -327,7 +327,8 @@ export async function sendFollowUps(options: SendOptions = {}): Promise<SendResu
     const network = account ? getNetwork(account.network) : undefined;
     if (!account || !network) {
       item.status = "skipped";
-      item.error = "account is gone";
+      const stored = getAccount(item.accountId);
+      item.error = stored?.archived ? describeArchive(stored) : "account is gone";
       continue;
     }
     if (sentToday(file.items, account.id, now) >= settings.maxPerDay) {

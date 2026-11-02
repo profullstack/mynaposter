@@ -93,6 +93,22 @@ export interface Account {
   creds: Record<string, string>;
   /** Non-secret context: instance URL, page id, DID, subreddit default. */
   meta: Record<string, string>;
+  /**
+   * Set when the account is archived (`myna account archive`): it keeps its
+   * credentials but is never posted to, followed from or engaged with. Kept
+   * outside `creds` because it is not a secret and outside `meta` because
+   * adapters own that map.
+   */
+  archived?: AccountArchive;
+}
+
+export interface AccountArchive {
+  /** ISO timestamp the account was archived. */
+  at: string;
+  /** The network banned or disabled the account, rather than us retiring it. */
+  banned?: boolean;
+  /** Why, in a sentence: shown wherever a post to it is refused or dropped. */
+  note?: string;
 }
 
 export interface MediaItem {

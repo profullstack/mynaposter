@@ -73,7 +73,7 @@ export function savedBy(): string {
 export function collect(options: { history?: boolean } = {}): BundlePayload {
   void options;
   return {
-    accounts: listAccounts(),
+    accounts: listAccounts({ includeArchived: true }),
     queue: listQueue().filter((post) => post.status === "pending"),
     settings: loadSettings(),
     savedAt: new Date().toISOString(),
@@ -153,7 +153,7 @@ export interface ApplyResult {
  * with a stale one is the failure that would be hardest to notice.
  */
 export function apply(payload: BundlePayload, options: ApplyOptions = {}): ApplyResult {
-  const existing = new Map(listAccounts().map((account) => [account.id, account]));
+  const existing = new Map(listAccounts({ includeArchived: true }).map((account) => [account.id, account]));
   const result: ApplyResult = {
     accountsAdded: [],
     accountsReplaced: [],

@@ -75,8 +75,9 @@ export interface PickResult {
 
 /** Choose the account for this post. Pure: state is read, not written. */
 export function pickRotation(input: PickInput): PickResult {
-  const order = [...new Map(input.accounts.map((a) => [a.id, a])).values()].sort((a, b) => a.id.localeCompare(b.id));
-  if (!order.length) throw new Error("--rotate needs at least one target account.");
+  // An archived account never takes a turn: it is not in the group at all.
+  const order = [...new Map(input.accounts.filter((a) => !a.archived).map((a) => [a.id, a])).values()].sort((a, b) => a.id.localeCompare(b.id));
+  if (!order.length) throw new Error("--rotate needs at least one target account that is not archived.");
   const group = order.map((a) => a.id).join(",");
   const slots = new Map(order.map((a) => [a.id, input.slot(a)]));
   const at = (account: Account) => slots.get(account.id) ?? Number.POSITIVE_INFINITY;

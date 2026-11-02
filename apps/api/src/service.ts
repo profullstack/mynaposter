@@ -71,7 +71,7 @@ export function networks() {
 
 /** Accounts, minus every secret. */
 export function accounts() {
-  return listAccounts().map(({ creds, ...rest }) => rest);
+  return listAccounts({ includeArchived: true }).map(({ creds, ...rest }) => rest);
 }
 
 export async function post(request: PostRequest) {

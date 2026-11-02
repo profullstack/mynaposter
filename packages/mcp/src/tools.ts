@@ -1441,7 +1441,7 @@ export async function callTool(name: string, args_: Record<string, unknown> = {}
       }
 
       case "myna_accounts": {
-        const accounts = listAccounts().map(({ creds, ...rest }) => rest);
+        const accounts = listAccounts({ includeArchived: true }).map(({ creds, ...rest }) => rest);
         if (!accounts.length) {
           return text(
             "No accounts are connected. A person needs to run `myna login <network>` first; " +
