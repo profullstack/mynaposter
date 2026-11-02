@@ -8,16 +8,56 @@
  * Provider credentials stay in the worker process and are NEVER copied into
  * Redis. V2 callers encrypt the job content with an application-held key.
  */
-import { createCipheriv, createDecipheriv, createHash, randomBytes, randomUUID } from "node:crypto";
+import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
 import { Queue, QueueEvents, Worker } from "bullmq";
 import { Redis } from "ioredis";
+import type { Job } from "bullmq";
 import type { EmailAuditStore } from "./audit.js";
+import {
+  bulkComplianceFailure,
+  classifyProviderFailure,
+  EmailQueueError,
+  isBulkKind,
+  isHardRecipientFailure,
+  normalizeRecipient,
+  recipientDomain,
+  type EmailGateCode,
+  type EmailKind,
+} from "./gates.js";
+import { redactError } from "./redact.js";
+import { getSuppression, suppress } from "./suppression.js";
 
-export { PostgresEmailAuditStore, emailAuditSchema, type EmailAuditEvent, type EmailAuditRecord, type EmailAuditStore, type EmailSqlExecutor } from "./audit.js";
+export { PostgresEmailAuditStore, emailAuditSchema, type EmailAuditEvent, type EmailAuditRecord, type EmailAuditStore, type EmailSqlExecutor, type SuppressionEntry, type SuppressionRecord } from "./audit.js";
 export { processResendWebhook, verifyResendWebhook, type ResendWebhookHeaders, type ResendWebhookResult } from "./webhooks.js";
 export { createResendTransport, type ResendTransportOptions } from "./resend.js";
+export { createSmtpTransport, smtpFailure, type SmtpTransportOptions, type SmtpTransporterLike } from "./smtp.js";
+export {
+  bulkComplianceFailure,
+  classifyProviderFailure,
+  containsPostalAddress,
+  EmailQueueError,
+  enhancedStatusOf,
+  isBulkKind,
+  isHardRecipientFailure,
+  normalizeRecipient,
+  recipientDomain,
+  type EmailGateCode,
+  type EmailKind,
+} from "./gates.js";
+export { redactError } from "./redact.js";
+export {
+  createUnsubscribeToken,
+  getSuppression,
+  handleUnsubscribe,
+  listUnsubscribeHeaders,
+  suppress,
+  unsuppressRedis,
+  verifyUnsubscribeToken,
+  type SuppressionStores,
+  type UnsubscribeRequest,
+  type UnsubscribeResult,
+} from "./suppression.js";
 
-export type EmailKind = "transactional" | "bulk";
 export type DeliveryState =
   | "CREATED" | "VALIDATED" | "QUEUED" | "DEFERRED" | "PROCESSING"
   | "PROVIDER_ACCEPTED" | "SENT" | "DELIVERED" | "DELIVERY_DELAYED"
@@ -32,7 +72,11 @@ export interface QueuedMessage {
   html?: string;
   replyTo?: string;
   headers?: Record<string, string>;
-  /** Stable per campaign+recipient. Leave blank for a fresh transactional send. */
+  /**
+   * Stable per campaign+recipient. When neither this nor idempotencyKey is set,
+   * queuedDelivery derives one from recipient+subject+text+html, so an identical
+   * message to the same recipient returns the earlier receipt (30-day retention).
+   */
   dedupeKey?: string;
   /** Stable per request; preferred name for new callers. */
   idempotencyKey?: string;
@@ -51,11 +95,17 @@ export interface DeliveryResult {
   retryAfterMs?: number;
   /** Number of provider calls made for this delivery. */
   attempts?: number;
+  /** Machine-readable gate code when the queue (not the provider) refused the message. */
+  code?: EmailGateCode | string;
+  /** RFC 3463 enhanced SMTP status (e.g. "5.7.1"), when known. */
+  enhancedStatus?: string;
 }
 export interface DeliveryTransport {
   id: string;
   type: string;
   from?: string;
+  /** SMTP host, when the transport knows it (used for Google detection). */
+  host?: string;
   send(message: QueuedMessage, options?: { kind?: EmailKind; idempotencyKey?: string; skipThrottleRecovery?: boolean }): Promise<DeliveryResult>;
 }
 export interface EmailQueueOptions {
@@ -83,6 +133,13 @@ export interface EmailQueueOptions {
   requireEncryption?: boolean;
   /** PostgreSQL is the durable record store; Redis is only the work queue. */
   auditStore?: EmailAuditStore;
+  /**
+   * The sender's physical postal address. REQUIRED for bulk/marketing mail: the
+   * text and HTML bodies must contain it (CAN-SPAM), or the message is refused.
+   */
+  postalAddress?: string;
+  /** Optional per-recipient-domain daily cap for this sender identity (e.g. 50 to gmail.com). */
+  maxRecipientDomainPer24Hours?: number;
 }
 export interface Limits {
   maxPer24Hours: number;
@@ -103,13 +160,16 @@ interface EmailJobData {
   kind: EmailKind;
   applicationId?: string;
   tenantId?: string;
+  /** Redis quota counters reserved at enqueue; refunded on a definite non-delivery. Hashes only. */
+  quotaKeys?: string[];
 }
 const hash = (s: string): string => createHash("sha256").update(s).digest("hex");
 export function addressOf(from: string): string {
-  return (/<([^>]+)>/.exec(from)?.[1] ?? from).trim().toLowerCase();
+  return normalizeRecipient(from);
 }
-export function isGoogleSender(sender: Pick<DeliveryTransport, "type" | "from">, smtpHost = ""): boolean {
-  return (sender.type === "smtp" && /(^|\.)smtp\.gmail\.com$|(^|\.)gmail\.com$|(^|\.)googlemail\.com$/i.test(smtpHost)) ||
+export function isGoogleSender(sender: Pick<DeliveryTransport, "type" | "from"> & { host?: string }, smtpHost = ""): boolean {
+  const host = smtpHost || sender.host || "";
+  return (sender.type === "smtp" && /(^|\.)smtp\.gmail\.com$|(^|\.)gmail\.com$|(^|\.)googlemail\.com$/i.test(host)) ||
     /@(gmail|googlemail)\.com$/i.test(addressOf(sender.from ?? ""));
 }
 export function senderLimits(sender: Pick<DeliveryTransport, "type" | "from">, smtpHost = "", overrides: Partial<Limits> = {}): Limits {
@@ -133,13 +193,17 @@ export function mailJobId(identity: string, message: QueuedMessage, kind: EmailK
   const to = Array.isArray(message.to) ? message.to : [message.to];
   if (to.length !== 1 || !to[0]?.trim()) throw new Error("Email queue: exactly one recipient per job.");
   const stableKey = message.idempotencyKey ?? message.dedupeKey;
+  // No caller key: derive one deterministically from the content so a retried
+  // call can never send twice. (Before 0.2.0 transactional sends got a random
+  // UUID here and were never deduplicated.)
   const key = stableKey
     ? "dedupe|" + stableKey
-    : kind === "bulk"
+    : isBulkKind(kind)
       ? "bulk|" + message.subject + "|" + message.text + "|" + (message.html ?? "")
-      : "new|" + randomUUID();
+      : "derived|" + hash(message.subject + "\u0000" + message.text + "\u0000" + (message.html ?? ""));
   return hash(identity + "|" + to[0].trim().toLowerCase() + "|" + key);
 }
+const firstRecipient = (message: QueuedMessage): string => (Array.isArray(message.to) ? message.to[0] : message.to) ?? "";
 const quotaScript = `
 local ttl = tonumber(ARGV[#KEYS + 1])
 for i = 1, #KEYS do
@@ -150,6 +214,13 @@ for i = 1, #KEYS do
     for j = 1, i - 1 do redis.call('DECR', KEYS[j]) end
     return i
   end
+end
+return 0`;
+// Gives back one unit per reserved scope; never below zero, never recreates an expired window.
+const refundScript = `
+for i = 1, #KEYS do
+  local n = tonumber(redis.call('GET', KEYS[i]) or '0')
+  if n > 0 then redis.call('DECR', KEYS[i]) end
 end
 return 0`;
 
@@ -218,13 +289,44 @@ export async function sendWithThrottleRecovery(
 
 const queueName = (identity: string): string => "profullstack-email-" + hash(identity).slice(0, 32);
 const circuitKey = (identity: string): string => "profullstack:email-circuit:" + hash(identity);
+/** Account-wide breaker: a suspended/invalid credential stops every identity that uses it. */
+const providerCircuitKey = (providerId: string): string => "profullstack:email-provider-circuit:" + hash(providerId);
 const quotaKey = (scope: string, value: string): string => "profullstack:email-quota:v2:" + hash(scope + "|" + value);
 const normAddress = (value: string): string => addressOf(value);
+
+const MISSING_KEY = "EMAIL_QUEUE_ENCRYPTION_KEY is not set, but this email queue requires encryption (requireEncryption/queueEmail); refusing to store message content in Redis as plaintext. Generate 32 random bytes (openssl rand -base64 32), store it in the service's secret manager, and set EMAIL_QUEUE_ENCRYPTION_KEY on every producer AND worker.";
+
+/**
+ * Configuration problems that would make every send fail. Call at process
+ * startup and log/alert on a non-empty result instead of discovering it on the
+ * first recipient. Reads options first, then the environment.
+ */
+export function emailQueueConfigProblems(
+  options: Partial<Pick<EmailQueueOptions, "redisUrl" | "encryptionKey" | "requireEncryption">> = {},
+  env: Record<string, string | undefined> = process.env,
+): string[] {
+  const problems: string[] = [];
+  if (!(options.redisUrl ?? env.EMAIL_QUEUE_REDIS_URL)?.trim()) problems.push("EMAIL_QUEUE_REDIS_URL is not set; queued email is disabled.");
+  const key = options.encryptionKey ?? env.EMAIL_QUEUE_ENCRYPTION_KEY;
+  if (!key) {
+    if (options.requireEncryption ?? true) problems.push(MISSING_KEY);
+  } else {
+    const bytes = /^[a-f0-9]{64}$/i.test(key) ? Buffer.from(key, "hex") : Buffer.from(key, "base64");
+    if (bytes.length !== 32) problems.push("EMAIL_QUEUE_ENCRYPTION_KEY must encode exactly 32 bytes (base64 or 64-character hex).");
+  }
+  return problems;
+}
+
+/** Throws one clear error listing every problem; use in a startup check. */
+export function assertEmailQueueConfig(options: Parameters<typeof emailQueueConfigProblems>[0] = {}, env: Record<string, string | undefined> = process.env): void {
+  const problems = emailQueueConfigProblems(options, env);
+  if (problems.length) throw new EmailQueueError("CONFIG_INVALID", `Email queue misconfigured: ${problems.join(" ")}`);
+}
 
 function encryptionKey(options: EmailQueueOptions, required = false): Buffer | undefined {
   const configured = options.encryptionKey ?? process.env.EMAIL_QUEUE_ENCRYPTION_KEY;
   if (!configured) {
-    if (required || options.requireEncryption) throw new Error("EMAIL_QUEUE_ENCRYPTION_KEY is required; refusing to store message content in Redis as plaintext.");
+    if (required || options.requireEncryption) throw new EmailQueueError("CONFIG_INVALID", MISSING_KEY);
     return undefined;
   }
   const key = /^[a-f0-9]{64}$/i.test(configured) ? Buffer.from(configured, "hex") : Buffer.from(configured, "base64");
@@ -269,31 +371,201 @@ function authorizedSender(sender: DeliveryTransport, message: QueuedMessage, opt
   return Boolean(requested && allowed.includes(requested));
 }
 
-function quotaScopes(identity: string, sender: DeliveryTransport, options: EmailQueueOptions, limits: Limits) {
-  const provider = options.providerId ?? sender.id ?? sender.type;
-  const scopes: { key: string; limit: number }[] = [
-    { key: quotaKey("provider", provider), limit: Math.max(1, Math.floor(options.maxProviderPer24Hours ?? limits.maxPer24Hours)) },
-    { key: quotaKey("mailbox", identity), limit: limits.maxPer24Hours },
+interface QuotaScope { name: string; key: string; limit: number }
+
+function providerIdOf(sender: DeliveryTransport, options: EmailQueueOptions): string {
+  return options.providerId ?? sender.id ?? sender.type;
+}
+
+function quotaScopes(identity: string, sender: DeliveryTransport, options: EmailQueueOptions, limits: Limits, recipient?: string): QuotaScope[] {
+  const provider = providerIdOf(sender, options);
+  const scopes: QuotaScope[] = [
+    { name: "provider", key: quotaKey("provider", provider), limit: Math.max(1, Math.floor(options.maxProviderPer24Hours ?? limits.maxPer24Hours)) },
+    { name: "mailbox", key: quotaKey("mailbox", identity), limit: limits.maxPer24Hours },
   ];
-  if (options.applicationId) scopes.push({ key: quotaKey("application", options.applicationId), limit: Math.max(1, Math.floor(options.maxApplicationPer24Hours ?? limits.maxPer24Hours)) });
-  if (options.tenantId) scopes.push({ key: quotaKey("tenant", options.tenantId), limit: Math.max(1, Math.floor(options.maxTenantPer24Hours ?? limits.maxPer24Hours)) });
+  if (options.applicationId) scopes.push({ name: "application", key: quotaKey("application", options.applicationId), limit: Math.max(1, Math.floor(options.maxApplicationPer24Hours ?? limits.maxPer24Hours)) });
+  if (options.tenantId) scopes.push({ name: "tenant", key: quotaKey("tenant", options.tenantId), limit: Math.max(1, Math.floor(options.maxTenantPer24Hours ?? limits.maxPer24Hours)) });
+  const domain = recipient ? recipientDomain(recipient) : "";
+  if (options.maxRecipientDomainPer24Hours && domain) {
+    scopes.push({ name: "recipient-domain", key: quotaKey("recipient-domain", identity + "|" + domain), limit: Math.max(1, Math.floor(options.maxRecipientDomainPer24Hours)) });
+  }
   return scopes;
 }
 
-/** A restriction/rate-limit is an operator action, never a reason to route elsewhere. */
-export function providerCircuitReason(result: DeliveryResult, sender: Pick<DeliveryTransport, "type" | "from">, smtpHost = ""): string | undefined {
-  if (isGoogleSender(sender, smtpHost) && result.status === 403) return "Google sending restriction reported; mailbox paused for administrator review.";
+/** Reserves one unit in every scope atomically. Returns the exhausted scope's name, or undefined. */
+async function reserveQuota(redis: Redis, scopes: QuotaScope[]): Promise<string | undefined> {
+  const failed = await redis.eval(quotaScript, scopes.length, ...scopes.map((scope) => scope.key), ...scopes.map((scope) => scope.limit), DAY_MS);
+  return failed === 0 ? undefined : scopes[Number(failed) - 1]?.name ?? "configured";
+}
+
+async function refundQuota(redis: Redis, keys: string[] | undefined): Promise<void> {
+  if (!keys?.length) return;
+  await redis.eval(refundScript, keys.length, ...keys);
+}
+
+/**
+ * Why a sender must stop after this result, or undefined. Any provider
+ * 401/403, account suspension, unverified domain, SMTP auth failure or SMTP
+ * 5.7.x pauses the sender; persistent throttling pauses it too. A restriction
+ * is an operator action, never a reason to route the message elsewhere.
+ */
+export function providerCircuitDecision(
+  result: DeliveryResult,
+  sender: Pick<DeliveryTransport, "type" | "from"> & { host?: string },
+  smtpHost = "",
+): { scope: "account" | "sender"; reason: string } | undefined {
+  if (isGoogleSender(sender, smtpHost) && result.status === 403) return { scope: "sender", reason: "Google sending restriction reported; mailbox paused for administrator review." };
+  const classified = classifyProviderFailure(result, sender.type);
+  if (classified) return classified;
   if (isThrottleFailure(result, sender, smtpHost) && (result.attempts ?? 0) >= MAX_THROTTLE_ATTEMPTS) {
-    if (isGoogleSender(sender, smtpHost)) return "Google sending restriction persisted after three attempts; mailbox paused for administrator review.";
-    return "Provider throttling persisted after three attempts; queue paused for administrator review.";
+    if (isGoogleSender(sender, smtpHost)) return { scope: "sender", reason: "Google sending restriction persisted after three attempts; mailbox paused for administrator review." };
+    return { scope: "sender", reason: "Provider throttling persisted after three attempts; queue paused for administrator review." };
   }
   return undefined;
+}
+
+/** A restriction/rate-limit is an operator action, never a reason to route elsewhere. */
+export function providerCircuitReason(result: DeliveryResult, sender: Pick<DeliveryTransport, "type" | "from"> & { host?: string }, smtpHost = ""): string | undefined {
+  return providerCircuitDecision(result, sender, smtpHost)?.reason;
+}
+
+/** The open breaker reason for this identity or its provider credential, if any. */
+async function openCircuit(redis: Redis, identity: string, providerId: string): Promise<string | undefined> {
+  const [own, account] = await redis.mget(circuitKey(identity), providerCircuitKey(providerId));
+  return own ?? account ?? undefined;
+}
+
+type GateFailure = { code: EmailGateCode; error: string; state: DeliveryState; status: number };
+
+/** Synchronous gates that need neither Redis nor the provider. */
+function preflightFailure(sender: DeliveryTransport, message: QueuedMessage, kind: EmailKind, options: EmailQueueOptions): GateFailure | undefined {
+  if (isBulkKind(kind) && isGoogleSender(sender, options.smtpHost)) {
+    return { code: "BULK_GMAIL_FORBIDDEN", state: "REJECTED", status: 403, error: "Bulk email must use Resend or another bulk provider; Gmail is reserved for approved one-off correspondence." };
+  }
+  const from = message.from ? normAddress(message.from) : normAddress(sender.from ?? "");
+  if (!authorizedSender(sender, message, options)) {
+    return { code: "SENDER_UNAUTHORIZED", state: "REJECTED", status: 403, error: `Sender ${from || "(missing)"} is not authorized for this transport.` };
+  }
+  if (blockedAddresses(options).has(from)) {
+    return { code: "SENDER_BLOCKED", state: "SUPPRESSED", status: 403, error: `Sending from ${from} is administratively blocked.` };
+  }
+  if (isBulkKind(kind)) {
+    const failure = bulkComplianceFailure(message, options.postalAddress);
+    if (failure) return { ...failure, state: "REJECTED", status: 422 };
+  }
+  return undefined;
+}
+
+const gateResult = (failure: GateFailure): DeliveryResult => ({ ok: false, retryable: false, state: failure.state, status: failure.status, code: failure.code, error: failure.error });
+
+interface DeliveryContext {
+  sender: DeliveryTransport;
+  options: EmailQueueOptions;
+  identity: string;
+  providerId: string;
+  limits: Limits;
+  /** A non-blocking command connection. */
+  redis: Redis;
+  queue: Queue<EmailJobData, DeliveryResult>;
+}
+
+async function tripCircuit(ctx: DeliveryContext, decision: { scope: "account" | "sender"; reason: string }): Promise<void> {
+  await ctx.redis.set(circuitKey(ctx.identity), decision.reason);
+  if (decision.scope === "account") await ctx.redis.set(providerCircuitKey(ctx.providerId), decision.reason);
+  void ctx.queue.pause().catch(() => undefined);
+}
+
+/**
+ * The single worker-side send path used by queuedDelivery and startEmailWorker.
+ * Re-checks the breaker, the recipient's suppression, and bulk compliance
+ * immediately before calling the provider. Refunds the reserved quota whenever
+ * the message definitely did not reach the provider (gate refusal or a
+ * definite provider refusal), but never for an UNKNOWN outcome.
+ */
+async function processDeliveryJob(ctx: DeliveryContext, job: Job<EmailJobData, DeliveryResult>): Promise<DeliveryResult> {
+  const id = String(job.id);
+  const audit = ctx.options.auditStore;
+  const finish = async (result: DeliveryResult, refund: boolean): Promise<DeliveryResult> => {
+    if (refund) await refundQuota(ctx.redis, job.data.quotaKeys).catch(() => undefined);
+    try {
+      await audit?.transition(id, result.state ?? "FAILED", {
+        ...(result.providerMessageId ? { providerMessageId: result.providerMessageId } : {}),
+        ...(result.rfcMessageId ? { rfcMessageId: result.rfcMessageId } : {}),
+        ...(result.error ? { error: result.error } : {}),
+      });
+    } catch (auditError) {
+      await tripCircuit(ctx, { scope: "sender", reason: "PostgreSQL audit update failed after provider response; queue paused for reconciliation." });
+      return { ...result, error: [result.error, `PostgreSQL audit update failed: ${redactError(auditError)}`].filter(Boolean).join("; ") };
+    }
+    return result;
+  };
+
+  const paused = await openCircuit(ctx.redis, ctx.identity, ctx.providerId);
+  if (paused) {
+    void ctx.queue.pause().catch(() => undefined);
+    return finish({ ok: false, state: "SUPPRESSED", retryable: false, status: 403, code: "SENDER_PAUSED", error: paused }, true);
+  }
+  let decoded: QueuedMessage;
+  try {
+    decoded = readJobMessage(job.data, ctx.options);
+  } catch (error) {
+    return finish({ ok: false, state: "FAILED", retryable: false, code: "CONFIG_INVALID", error: redactError(error) }, true);
+  }
+  const recipient = firstRecipient(decoded);
+  const suppressed = await getSuppression(recipient, { redis: ctx.redis, ...(audit ? { auditStore: audit } : {}) });
+  if (suppressed) {
+    return finish({ ok: false, state: "SUPPRESSED", retryable: false, status: 403, code: "RECIPIENT_SUPPRESSED", error: `Recipient is suppressed (${suppressed.reason} via ${suppressed.source}); not sent.` }, true);
+  }
+  if (isBulkKind(job.data.kind)) {
+    // Enqueue already enforced the postal address; a worker without postalAddress still re-checks headers.
+    const failure = bulkComplianceFailure(decoded, ctx.options.postalAddress, { headersOnly: !ctx.options.postalAddress });
+    if (failure) return finish({ ok: false, state: "REJECTED", retryable: false, status: 422, code: failure.code, error: failure.error }, true);
+  }
+  const idempotencyKey = decoded.idempotencyKey ?? decoded.dedupeKey ?? `email-queue:${id}`;
+  const { dedupeKey: _dedupeKey, idempotencyKey: _idempotencyKey, ...mail } = decoded;
+  if (audit) {
+    try {
+      await audit.transition(id, "PROCESSING");
+    } catch (auditError) {
+      // Never send what cannot be audited. Nothing left this process: refund and pause.
+      await refundQuota(ctx.redis, job.data.quotaKeys).catch(() => undefined);
+      await tripCircuit(ctx, { scope: "sender", reason: "PostgreSQL audit update failed before send; queue paused for reconciliation." });
+      return { ok: false, state: "FAILED", retryable: false, code: "CONFIG_INVALID", error: `PostgreSQL audit update failed before send: ${redactError(auditError)}` };
+    }
+  }
+  try {
+    const result = await sendWithThrottleRecovery(ctx.sender, mail, {
+      kind: job.data.kind,
+      idempotencyKey,
+      smtpHost: ctx.options.smtpHost ?? ctx.sender.host,
+      minGapMs: ctx.limits.minGapMs,
+    });
+    const state = deliveryState(result, ctx.sender, ctx.options.smtpHost);
+    const decision = result.ok ? undefined : providerCircuitDecision({ ...result, state }, ctx.sender, ctx.options.smtpHost);
+    if (decision) await tripCircuit(ctx, decision);
+    if (isHardRecipientFailure(result, ctx.sender.type)) {
+      await suppress(recipient, "hard_bounce", ctx.sender.type, { redis: ctx.redis, ...(audit ? { auditStore: audit } : {}), provider: ctx.providerId }).catch(() => undefined);
+    }
+    const normalized: DeliveryResult = {
+      ...result,
+      state,
+      ...(result.id ? { providerMessageId: result.id } : {}),
+      ...(result.error ? { error: redactError(result.error) } : {}),
+    };
+    // status 0 = uncertain: the provider may have accepted it, so the quota stays spent.
+    return finish(normalized, !result.ok && result.status !== 0);
+  } catch (error) {
+    // A socket failure might mean the remote provider accepted the message.
+    // Record an uncertain result. NEVER retry automatically.
+    return finish({ ok: false, state: "UNKNOWN", retryable: false, status: 0, error: "Delivery uncertain; check provider before manual retry: " + redactError(error) }, false);
+  }
 }
 
 function deliveryState(result: DeliveryResult, sender: DeliveryTransport, smtpHost = ""): DeliveryState {
   if (result.ok) return "PROVIDER_ACCEPTED";
   if (result.status === 0) return "UNKNOWN";
-  if (result.status === 403 || result.status === 429 || result.retryable) return "REJECTED";
+  if (result.status === 401 || result.status === 403 || result.status === 429 || result.retryable) return "REJECTED";
+  if (classifyProviderFailure(result, sender.type)) return "REJECTED";
   if ((result.attempts ?? 0) >= MAX_THROTTLE_ATTEMPTS && isThrottleFailure(result, sender, smtpHost)) return "REJECTED";
   return "FAILED";
 }
@@ -308,81 +580,83 @@ export async function queuedDelivery(
   kind: EmailKind,
   options: EmailQueueOptions,
 ): Promise<DeliveryResult> {
-  if (!options.redisUrl) throw new Error("EMAIL_QUEUE_REDIS_URL is required; refusing direct Gmail/Resend bulk sending.");
+  if (!options.redisUrl) throw new EmailQueueError("CONFIG_INVALID", "EMAIL_QUEUE_REDIS_URL is required; refusing direct Gmail/Resend bulk sending.");
   encryptionKey(options, options.requireEncryption);
-  if (kind === "bulk" && isGoogleSender(sender, options.smtpHost)) {
-    return { ok: false, state: "REJECTED", retryable: false, status: 403, error: "Bulk email must use Resend or another bulk provider; Gmail is reserved for approved one-off correspondence." };
-  }
-  const from = message.from ? normAddress(message.from) : normAddress(sender.from ?? "");
-  if (!authorizedSender(sender, message, options)) {
-    return { ok: false, state: "REJECTED", retryable: false, status: 403, error: `Sender ${from || "(missing)"} is not authorized for this transport.` };
-  }
-  if (blockedAddresses(options).has(from)) {
-    return { ok: false, state: "SUPPRESSED", retryable: false, status: 403, error: `Sending from ${from} is administratively blocked.` };
-  }
+  const gate = preflightFailure(sender, message, kind, options);
+  if (gate) return gateResult(gate);
   const identity = queueIdentity(sender, options.smtpHost);
+  const providerId = providerIdOf(sender, options);
   const limits = senderLimits(sender, options.smtpHost, options);
   const name = queueName(identity);
   const jobId = mailJobId(identity, message, kind);
-  const connect = () => new Redis(options.redisUrl, {
-    maxRetriesPerRequest: null, connectTimeout: 5000, retryStrategy: (attempt: number) => attempt <= 3 ? Math.min(attempt * 200, 1000) : null,
-  });
+  const recipient = firstRecipient(message);
+  const connect = () => connectRedis(options);
   const producerRedis = connect();
   const workerRedis = connect();
   const eventsRedis = connect();
   const queue = new Queue<EmailJobData, DeliveryResult>(name, { connection: producerRedis });
   const events = new QueueEvents(name, { connection: eventsRedis });
+  const ctx: DeliveryContext = { sender, options, identity, providerId, limits, redis: producerRedis, queue };
   let worker: Worker<EmailJobData, DeliveryResult> | undefined;
   try {
-    const circuit = await producerRedis.get(circuitKey(identity));
-    if (circuit) return { ok: false, state: "SUPPRESSED", retryable: false, status: 403, error: circuit };
+    const circuit = await openCircuit(producerRedis, identity, providerId);
+    if (circuit) return { ok: false, state: "SUPPRESSED", retryable: false, status: 403, code: "SENDER_PAUSED", error: circuit };
+    const suppressed = await getSuppression(recipient, { redis: producerRedis, ...(options.auditStore ? { auditStore: options.auditStore } : {}) });
+    if (suppressed) return { ok: false, state: "SUPPRESSED", retryable: false, status: 403, code: "RECIPIENT_SUPPRESSED", error: `Recipient is suppressed (${suppressed.reason} via ${suppressed.source}); not sent.` };
     await events.waitUntilReady();
-    const previous = await queue.getJob(jobId);
-    let job = previous;
+    let job = await queue.getJob(jobId);
     if (!job) {
-      const scopes = quotaScopes(identity, sender, options, limits);
-      const allowed = await producerRedis.eval(quotaScript, scopes.length, ...scopes.map((scope) => scope.key), ...scopes.map((scope) => scope.limit), DAY_MS);
-      if (allowed !== 0) return { ok: false, state: "DEFERRED", status: 429, retryable: true, error: `Email budget exhausted in ${scopes[Number(allowed) - 1]?.key.split(":")[3] ?? "configured"} scope; recipient remains unsent.` };
-      // Important: jobId remains in Redis as a completed receipt for 30 days.
+      const audit = options.auditStore;
       const prepared = { ...message, from: message.from ?? sender.from };
-      job = await queue.add("deliver", { ...jobMessage(prepared, options), kind }, {
-        jobId, attempts: 1, removeOnComplete: { age: 30 * 86400, count: 100_000 }, removeOnFail: false,
+      await audit?.create({
+        id: jobId,
+        provider: providerId,
+        applicationId: options.applicationId ?? "default",
+        ...(options.tenantId ? { tenantId: options.tenantId } : {}),
+        sender: prepared.from ?? "",
+        recipient: normalizeRecipient(recipient),
+        transport: sender.type,
+        status: "CREATED",
+        // The job id is already unique per identity+recipient+key (or content hash).
+        idempotencyKey: jobId,
       });
+      const scopes = quotaScopes(identity, sender, options, limits, recipient);
+      const exhausted = await reserveQuota(producerRedis, scopes);
+      if (exhausted) {
+        const error = `Email budget exhausted in ${exhausted} scope; recipient remains unsent.`;
+        await audit?.transition(jobId, "DEFERRED", { error });
+        return { ok: false, state: "DEFERRED", status: 429, retryable: true, code: "QUOTA_EXHAUSTED", error };
+      }
+      try {
+        // Important: jobId remains in Redis as a completed receipt for 30 days.
+        job = await queue.add("deliver", { ...jobMessage(prepared, options), kind, quotaKeys: scopes.map((scope) => scope.key) }, {
+          jobId, attempts: 1, removeOnComplete: { age: 30 * 86400, count: 100_000 }, removeOnFail: false,
+        });
+      } catch (error) {
+        await refundQuota(producerRedis, scopes.map((scope) => scope.key)).catch(() => undefined);
+        await audit?.transition(jobId, "FAILED", { error: redactError(error) }).catch(() => undefined);
+        throw error;
+      }
+      if (audit) {
+        try {
+          await audit.transition(jobId, "QUEUED");
+        } catch (error) {
+          const reason = "PostgreSQL audit update failed after queue insertion; queue paused for reconciliation.";
+          await tripCircuit(ctx, { scope: "sender", reason });
+          throw new Error(`${reason} ${redactError(error)}`);
+        }
+      }
     }
     worker = new Worker<EmailJobData, DeliveryResult>(
       name,
-      async (activeJob) => {
-        const decoded = readJobMessage(activeJob.data, options);
-        const idempotencyKey = decoded.idempotencyKey ?? decoded.dedupeKey;
-        const { dedupeKey: _dedupeKey, idempotencyKey: _idempotencyKey, ...mail } = decoded;
-        try {
-          const result = await sendWithThrottleRecovery(sender, mail, {
-            kind: activeJob.data.kind,
-            idempotencyKey,
-            smtpHost: options.smtpHost,
-            minGapMs: limits.minGapMs,
-          });
-          const state = deliveryState(result, sender, options.smtpHost);
-          const normalized = { ...result, state, ...(result.id ? { providerMessageId: result.id } : {}) };
-          const reason = providerCircuitReason(normalized, sender, options.smtpHost);
-          if (reason) {
-            await producerRedis.set(circuitKey(identity), reason);
-            void queue.pause().catch(() => undefined);
-          }
-          return normalized;
-        } catch (error) {
-          // A socket failure might mean the remote provider accepted the message.
-          // Record an uncertain result. NEVER retry automatically.
-          return { ok: false, state: "UNKNOWN", retryable: false, status: 0, error: "Delivery uncertain; check provider before manual retry: " + String(error) };
-        }
-      },
+      (activeJob) => processDeliveryJob(ctx, activeJob),
       { connection: workerRedis, concurrency: 1, limiter: { max: 1, duration: limits.minGapMs } },
     );
     const state = await job.getState();
     if (state === "completed") return job.returnvalue as DeliveryResult;
-    if (state === "failed") return { ok: false, state: "FAILED", retryable: false, error: job.failedReason || "Queue job failed; inspect before retrying." };
+    if (state === "failed") return { ok: false, state: "FAILED", retryable: false, error: redactError(job.failedReason || "Queue job failed; inspect before retrying.") };
     const result = await job.waitUntilFinished(events) as DeliveryResult;
-    if (await producerRedis.get(circuitKey(identity))) await queue.pause();
+    if (await openCircuit(producerRedis, identity, providerId)) await queue.pause();
     return result;
   } finally {
     await worker?.close().catch(() => undefined);
@@ -415,11 +689,14 @@ export interface QueueEmailOptions extends EmailQueueOptions {
 }
 
 function connectRedis(options: EmailQueueOptions): Redis {
-  return new Redis(options.redisUrl, {
+  const redis = new Redis(options.redisUrl, {
     maxRetriesPerRequest: null,
     connectTimeout: 5000,
     retryStrategy: (attempt: number) => attempt <= 3 ? Math.min(attempt * 200, 1000) : null,
   });
+  // Failures surface as rejected commands; without a listener ioredis also logs every reconnect attempt.
+  redis.on("error", () => undefined);
+  return redis;
 }
 
 function getQueue(sender: DeliveryTransport, options: EmailQueueOptions) {
@@ -447,25 +724,24 @@ export async function queueEmail(
   kind: EmailKind,
   options: QueueEmailOptions,
 ): Promise<EmailJobStatus> {
-  if (!options.redisUrl) throw new Error("EMAIL_QUEUE_REDIS_URL is required; refusing direct sending.");
+  if (!options.redisUrl) throw new EmailQueueError("CONFIG_INVALID", "EMAIL_QUEUE_REDIS_URL is required; refusing direct sending.");
   encryptionKey(options, true);
-  const idempotencyKey = options.idempotencyKey.trim();
-  if (!idempotencyKey) throw new Error("queueEmail requires a stable idempotencyKey.");
+  const idempotencyKey = options.idempotencyKey?.trim() ?? "";
+  if (!idempotencyKey) throw new EmailQueueError("IDEMPOTENCY_KEY_REQUIRED", "queueEmail requires a stable idempotencyKey.");
   const prepared = { ...message, idempotencyKey };
-  if (kind === "bulk" && isGoogleSender(sender, options.smtpHost)) throw new Error("Bulk email must use an approved bulk provider; Gmail is reserved for approved one-off correspondence.");
-  const from = prepared.from ? normAddress(prepared.from) : normAddress(sender.from ?? "");
-  if (!authorizedSender(sender, prepared, options)) throw new Error(`Sender ${from || "(missing)"} is not authorized for this transport.`);
-  if (blockedAddresses(options).has(from)) throw new Error(`Sending from ${from} is administratively blocked.`);
+  const gate = preflightFailure(sender, prepared, kind, options);
+  if (gate) throw new EmailQueueError(gate.code, gate.error);
   const identity = queueIdentity(sender, options.smtpHost);
+  const provider = providerIdOf(sender, options);
   const redis = connectRedis(options);
   const { queue } = getQueue(sender, options);
   try {
-    const circuit = await redis.get(circuitKey(identity));
-    if (circuit) throw new Error(`Email queue paused: ${circuit}`);
+    const circuit = await openCircuit(redis, identity, provider);
+    if (circuit) throw new EmailQueueError("SENDER_PAUSED", `Email queue paused: ${circuit}`);
     const id = mailJobId(identity, prepared, kind);
-    const recipient = Array.isArray(prepared.to) ? prepared.to[0] as string : prepared.to;
-    const provider = options.providerId ?? sender.id ?? sender.type;
-    if (await options.auditStore.isSuppressed(provider, recipient)) throw new Error(`Recipient ${recipient} is suppressed for provider ${provider}.`);
+    const recipient = firstRecipient(prepared);
+    const suppressed = await getSuppression(recipient, { redis, auditStore: options.auditStore });
+    if (suppressed) throw new EmailQueueError("RECIPIENT_SUPPRESSED", `Recipient is suppressed (${suppressed.reason} via ${suppressed.source}); not queued.`);
     let job = await queue.getJob(id);
     if (!job) {
       await options.auditStore.create({
@@ -474,17 +750,17 @@ export async function queueEmail(
         applicationId: options.applicationId,
         ...(options.tenantId ? { tenantId: options.tenantId } : {}),
         sender: prepared.from ?? sender.from ?? "",
-        recipient,
+        recipient: normalizeRecipient(recipient),
         transport: sender.type,
         status: "CREATED",
         idempotencyKey,
       });
       const limits = senderLimits(sender, options.smtpHost, options);
-      const scopes = quotaScopes(identity, sender, options, limits);
-      const reserved = await redis.eval(quotaScript, scopes.length, ...scopes.map((scope) => scope.key), ...scopes.map((scope) => scope.limit), DAY_MS);
-      if (reserved !== 0) {
-        await options.auditStore.transition(id, "DEFERRED", { error: `Email budget exhausted in ${scopes[Number(reserved) - 1]?.key.split(":")[3] ?? "configured"} scope.` });
-        throw new Error(`Email budget exhausted in ${scopes[Number(reserved) - 1]?.key.split(":")[3] ?? "configured"} scope.`);
+      const scopes = quotaScopes(identity, sender, options, limits, recipient);
+      const exhausted = await reserveQuota(redis, scopes);
+      if (exhausted) {
+        await options.auditStore.transition(id, "DEFERRED", { error: `Email budget exhausted in ${exhausted} scope.` });
+        throw new EmailQueueError("QUOTA_EXHAUSTED", `Email budget exhausted in ${exhausted} scope.`);
       }
       const priority = options.priority === undefined ? undefined : 5 - options.priority;
       const encrypted = jobMessage({ ...prepared, from: prepared.from ?? sender.from }, options, true);
@@ -493,6 +769,7 @@ export async function queueEmail(
           ...encrypted, kind,
           applicationId: options.applicationId,
           ...(options.tenantId ? { tenantId: options.tenantId } : {}),
+          quotaKeys: scopes.map((scope) => scope.key),
         }, {
           jobId: id,
           attempts: 1,
@@ -502,7 +779,8 @@ export async function queueEmail(
           removeOnFail: false,
         });
       } catch (error) {
-        await options.auditStore.transition(id, "FAILED", { error: String(error) });
+        await refundQuota(redis, scopes.map((scope) => scope.key)).catch(() => undefined);
+        await options.auditStore.transition(id, "FAILED", { error: redactError(error) });
         throw error;
       }
       try {
@@ -511,12 +789,12 @@ export async function queueEmail(
         const reason = "PostgreSQL audit update failed after queue insertion; queue paused for reconciliation.";
         await redis.set(circuitKey(identity), reason);
         await queue.pause();
-        throw new Error(`${reason} ${String(error)}`);
+        throw new Error(`${reason} ${redactError(error)}`);
       }
     }
     const queueState = await job.getState();
     const result = queueState === "completed" ? job.returnvalue as DeliveryResult : undefined;
-    return { id: job.id ?? id, state: stateFromQueue(queueState, result), queueState, ...(result ? { result } : {}), ...(job.failedReason ? { error: job.failedReason } : {}), timestamp: job.timestamp };
+    return { id: job.id ?? id, state: stateFromQueue(queueState, result), queueState, ...(result ? { result } : {}), ...(job.failedReason ? { error: redactError(job.failedReason) } : {}), timestamp: job.timestamp };
   } finally {
     await queue.close().catch(() => undefined);
     await redis.quit().catch(() => redis.disconnect());
@@ -525,78 +803,39 @@ export async function queueEmail(
 
 /** Starts a credential-bearing worker. Keep its returned handle alive for the service lifetime. */
 export async function startEmailWorker(sender: DeliveryTransport, options: EmailQueueOptions): Promise<{ close(): Promise<void>; worker: Worker }> {
-  if (!options.redisUrl) throw new Error("EMAIL_QUEUE_REDIS_URL is required.");
+  if (!options.redisUrl) throw new EmailQueueError("CONFIG_INVALID", "EMAIL_QUEUE_REDIS_URL is required.");
   const identity = queueIdentity(sender, options.smtpHost);
+  const providerId = providerIdOf(sender, options);
   const limits = senderLimits(sender, options.smtpHost, options);
   const name = queueName(identity);
   const connection = connectRedis(options);
-  const queue = new Queue(name, { connection: connectRedis(options) });
+  const commands = connectRedis(options);
+  const queue = new Queue<EmailJobData, DeliveryResult>(name, { connection: connectRedis(options) });
+  const closeAll = async () => {
+    await queue.close().catch(() => undefined);
+    await Promise.all([connection.quit().catch(() => connection.disconnect()), commands.quit().catch(() => commands.disconnect())]);
+  };
   // Workers created after a restriction remain idle while the global pause is set.
   try {
-    if (await connection.get(circuitKey(identity))) await queue.pause();
+    if (await openCircuit(commands, identity, providerId)) await queue.pause();
   } catch (error) {
-    await queue.close().catch(() => undefined);
-    await connection.quit().catch(() => connection.disconnect());
+    await closeAll();
     throw error;
   }
+  const ctx: DeliveryContext = { sender, options, identity, providerId, limits, redis: commands, queue };
   const worker = new Worker<EmailJobData, DeliveryResult>(
     name,
-    async (job) => {
-      const block = await connection.get(circuitKey(identity));
-      if (block) {
-        return { ok: false, state: "SUPPRESSED", retryable: false, status: 403, error: block };
-      }
-      const decoded = readJobMessage(job.data, options);
-      const idempotencyKey = decoded.idempotencyKey ?? decoded.dedupeKey;
-      const { dedupeKey: _dedupeKey, idempotencyKey: _idempotencyKey, ...message } = decoded;
-      if (options.auditStore) await options.auditStore.transition(String(job.id), "PROCESSING");
-      try {
-        const result = await sendWithThrottleRecovery(sender, message, {
-          kind: job.data.kind,
-          idempotencyKey,
-          smtpHost: options.smtpHost,
-          minGapMs: limits.minGapMs,
-        });
-        const normalized = { ...result, state: deliveryState(result, sender, options.smtpHost), ...(result.id ? { providerMessageId: result.id } : {}) };
-        const reason = providerCircuitReason(normalized, sender, options.smtpHost);
-        if (reason) {
-          await connection.set(circuitKey(identity), reason);
-          void queue.pause().catch(() => undefined);
-        }
-        try {
-          await options.auditStore?.transition(String(job.id), normalized.state, {
-            ...(normalized.providerMessageId ? { providerMessageId: normalized.providerMessageId } : {}),
-            ...(normalized.rfcMessageId ? { rfcMessageId: normalized.rfcMessageId } : {}),
-            ...(normalized.error ? { error: normalized.error } : {}),
-          });
-        } catch (auditError) {
-          const reason = "PostgreSQL audit update failed after provider response; queue paused for reconciliation.";
-          await connection.set(circuitKey(identity), reason);
-          void queue.pause().catch(() => undefined);
-          return { ...normalized, error: [normalized.error, `PostgreSQL audit update failed: ${String(auditError)}`].filter(Boolean).join("; ") };
-        }
-        return normalized;
-      } catch (error) {
-        const unknown: DeliveryResult = { ok: false, state: "UNKNOWN", retryable: false, status: 0, error: "Delivery uncertain; check provider before manual retry: " + String(error) };
-        try {
-          await options.auditStore?.transition(String(job.id), "UNKNOWN", { error: unknown.error });
-        } catch (auditError) {
-          unknown.error += ` PostgreSQL audit update failed: ${String(auditError)}`;
-        }
-        return unknown;
-      }
-    },
+    (job) => processDeliveryJob(ctx, job),
     { connection, concurrency: 1, limiter: { max: 1, duration: limits.minGapMs } },
   );
   worker.on("completed", (_job, result) => {
-    if (result && (result.state === "SUPPRESSED" || providerCircuitReason(result, sender, options.smtpHost))) void queue.pause().catch(() => undefined);
+    if (result && (result.code === "SENDER_PAUSED" || providerCircuitDecision(result, sender, options.smtpHost))) void queue.pause().catch(() => undefined);
   });
   return {
     worker,
     async close() {
       await worker.close().catch(() => undefined);
-      await queue.close().catch(() => undefined);
-      await Promise.all([connection.quit().catch(() => connection.disconnect())]);
+      await closeAll();
     },
   };
 }
@@ -662,7 +901,8 @@ export async function resumeEmailQueue(sender: DeliveryTransport, options: Email
   const identity = queueIdentity(sender, options.smtpHost);
   const { queue } = getQueue(sender, options);
   const redis = connectRedis(options);
-  try { await redis.del(circuitKey(identity)); await queue.resume(); }
+  // Clears this identity's breaker AND the account-wide breaker for its provider credential.
+  try { await redis.del(circuitKey(identity), providerCircuitKey(providerIdOf(sender, options))); await queue.resume(); }
   finally { await queue.close().catch(() => undefined); await redis.quit().catch(() => redis.disconnect()); }
 }
 
@@ -670,20 +910,20 @@ export async function getProviderHealth(sender: DeliveryTransport, options: Emai
   const identity = queueIdentity(sender, options.smtpHost);
   const redis = connectRedis(options);
   try {
-    const pausedReason = await redis.get(circuitKey(identity));
-    return { provider: options.providerId ?? sender.id ?? sender.type, sender: addressOf(sender.from ?? ""), available: !pausedReason, ...(pausedReason ? { pausedReason } : {}) };
+    const pausedReason = await openCircuit(redis, identity, providerIdOf(sender, options));
+    return { provider: providerIdOf(sender, options), sender: addressOf(sender.from ?? ""), available: !pausedReason, ...(pausedReason ? { pausedReason } : {}) };
   } finally { await redis.quit().catch(() => redis.disconnect()); }
 }
 
-export async function getQuotaUsage(sender: DeliveryTransport, options: EmailQueueOptions): Promise<Array<{ scope: string; limit: number; used: number; resetsInMs: number }>> {
+export async function getQuotaUsage(sender: DeliveryTransport, options: EmailQueueOptions, recipient?: string): Promise<Array<{ scope: string; limit: number; used: number; resetsInMs: number }>> {
   const identity = queueIdentity(sender, options.smtpHost);
   const limits = senderLimits(sender, options.smtpHost, options);
-  const scopes = quotaScopes(identity, sender, options, limits);
+  const scopes = quotaScopes(identity, sender, options, limits, recipient);
   const redis = connectRedis(options);
   try {
-    return await Promise.all(scopes.map(async (scope, index) => {
+    return await Promise.all(scopes.map(async (scope) => {
       const [value, ttl] = await Promise.all([redis.get(scope.key), redis.pttl(scope.key)]);
-      return { scope: index === 0 ? "provider" : index === 1 ? "mailbox" : scope.key.includes(hash("application|" + options.applicationId)) ? "application" : "tenant", limit: scope.limit, used: Number(value ?? 0), resetsInMs: Math.max(0, ttl) };
+      return { scope: scope.name, limit: scope.limit, used: Number(value ?? 0), resetsInMs: Math.max(0, ttl) };
     }));
   } finally { await redis.quit().catch(() => redis.disconnect()); }
 }

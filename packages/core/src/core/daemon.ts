@@ -23,6 +23,7 @@ import { canSync, syncConfigOnce } from "../store/synconfig.ts";
 import { brainDaemonTurn } from "./brain.ts";
 import { runDueNewsletters, syncAllUnsubscribes, unsubscribePullError } from "./newsletter.ts";
 import { readNewsletters } from "../store/newsletters.ts";
+import { emailQueueStartupProblems } from "./mail/index.ts";
 import { publishDueNewsletters } from "./newsletter-publish.ts";
 import { markSessionAlerted, refreshSession, session as cloudSession, sessionHealth } from "../store/cloud.ts";
 
@@ -302,6 +303,8 @@ export function startDaemon(options: DaemonOptions = {}): () => void {
   const log = options.log ?? ((line: string) => process.stdout.write(`${stamp()}  ${line}\n`));
   const jobs = [...(options.builtins === false ? [] : builtinJobs(log, tickMs)), ...(options.jobs ?? [])];
   options.onReady?.(jobs.map((job) => job.id));
+  // Say so at startup, not on the first recipient of the next newsletter.
+  for (const problem of emailQueueStartupProblems()) log(`email-queue  ${problem}`);
   const lastRun = new Map<string, number>();
   let running = false;
   let stopped = false;

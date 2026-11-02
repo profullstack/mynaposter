@@ -11,7 +11,7 @@ import { join } from "node:path";
 import { saveMailProvider, removeMailProvider, mailProviderSecret, readOutreach, saveSmtpServer, readOutreach as outreach } from "../src/store/outreach.ts";
 import { getPluginSecrets, resetAccountCache } from "../src/store/accounts.ts";
 import { loadSettings, saveSettings } from "../src/store/settings.ts";
-import { listMailProviders, resolveSender, selectedDefaultProviderId } from "../src/core/mail/index.ts";
+import { emailQueueStartupProblems, listMailProviders, resolveSender, selectedDefaultProviderId } from "../src/core/mail/index.ts";
 import { createNewsletter, readNewsletters } from "../src/store/newsletters.ts";
 import { sendNewsletter, subscribe } from "../src/core/newsletter.ts";
 import type { MailMessage, MailResult, MailSender } from "../src/core/mail/types.ts";
@@ -182,4 +182,31 @@ test("a test copy goes through the provider as bulk; a provider with no sender c
   expect(calls[0]?.[0]?.subject).toBe("[test] Issue");
   const nameless: MailSender = { ...sender, from: undefined };
   await expect(sendNewsletter("i1", { sender: nameless, tracking: null })).rejects.toThrow(/no sender address/);
+});
+
+test("non-Google SMTP stays direct without the queue env and joins the queue when both are set", async () => {
+  const saved = { url: process.env.EMAIL_QUEUE_REDIS_URL, key: process.env.EMAIL_QUEUE_ENCRYPTION_KEY };
+  try {
+    delete process.env.EMAIL_QUEUE_REDIS_URL;
+    delete process.env.EMAIL_QUEUE_ENCRYPTION_KEY;
+    saveSmtpServer({ id: "fe", host: "127.0.0.1", port: 1, secure: "none", user: "", from: "knox@example.com" }, "");
+    expect("google" in resolveSender("fe")).toBe(false); // the plain SMTP provider, as before
+    process.env.EMAIL_QUEUE_REDIS_URL = "redis://127.0.0.1:1";
+    expect("google" in resolveSender("fe")).toBe(false); // no key: still direct, never half-queued
+    process.env.EMAIL_QUEUE_ENCRYPTION_KEY = Buffer.alloc(32, 7).toString("base64");
+    const queued = resolveSender("fe");
+    expect("google" in queued).toBe(true);
+    const result = await queued.send({ to: "a@example.net", subject: "s", text: "t" });
+    expect(result).toMatchObject({ ok: false, status: 0 });
+    expect(result.error).toContain("no direct send attempted");
+  } finally {
+    if (saved.url === undefined) delete process.env.EMAIL_QUEUE_REDIS_URL; else process.env.EMAIL_QUEUE_REDIS_URL = saved.url;
+    if (saved.key === undefined) delete process.env.EMAIL_QUEUE_ENCRYPTION_KEY; else process.env.EMAIL_QUEUE_ENCRYPTION_KEY = saved.key;
+  }
+}, 20_000);
+
+test("a queue without EMAIL_QUEUE_ENCRYPTION_KEY is reported at startup", () => {
+  expect(emailQueueStartupProblems({})).toEqual([]);
+  expect(emailQueueStartupProblems({ EMAIL_QUEUE_REDIS_URL: "redis://x" }).join(" ")).toContain("EMAIL_QUEUE_ENCRYPTION_KEY is not set");
+  expect(emailQueueStartupProblems({ EMAIL_QUEUE_REDIS_URL: "redis://x", EMAIL_QUEUE_ENCRYPTION_KEY: Buffer.alloc(32, 1).toString("hex") })).toEqual([]);
 });

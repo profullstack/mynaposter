@@ -892,7 +892,7 @@ async function sendNewsletterUnlocked(id: string, options: SendNewsletterOptions
     return report;
   }
 
-  addressFor(newsletter);
+  const postalAddress = addressFor(newsletter);
   if (batch.length) {
     const sender = pickSender();
     const from = senderFrom(sender);
@@ -912,6 +912,7 @@ async function sendNewsletterUnlocked(id: string, options: SendNewsletterOptions
       prepared.map((entry) => entry.message),
       {
         kind: "bulk",
+        postalAddress,
         before: (indexes) => {
           for (const index of indexes) {
             const entry = prepared[index] as Prepared;

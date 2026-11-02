@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { DeliveryState } from "./index.js";
+import { normalizeRecipient } from "./gates.js";
+import { redactError } from "./redact.js";
 
 /** A deliberately small SQL surface compatible with pg.Pool and pg.Client. */
 export interface EmailSqlExecutor {
@@ -34,13 +36,38 @@ export interface EmailAuditEvent {
   suppressRecipient?: boolean;
 }
 
+/** A provider-agnostic suppression: one row per normalized recipient address. */
+export interface SuppressionEntry {
+  recipient: string;
+  /** Why: "unsubscribe", "hard_bounce", "complaint", "provider_suppressed", "manual", ... */
+  reason: string;
+  /** Where it came from: "one-click", "mailto", "resend.webhook", "smtp", "admin", ... */
+  source: string;
+  /** Metadata only. A suppression blocks every provider and sender. */
+  provider?: string;
+  sourceEventId?: string;
+}
+
+export interface SuppressionRecord {
+  recipient: string;
+  reason: string;
+  source: string;
+  provider?: string;
+  createdAt?: Date;
+}
+
 export interface EmailAuditStore {
   migrate(): Promise<void>;
   create(record: EmailAuditRecord): Promise<void>;
   transition(id: string, status: DeliveryState, details?: { providerMessageId?: string; rfcMessageId?: string; error?: string }): Promise<void>;
   get(id: string): Promise<Record<string, unknown> | undefined>;
   ingestProviderEvent(event: EmailAuditEvent): Promise<boolean>;
-  isSuppressed(provider: string, recipient: string): Promise<boolean>;
+  /** Writes a provider-agnostic suppression keyed by the normalized recipient. Idempotent. */
+  suppress(entry: SuppressionEntry): Promise<void>;
+  /** The suppression for this recipient from ANY provider/source, if one exists. */
+  getSuppression(recipient: string): Promise<SuppressionRecord | undefined>;
+  /** @deprecated The provider argument is ignored; suppressions are provider-agnostic since 0.2.0. */
+  isSuppressed?(provider: string, recipient: string): Promise<boolean>;
 }
 
 const SCHEMA = `
@@ -101,6 +128,23 @@ CREATE TABLE IF NOT EXISTS email_queue_suppressions (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   PRIMARY KEY (provider, recipient)
 );
+
+-- 0.2.0: suppressions are keyed by normalized recipient, independent of provider.
+-- email_queue_suppressions (per provider) is kept read-only for history and
+-- backfilled here on every migrate; the statement is idempotent.
+CREATE TABLE IF NOT EXISTS email_queue_recipient_suppressions (
+  recipient TEXT PRIMARY KEY,
+  reason TEXT NOT NULL,
+  source TEXT NOT NULL,
+  provider TEXT,
+  source_event_id TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+INSERT INTO email_queue_recipient_suppressions (recipient, reason, source, provider, source_event_id, created_at)
+  SELECT DISTINCT ON (lower(trim(recipient))) lower(trim(recipient)), reason, 'legacy.provider_suppression', provider, source_event_id, created_at
+  FROM email_queue_suppressions
+  ORDER BY lower(trim(recipient)), created_at
+ON CONFLICT (recipient) DO NOTHING;
 `;
 
 export class PostgresEmailAuditStore implements EmailAuditStore {
@@ -116,7 +160,7 @@ export class PostgresEmailAuditStore implements EmailAuditStore {
         (id, provider, provider_message_id, rfc_message_id, application_id, tenant_id, sender, recipient, transport, status, error, idempotency_key)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
        ON CONFLICT (id) DO NOTHING`,
-      [record.id, record.provider, record.providerMessageId ?? null, record.rfcMessageId ?? null, record.applicationId, record.tenantId ?? null, record.sender, record.recipient, record.transport, record.status, record.error ?? null, record.idempotencyKey ?? null],
+      [record.id, record.provider, record.providerMessageId ?? null, record.rfcMessageId ?? null, record.applicationId, record.tenantId ?? null, record.sender, record.recipient, record.transport, record.status, record.error ? redactError(record.error) : null, record.idempotencyKey ?? null],
     );
     await this.sql.query(
       `INSERT INTO email_queue_events (message_id, event_id, event_type, source, status, recipient)
@@ -139,7 +183,7 @@ export class PostgresEmailAuditStore implements EmailAuditStore {
        )
        INSERT INTO email_queue_events (message_id, event_id, event_type, source, status, recipient, error)
        SELECT id, $6, 'state.changed', 'queue', $2, recipient, $5 FROM updated`,
-      [id, status, details.providerMessageId ?? null, details.rfcMessageId ?? null, details.error ?? null, eventId],
+      [id, status, details.providerMessageId ?? null, details.rfcMessageId ?? null, details.error ? redactError(details.error) : null, eventId],
     );
     // A webhook can beat the worker's provider-accepted update. Reapply the
     // newest stored provider event so a late queue transition cannot downgrade
@@ -200,26 +244,51 @@ export class PostgresEmailAuditStore implements EmailAuditStore {
          SELECT updated.id, $2, $5, 'resend.webhook', $6, inserted.recipient, $7, $8
          FROM inserted LEFT JOIN updated ON updated.recipient = inserted.recipient
          RETURNING event_row_id`,
-        [event.provider, event.eventId, recipient, event.providerMessageId, event.type, event.status, event.occurredAt, event.error ?? null, event.rfcMessageId ?? null],
+        [event.provider, event.eventId, recipient, event.providerMessageId, event.type, event.status, event.occurredAt, event.error ? redactError(event.error) : null, event.rfcMessageId ?? null],
       );
       insertedAny ||= (result.rowCount ?? result.rows.length) > 0;
       if (event.suppressRecipient) {
-        await this.sql.query(
-          `INSERT INTO email_queue_suppressions (provider, recipient, reason, source_event_id)
-           VALUES ($1,$2,$3,$4) ON CONFLICT (provider, recipient) DO NOTHING`,
-          [event.provider, recipient, event.error ?? event.type, event.eventId],
-        );
+        await this.suppress({
+          recipient,
+          reason: event.type === "email.complained" ? "complaint" : event.type === "email.bounced" ? "hard_bounce" : event.type === "email.suppressed" ? "provider_suppressed" : event.type,
+          source: `${event.provider}.webhook`,
+          provider: event.provider,
+          sourceEventId: event.eventId,
+        });
       }
     }
     return insertedAny;
   }
 
-  async isSuppressed(provider: string, recipient: string): Promise<boolean> {
-    const result = await this.sql.query(
-      "SELECT 1 FROM email_queue_suppressions WHERE provider = $1 AND lower(recipient) = lower($2) LIMIT 1",
-      [provider, recipient],
+  async suppress(entry: SuppressionEntry): Promise<void> {
+    const recipient = normalizeRecipient(entry.recipient);
+    if (!recipient.includes("@")) throw new Error("Suppression requires a recipient address.");
+    await this.sql.query(
+      `INSERT INTO email_queue_recipient_suppressions (recipient, reason, source, provider, source_event_id)
+       VALUES ($1,$2,$3,$4,$5) ON CONFLICT (recipient) DO NOTHING`,
+      [recipient, entry.reason, entry.source, entry.provider ?? null, entry.sourceEventId ?? null],
     );
-    return result.rows.length > 0;
+  }
+
+  async getSuppression(recipient: string): Promise<SuppressionRecord | undefined> {
+    const result = await this.sql.query(
+      "SELECT recipient, reason, source, provider, created_at FROM email_queue_recipient_suppressions WHERE recipient = $1 LIMIT 1",
+      [normalizeRecipient(recipient)],
+    );
+    const row = result.rows[0];
+    if (!row) return undefined;
+    return {
+      recipient: String(row.recipient),
+      reason: String(row.reason),
+      source: String(row.source),
+      ...(typeof row.provider === "string" ? { provider: row.provider } : {}),
+      ...(row.created_at instanceof Date ? { createdAt: row.created_at } : {}),
+    };
+  }
+
+  /** @deprecated Provider is ignored; see getSuppression. */
+  async isSuppressed(_provider: string, recipient: string): Promise<boolean> {
+    return Boolean(await this.getSuppression(recipient));
   }
 }
 

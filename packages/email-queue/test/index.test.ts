@@ -208,7 +208,8 @@ describe("email queue policy", () => {
       async transition() {},
       async get() { return undefined; },
       async ingestProviderEvent(event) { events.push(event); return true; },
-      async isSuppressed() { return false; },
+      async suppress() {},
+        async getSuppression() { return undefined; },
     };
     const result = await processResendWebhook(body, headers, secret, "resend-prod", store, { now });
     expect(result).toMatchObject({ verified: true, type: "email.delivered", handled: true, inserted: 1 });
@@ -261,6 +262,12 @@ describe("email queue policy", () => {
 });
 
 const testRedisUrl = process.env.EMAIL_QUEUE_TEST_REDIS_URL;
+const POSTAL = "Example Co, 1 Main St, Springfield, ST 00000, USA";
+/** Bulk mail must carry RFC 8058 one-click headers and the postal address since 0.2.0. */
+const compliant = {
+  headers: { "List-Unsubscribe": "<https://example.test/u/token>", "List-Unsubscribe-Post": "List-Unsubscribe=One-Click" },
+};
+const bulkText = (text: string): string => `${text}\n${POSTAL}`;
 
 if (testRedisUrl) {
   describe("Redis-backed delivery", () => {
@@ -285,10 +292,11 @@ if (testRedisUrl) {
         from: fake.sender.from,
         to: [`person-${randomUUID()}@example.test`],
         subject: "Queue test",
-        text: "No external delivery",
+        text: bulkText("No external delivery"),
         dedupeKey: `issue:${randomUUID()}`,
+        ...compliant,
       };
-      const options = { redisUrl: testRedisUrl! };
+      const options = { redisUrl: testRedisUrl!, postalAddress: POSTAL };
       const first = await queuedDelivery(fake.sender, message, "bulk", options);
       const repeated = await queuedDelivery(fake.sender, message, "bulk", options);
       expect(first).toMatchObject({ ok: true, id: "fake-1", state: "PROVIDER_ACCEPTED", providerMessageId: "fake-1" });
@@ -298,19 +306,21 @@ if (testRedisUrl) {
 
     it("stops at the sender's daily cap without calling the provider again", async () => {
       const fake = fakeSender();
-      const options = { redisUrl: testRedisUrl!, maxPer24Hours: 1, minGapMs: 1000 };
+      const options = { redisUrl: testRedisUrl!, maxPer24Hours: 1, minGapMs: 1000, postalAddress: POSTAL };
       const first = await queuedDelivery(fake.sender, {
         from: fake.sender.from,
         to: [`person-a-${randomUUID()}@example.test`],
         subject: "Queue budget test",
-        text: "No external delivery",
+        text: bulkText("No external delivery"),
+        ...compliant,
         dedupeKey: `campaign:${randomUUID()}:a`,
       }, "bulk", options);
       const second = await queuedDelivery(fake.sender, {
         from: fake.sender.from,
         to: [`person-b-${randomUUID()}@example.test`],
         subject: "Queue budget test",
-        text: "No external delivery",
+        text: bulkText("No external delivery"),
+        ...compliant,
         dedupeKey: `campaign:${randomUUID()}:b`,
       }, "bulk", options);
       expect(first.ok).toBe(true);
@@ -329,10 +339,11 @@ if (testRedisUrl) {
         from: fake.sender.from,
         to: [`uncertain-${randomUUID()}@example.test`],
         subject: "Queue uncertain test",
-        text: "No external delivery",
+        text: bulkText("No external delivery"),
+        ...compliant,
         dedupeKey: `campaign:${randomUUID()}:uncertain`,
       };
-      const options = { redisUrl: testRedisUrl! };
+      const options = { redisUrl: testRedisUrl!, postalAddress: POSTAL };
       const first = await queuedDelivery(fake.sender, message, "bulk", options);
       const repeated = await queuedDelivery(fake.sender, message, "bulk", options);
       expect(first).toMatchObject({ ok: false, state: "UNKNOWN", retryable: false, status: 0 });
@@ -386,7 +397,8 @@ if (testRedisUrl) {
         },
         async get(id) { return audit.get(id); },
         async ingestProviderEvent() { return true; },
-        async isSuppressed() { return false; },
+        async suppress() {},
+        async getSuppression() { return undefined; },
       };
       let sentText = "";
       const sender = Object.assign({
@@ -446,7 +458,8 @@ if (testRedisUrl) {
         },
         async get(id) { return audit.get(id); },
         async ingestProviderEvent() { return true; },
-        async isSuppressed() { return false; },
+        async suppress() {},
+        async getSuppression() { return undefined; },
       };
       let calls = 0;
       const sender: DeliveryTransport = {
