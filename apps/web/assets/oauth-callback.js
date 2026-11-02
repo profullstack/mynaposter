@@ -20,6 +20,20 @@ if (relayPort >= 1024 && relayPort <= 65535) {
   throw new Error("relayed"); // stop here; the page is being replaced
 }
 
+// Relay for Profullstack Webmail's Google Calendar connect: same Google client, same
+// registered page. State "wm.<random>" goes to one fixed URL only (never a URL taken
+// from the query), where the googlecal plugin checks the state against the session.
+if (/^wm\.[0-9a-f]{32}$/.test(params.get("state") || "")) {
+  document.getElementById("heading").textContent = "Back to webmail…";
+  document.getElementById("lede").textContent = "Finishing the Google Calendar connection.";
+  document.getElementById("code").textContent = "…";
+  location.replace(
+    "https://webmail.profullstack.com/?_task=settings&_action=plugin.googlecal-callback&" +
+      location.search.slice(1),
+  );
+  throw new Error("relayed");
+}
+
 const code = params.get("code");
 const error = params.get("error_description") || params.get("error");
 
