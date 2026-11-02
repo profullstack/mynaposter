@@ -1,5 +1,6 @@
 import type { DeliveryResult, DeliveryTransport, QueuedMessage } from "./index.js";
 import { createHash } from "node:crypto";
+import { redactError } from "./redact.js";
 
 export interface ResendTransportOptions {
   id: string;
@@ -47,7 +48,8 @@ export function createResendTransport(options: ResendTransportOptions): Delivery
       let body: { id?: string; message?: string; name?: string } = {};
       try { body = text ? JSON.parse(text) as typeof body : {}; } catch { body = {}; }
       if (!response.ok) {
-        const messageText = body.message || body.name || text.slice(0, 500) || `HTTP ${response.status}`;
+        // Provider text can echo recipients, keys, and signed URLs: redact before it is stored anywhere.
+        const messageText = redactError(body.message || body.name || text || `HTTP ${response.status}`, 240);
         const retryAfterHeader = response.headers.get("retry-after")?.trim();
         const retryAfterSeconds = Number(retryAfterHeader);
         const retryAfter = retryAfterHeader

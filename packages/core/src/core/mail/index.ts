@@ -11,7 +11,7 @@
  * non-Google SMTP server. Google SMTP requires an explicit `--via` selection.
  */
 import { loadSettings } from "../../store/settings.ts";
-import { queuedDelivery, isGoogleSender } from "@profullstack/email-queue";
+import { emailQueueConfigProblems, queuedDelivery, isGoogleSender } from "@profullstack/email-queue";
 import { mailProviderSecret, readOutreach, smtpServer } from "../../store/outreach.ts";
 import { cloudFetch, DEFAULT_SERVER, session } from "../../store/cloud.ts";
 import type { SmtpOptions } from "../smtp.ts";
@@ -112,20 +112,55 @@ export interface ResolveOptions extends ProviderDeps {
   smtp?: SmtpOptions;
 }
 
-/** The sender for an id (or the default). Throws with the command that fixes it. */
 /**
- * A single account-scoped BullMQ path for real Gmail/Resend calls, including
- * newsletters, one-off CLI sends and other callers of resolveSender.
+ * Problems with the email queue environment, for a startup log line. Empty when
+ * fine. Only meaningful when the queue is in use (EMAIL_QUEUE_REDIS_URL or
+ * REDIS_URL set): Resend/Gmail sends require EMAIL_QUEUE_ENCRYPTION_KEY then.
+ */
+export function emailQueueStartupProblems(env: Record<string, string | undefined> = process.env): string[] {
+  const url = env.EMAIL_QUEUE_REDIS_URL ?? env.REDIS_URL ?? "";
+  if (!url.trim()) return [];
+  return emailQueueConfigProblems({ redisUrl: url, requireEncryption: true }, env);
+}
+
+let warnedSmtpDirect = false;
+
+/**
+ * Every Resend and Gmail send goes through the account-scoped BullMQ queue,
+ * including newsletters, one-off CLI sends and other callers of resolveSender.
  * Missing Redis fails closed; never silently fall back to direct delivery.
+ *
+ * Non-Google SMTP senders (e.g. Forward Email mailboxes) join the queue only
+ * when BOTH EMAIL_QUEUE_REDIS_URL and EMAIL_QUEUE_ENCRYPTION_KEY are set, so a
+ * deployment without them keeps today's direct SMTP path unchanged. Once they
+ * are set, SMTP gets the same suppression, bulk, breaker and quota gates.
+ * Other HTTP providers (Mailgun, Postmark, ...) still send directly.
  */
 function queueGuard(sender: MailSender, smtpHost = ""): MailSender {
-  if (sender.type !== "resend" && !isGoogleSender(sender, smtpHost)) return sender;
+  const google = isGoogleSender(sender, smtpHost);
+  const mustQueue = sender.type === "resend" || google;
+  if (!mustQueue) {
+    if (sender.type !== "smtp") return sender;
+    const ready = Boolean(process.env.EMAIL_QUEUE_REDIS_URL?.trim() && process.env.EMAIL_QUEUE_ENCRYPTION_KEY?.trim());
+    if (!ready) {
+      if (process.env.EMAIL_QUEUE_REDIS_URL?.trim() && !warnedSmtpDirect) {
+        warnedSmtpDirect = true;
+        console.error("email-queue: EMAIL_QUEUE_ENCRYPTION_KEY is not set, so SMTP senders bypass the queue (direct send, no suppression/breaker gates).");
+      }
+      return sender;
+    }
+  }
   return {
-    id: sender.id, type: sender.type, from: sender.from, google: isGoogleSender(sender, smtpHost),
+    id: sender.id, type: sender.type, from: sender.from, google,
     batchSize: 1,
     send: async (message, context) => {
-      const url = process.env.EMAIL_QUEUE_REDIS_URL ?? process.env.REDIS_URL ?? "";
+      const url = process.env.EMAIL_QUEUE_REDIS_URL ?? (mustQueue ? process.env.REDIS_URL : undefined) ?? "";
       if (!url) return { ok: false, retryable: true, status: 429, error: "Email queue requires EMAIL_QUEUE_REDIS_URL (Redis); Gmail/Resend direct sending is disabled." };
+      const problems = emailQueueStartupProblems({ ...process.env, EMAIL_QUEUE_REDIS_URL: url });
+      if (problems.length) {
+        // Same shape as "queue unavailable": a newsletter stops at the first one instead of burning the list.
+        return { ok: false, retryable: true, status: 0, error: `Email queue misconfigured; no direct send attempted: ${problems.join(" ")}` };
+      }
       try {
         return await queuedDelivery(sender, message, context?.kind ?? "transactional", {
           redisUrl: url,
@@ -134,13 +169,15 @@ function queueGuard(sender: MailSender, smtpHost = ""): MailSender {
           providerId: process.env.EMAIL_QUEUE_PROVIDER_ID || sender.id,
           encryptionKey: process.env.EMAIL_QUEUE_ENCRYPTION_KEY,
           requireEncryption: true,
+          postalAddress: context?.postalAddress ?? loadSettings().newsletter.address,
         });
       } catch (error) {
-        return { ok: false, retryable: true, status: 0, error: "Email queue unavailable; no direct send attempted: " + String(error) };
+        return { ok: false, retryable: true, status: 0, error: "Email queue unavailable; no direct send attempted: " + String((error as Error)?.message ?? error) };
       }
     },
   };
 }
+/** The sender for an id (or the default). Throws with the command that fixes it. */
 export function resolveSender(via?: string | null, options: ResolveOptions = {}): MailSender {
   const file = readOutreach();
   const explicitId = via?.trim();
@@ -187,6 +224,8 @@ export async function sendEach(
   messages: MailMessage[],
   hooks: {
     kind?: MailKind;
+    /** Bulk only: the postal address the bodies carry, checked by the email queue's CAN-SPAM gate. */
+    postalAddress?: string;
     before?: (indexes: number[]) => void | Promise<void>;
     after?: (index: number, result: MailResult) => void | Promise<void>;
     pause?: () => Promise<void>;
@@ -202,7 +241,8 @@ export async function sendEach(
     const chunk = messages.slice(start, start + size);
     const indexes = chunk.map((_, offset) => start + offset);
     await hooks.before?.(indexes);
-    const answers = size > 1 && sender.sendBatch ? await sender.sendBatch(chunk, { kind: hooks.kind }) : [await sender.send(chunk[0] as MailMessage, { kind: hooks.kind })];
+    const sendOptions = { kind: hooks.kind, ...(hooks.postalAddress ? { postalAddress: hooks.postalAddress } : {}) };
+    const answers = size > 1 && sender.sendBatch ? await sender.sendBatch(chunk, sendOptions) : [await sender.send(chunk[0] as MailMessage, sendOptions)];
     for (const [offset, result] of answers.entries()) {
       results.push(result);
       await hooks.after?.(start + offset, result);

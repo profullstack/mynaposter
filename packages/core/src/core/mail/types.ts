@@ -87,6 +87,8 @@ export interface MailSendOptions {
   idempotencyKey?: string;
   /** Internal: a Redis queue owns retries for this send. */
   skipThrottleRecovery?: boolean;
+  /** Bulk: the postal address in the bodies, for the email queue's CAN-SPAM gate. */
+  postalAddress?: string;
 }
 
 /** One provider, ready to send. */

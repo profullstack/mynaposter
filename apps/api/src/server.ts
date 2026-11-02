@@ -40,7 +40,7 @@ import * as porkbunCallback from "./porkbun-callback.ts";
 import * as webhooks from "./webhooks.ts";
 import { store as synconfigStore } from "./synconfig.ts";
 import { handleGet as synconfigGet, handlePut as synconfigPut, handleRevisions as synconfigRevisions } from "@profullstack/synconfig/server";
-import { VERSION } from "@profullstack/myna-core";
+import { VERSION, emailQueueStartupProblems } from "@profullstack/myna-core";
 
 const app = new Hono();
 
@@ -1266,6 +1266,7 @@ if (process.env.MYNA_SCHEDULER === "1") {
 // Drain due webhook deliveries every few seconds, once per process.
 webhooks.hooks()?.start();
 
+for (const problem of emailQueueStartupProblems()) console.error(`email-queue: ${problem}`);
 console.log(`myna api ${VERSION} on :${port} (${hasDatabase() ? "postgres" : "local mode"}, config ${configDir()})`);
 
 for (const signal of ["SIGINT", "SIGTERM"] as const) {

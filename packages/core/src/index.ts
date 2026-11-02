@@ -645,6 +645,7 @@ export {
   sendMail,
   sendEach,
   resolveSender,
+  emailQueueStartupProblems,
   providerSender,
   listMailProviders,
   defaultProviderId,
