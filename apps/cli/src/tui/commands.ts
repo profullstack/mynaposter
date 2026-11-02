@@ -146,7 +146,7 @@ export const COMMANDS: Command[] = [
       // What the connected account already holds (the OAuth client) fills its
       // boxes too, so renewing an expired sign-in lands straight on Enter.
       const given = loginValuesFromArgs(network, rest);
-      startLogin(state, network, redraw, { ...keptLoginValues(network, listAccounts(), given).values, ...given });
+      startLogin(state, network, redraw, { ...keptLoginValues(network, listAccounts({ includeArchived: true }), given).values, ...given });
     },
   },
   {

@@ -510,8 +510,18 @@ myna skill list | show | init     myna skill add | default | rotate
 myna skill show type:<slug>       myna post --type <slug>
 myna utm [--add example.com]      myna brand [learn|edit|set|pillar]
 myna plan [generate|draft|queue]  myna atomize <url|file>
-myna autopilot [on|off|now|set]
+myna autopilot [on|off|now|set]   myna accounts --archived
+myna account archive <account> [--banned] [--note "why"]
+myna account restore <account>
 ```
+
+`myna account archive` retires an account without deleting it: the credentials
+stay in the vault and `myna accounts` still lists it (marked `archived` or
+`banned`, with the date and the note), but it is never posted to again. It is
+left out of `all` and `--rotate`, naming it as a target is refused with the
+note, its pending queue entries are cancelled with the note as the reason (the
+daemon does the same for anything that slips through), and engage, follow and
+upvote tasks skip it. `myna account restore` puts it back.
 
 Flags: `--to`, `--title`, `--media`, `--style`, `--json`, `--dry-run`,
 `--no-thread`, `--limit`, `--force`, `--allow-duplicate`, `--type`. Any other `--flag value` is handed to the

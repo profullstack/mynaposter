@@ -13,7 +13,7 @@ import { splitThread, truncateTo, appendHashtags, countChars, deriveTitle } from
 import { recordHistory, listHistory } from "../store/history.ts";
 import { postedEvent, runAfterPost, runAfterSchedule, type HookOutcome } from "../plugins/hooks.ts";
 import { enqueue, listQueue, updateQueued, type QueuedPost } from "../store/queue.ts";
-import { getAccount, listAccounts } from "../store/accounts.ts";
+import { getAccount, listAccounts, refuseArchived } from "../store/accounts.ts";
 import { loadSettings } from "../store/settings.ts";
 import { pacingRules, planTargets, reflowQueue, type Plan, type Reflow } from "./pacing.ts";
 import { duplicateTitle, planLimitsFor, skillKindFor, takeSkill, titleOf } from "./skills.ts";
@@ -213,6 +213,9 @@ export interface SendStamp {
 /** Post to every target at once and return one result per target. */
 export async function postToAll(accounts: Account[], options: ComposeOptions, stamp: SendStamp = {}): Promise<PostOutcome> {
   if (!accounts.length) throw new Error("No targets. Run /login <network> first, or check your --to value.");
+  // The last gate before a network call: whatever path got here, an archived
+  // account is not posted to.
+  refuseArchived(accounts);
 
   // Which skill each account is on. Taking it moves a rotating account's
   // cursor, so it happens once per send and is written into the history.
@@ -321,6 +324,8 @@ export function slotsFor(accounts: Account[], options: ComposeOptions, paced: Pa
 
 export async function postPaced(accounts: Account[], options: ComposeOptions, paced: PacedOptions = {}): Promise<PacedOutcome> {
   if (!accounts.length) throw new Error("No targets. Run /login <network> first, or check your --to value.");
+  // Nothing is sent or queued for an archived account: refused before the plan.
+  refuseArchived(accounts);
   const settings = loadSettings();
   const rules = pacingRules(settings.pacing);
   const accountNetwork = (id: string) => getAccount(id)?.network;

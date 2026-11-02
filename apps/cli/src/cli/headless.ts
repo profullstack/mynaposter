@@ -67,6 +67,11 @@ import {
   getAccount,
   removeAccount,
   removeQueued,
+  dropQueuedFor,
+  archiveAccount,
+  restoreAccount,
+  archivedAccounts,
+  describeArchive,
   renderInfographic,
   requireNetwork,
   resolveTargets,
@@ -194,6 +199,8 @@ export function parseFlags(argv: string[]): { positional: string[]; flags: Flags
       "showPrompt",
       // asks stats --refresh, outreachgraph hubs --refresh, asks phrases --generate
       "refresh", "generate",
+      // account archive --banned, accounts --archived
+      "banned", "archived",
     ]);
     if (BOOLS.has(name)) {
       flags[name === "noThread" ? "thread" : name] = name !== "noThread";
@@ -305,7 +312,9 @@ async function resolvePostArgs(positional: string[], flags: Flags): Promise<{ ac
     word === "all" ||
     word === "*" ||
     Boolean(getNetwork(word)) ||
-    listAccounts().some((account) => account.id === word || account.handle === word);
+    // Archived accounts count: naming one must be refused as a target, not
+    // read as the first word of the text and posted to the default target.
+    listAccounts({ includeArchived: true }).some((account) => account.id === word || account.handle === word);
   const looksLikeTarget = (word: string): boolean =>
     word.split(",").every((part) => looksLikeSingleTarget(part.trim()));
 
@@ -376,7 +385,7 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
       const given = loginValuesFromArgs(network, positional.slice(1), flags);
       // A second login keeps what the connected account already holds (the
       // OAuth client, for one), so renewing an expired sign-in asks nothing.
-      const kept = keptLoginValues(network, listAccounts(), given);
+      const kept = keptLoginValues(network, listAccounts({ includeArchived: true }), given);
       const interactive = Boolean(process.stdin.isTTY);
 
       out(`Connecting ${network.name}.`);
@@ -438,6 +447,8 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
       };
       saveAccount(account);
       out(`\nConnected ${account.id}`);
+      const stored = getAccount(account.id);
+      if (stored?.archived) out(`${describeArchive(stored)}\nIt stays archived. Restore it with: myna account restore ${account.id}`);
       // The rules for this account, written once so they can be read and
       // edited. An existing file is never touched.
       try {
@@ -454,7 +465,7 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
       await ensureUnlocked();
       const id = positional[0];
       if (!id) throw new Error("Which account? Run: myna accounts");
-      const matches = listAccounts().filter((account) => account.id === id || account.network === id);
+      const matches = listAccounts({ includeArchived: true }).filter((account) => account.id === id || account.network === id);
       if (!matches.length) throw new Error(`No account matches "${id}"`);
       for (const account of matches) removeAccount(account.id);
       out(`Disconnected ${matches.map((account) => account.id).join(", ")}`);
@@ -462,29 +473,96 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
     }
 
     case "accounts": {
+      // myna accounts [--archived] [--json]
       await ensureUnlocked();
-      const accounts = listAccounts();
+      const accounts = flags.archived ? archivedAccounts() : listAccounts({ includeArchived: true });
       if (flags.json) {
         out(JSON.stringify(accounts.map(({ creds, ...rest }) => rest), null, 2));
         return 0;
       }
       if (!accounts.length) {
-        out("No accounts connected. Run: myna login bluesky");
+        out(flags.archived ? "No archived accounts." : "No accounts connected. Run: myna login bluesky");
         return 0;
       }
       table(
         accounts.map((account) => ({
           id: account.id,
           name: account.displayName ?? "",
-          network: requireNetwork(account.network).name,
+          network: getNetwork(account.network)?.name ?? account.network,
+          status: account.archived ? `${account.archived.banned ? "banned" : "archived"} ${account.archived.at.slice(0, 10)}` : "active",
         })),
         [
           { key: "id", title: "ACCOUNT" },
           { key: "name", title: "NAME" },
           { key: "network", title: "NETWORK" },
+          { key: "status", title: "STATUS" },
         ],
       );
+      // The notes are sentences, too long for a column.
+      const noted = accounts.filter((account) => account.archived?.note);
+      if (noted.length) {
+        out("");
+        for (const account of noted) out(`${account.id}: ${account.archived?.note}`);
+      }
       return 0;
+    }
+
+    case "account": {
+      // myna account archive <id> [--banned] [--note "why"]
+      // myna account restore <id>
+      // myna account show <id>
+      await ensureUnlocked();
+      const [action, id] = positional;
+      const usage = 'Usage: myna account archive <account> [--banned] [--note "why"] | myna account restore <account> | myna account show <account>';
+      if (!action || !id) throw new Error(usage);
+      const account = getAccount(id) ?? listAccounts({ includeArchived: true }).find((entry) => entry.handle === id);
+      if (!account) throw new Error(`No account "${id}". Run: myna accounts`);
+      switch (action) {
+        case "archive": {
+          const note = typeof flags.note === "string" ? flags.note : undefined;
+          const archived = archiveAccount(account.id, { banned: Boolean(flags.banned), note });
+          const reason = describeArchive(archived);
+          // Its queued posts go now, with the reason recorded, rather than
+          // waiting for the daemon to reach each one.
+          const dropped = dropQueuedFor(account.id, reason);
+          const hooks: HookOutcome[] = [];
+          for (const entry of dropped.cancelled) hooks.push(...(await runAfterCancel(entry.id)));
+          if (flags.json) {
+            out(JSON.stringify({
+              account: account.id,
+              archived: archived.archived,
+              cancelled: dropped.cancelled.map((entry) => ({ id: entry.id, scheduledFor: entry.scheduledFor, text: entry.text })),
+              trimmed: dropped.trimmed.map((entry) => entry.id),
+            }, null, 2));
+            return 0;
+          }
+          out(`Archived ${reason}`);
+          out("Credentials kept. It is out of `all`, rotation and the daemon; naming it as a target is refused.");
+          for (const entry of dropped.cancelled) {
+            out(`cancelled ${entry.id}  ${new Date(entry.scheduledFor).toLocaleString()}  ${entry.text.replace(/\s+/g, " ").slice(0, 60)}`);
+          }
+          for (const entry of dropped.trimmed) out(`trimmed   ${entry.id}  (still goes to ${entry.targets.join(", ")})`);
+          out(`${dropped.cancelled.length} queued post${dropped.cancelled.length === 1 ? "" : "s"} cancelled${dropped.trimmed.length ? `, ${dropped.trimmed.length} shared entr${dropped.trimmed.length === 1 ? "y" : "ies"} trimmed` : ""}.`);
+          printHooks(hooks);
+          out(`Undo with: myna account restore ${account.id}`);
+          return 0;
+        }
+        case "restore":
+        case "unarchive": {
+          const restored = restoreAccount(account.id);
+          out(restored ? `Restored ${account.id}. It is a posting target again (cancelled queue entries stay cancelled).` : `${account.id} was not archived.`);
+          return 0;
+        }
+        case "show": {
+          const { creds, ...rest } = account;
+          void creds;
+          if (flags.json) out(JSON.stringify(rest, null, 2));
+          else out(account.archived ? describeArchive(account) : `${account.id} is active`);
+          return 0;
+        }
+        default:
+          throw new Error(usage);
+      }
     }
 
     case "update": {

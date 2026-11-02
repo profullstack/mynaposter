@@ -6,7 +6,7 @@
  * the next tick.
  */
 import { duePosts, enqueue, listQueue, updateQueued, type QueuedPost } from "../store/queue.ts";
-import { getAccount } from "../store/accounts.ts";
+import { describeArchive, getAccount, isArchived } from "../store/accounts.ts";
 import { requireNetwork } from "../net/registry.ts";
 import { postToAll, type TargetResult } from "./poster.ts";
 import { loadAllMedia } from "./media.ts";
@@ -26,10 +26,23 @@ export async function runDuePosts(now = new Date()): Promise<RunResult[]> {
   const out: RunResult[] = [];
 
   for (const post of duePosts(now)) {
-    const targeted = post.targets.map((id) => getAccount(id)).filter((account) => account !== undefined);
-    if (!targeted.length) {
+    const existing = post.targets.map((id) => getAccount(id)).filter((account) => account !== undefined);
+    if (!existing.length) {
       updateQueued(post.id, { status: "failed", lastError: "None of its target accounts still exist." });
       continue;
+    }
+    // An archived account is never posted to. An entry for nothing else is
+    // cancelled with the archive note as its reason; one it shares with
+    // live accounts just loses it.
+    const archived = existing.filter(isArchived);
+    const targeted = existing.filter((account) => !isArchived(account));
+    if (!targeted.length) {
+      updateQueued(post.id, { status: "cancelled", lastError: archived.map(describeArchive).join("; ") });
+      continue;
+    }
+    if (archived.length) {
+      post.targets = post.targets.filter((id) => !archived.some((account) => account.id === id));
+      updateQueued(post.id, { targets: post.targets });
     }
 
     // A repost shares something that already exists, so none of the composing

@@ -25,7 +25,10 @@ Accounts:
                                     as arguments, or as --<field>, are not asked
                                     for again, so a login can be scripted
   logout <account>                  Disconnect and wipe its credentials
-  accounts                          List connected accounts
+  accounts [--archived]             List connected accounts (archived/banned ones marked, with the note)
+  account archive <account> [--banned] [--note "why"]
+                                    Keep the credentials but never post to it again; drops its queued posts
+  account restore <account>         Put an archived account back
   networks                          List all supported networks
 
 Keeping myna current:

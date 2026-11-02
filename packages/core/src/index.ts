@@ -4,6 +4,7 @@ export { VERSION } from "./version.ts";
 
 export type {
   Account,
+  AccountArchive,
   AuthKind,
   CredentialField,
   LoginContext,
@@ -41,6 +42,13 @@ export {
   saveAccount,
   removeAccount,
   resolveTargets,
+  isArchived,
+  describeArchive,
+  ArchivedAccountError,
+  refuseArchived,
+  archivedAccounts,
+  archiveAccount,
+  restoreAccount,
   unlock,
   needsPassphrase,
   activePassphrase,
@@ -89,7 +97,7 @@ export {
   type SubmitResult,
 } from "./directories/submit.ts";
 export { McpClient, McpToolError, parseMessage, MCP_PROTOCOL_VERSION, type McpTool, type McpServerInfo } from "./directories/mcp.ts";
-export { listQueue, enqueue, updateQueued, removeQueued, duePosts, type QueuedPost } from "./store/queue.ts";
+export { listQueue, enqueue, updateQueued, removeQueued, dropQueuedFor, duePosts, type QueuedPost } from "./store/queue.ts";
 export { listHistory, recordHistory, clearHistory, type HistoryEntry } from "./store/history.ts";
 export { listEngagement, recordEngagement, clearEngagement } from "./store/engagement.ts";
 export {

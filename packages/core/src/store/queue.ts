@@ -81,6 +81,31 @@ export function removeQueued(id: string): boolean {
   return true;
 }
 
+/**
+ * Take an account out of every pending entry: an entry for it alone is
+ * cancelled with `reason` recorded (kept, so the queue shows what happened),
+ * and an entry it shares with other accounts just loses it from `targets`.
+ */
+export function dropQueuedFor(accountId: string, reason: string): { cancelled: QueuedPost[]; trimmed: QueuedPost[] } {
+  const file = read();
+  const cancelled: QueuedPost[] = [];
+  const trimmed: QueuedPost[] = [];
+  for (const post of file.posts) {
+    if (post.status !== "pending" || !post.targets.includes(accountId)) continue;
+    const rest = post.targets.filter((id) => id !== accountId);
+    if (rest.length) {
+      post.targets = rest;
+      trimmed.push(post);
+    } else {
+      post.status = "cancelled";
+      post.lastError = reason;
+      cancelled.push(post);
+    }
+  }
+  if (cancelled.length || trimmed.length) write(file);
+  return { cancelled, trimmed };
+}
+
 /** Everything pending and due, oldest first. */
 export function duePosts(now = new Date()): QueuedPost[] {
   return listQueue().filter((post) => post.status === "pending" && new Date(post.scheduledFor) <= now);
