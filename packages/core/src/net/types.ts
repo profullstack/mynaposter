@@ -100,6 +100,26 @@ export interface Account {
    * adapters own that map.
    */
   archived?: AccountArchive;
+  /**
+   * Set when the account is a mirror (`myna account mirror`): it never posts
+   * anything of its own, and the daemon only reposts and/or likes every new
+   * original post by `from`. Excluded from every original-posting path the
+   * same way an archived account is.
+   */
+  mirror?: AccountMirror;
+}
+
+export interface AccountMirror {
+  /** The account whose posts are mirrored: a connected account id, or a bare handle on the same network. */
+  from: string;
+  /** Like each new post. */
+  like: boolean;
+  /** Repost (boost) each new post. */
+  repost: boolean;
+  /** ISO timestamp the mirror was switched on. */
+  at: string;
+  /** Posts created before this are never mirrored: on first enable, 24 hours before `at`. */
+  since: string;
 }
 
 export interface AccountArchive {
@@ -155,6 +175,16 @@ export interface TimelineItem {
   postId?: string;
   /** For a notification: the id or uri of this account's post it concerns. */
   subjectId?: string;
+  /** For an author feed: the network's stable id of the author (a DID). */
+  authorId?: string;
+  /** For an author feed: the post is a reply to someone. */
+  isReply?: boolean;
+  /** For an author feed: the item is the author reposting someone else's post, not a post of their own. */
+  isRepost?: boolean;
+  /** For an author feed read as another account: that account already reposted it. */
+  viewerReposted?: boolean;
+  /** For an author feed read as another account: that account already liked it. */
+  viewerLiked?: boolean;
 }
 
 export interface PostStats {
@@ -275,6 +305,13 @@ export interface Network {
    * voted returns `already` rather than throwing.
    */
   upvote?(account: Account, ref: string, direction?: 0 | 1): Promise<UpvoteResult>;
+  /**
+   * The newest posts on `actor`'s own profile, read as `account` so the
+   * viewer flags say whether this account already reposted or liked each.
+   * Items carry `isReply` / `isRepost` so a mirror can keep only originals,
+   * and `id` is what `repost` and `upvote` take.
+   */
+  authorFeed?(account: Account, actor: string, limit: number): Promise<TimelineItem[]>;
 }
 
 export const NO_CAPS: NetworkCapabilities = {

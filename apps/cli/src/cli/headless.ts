@@ -72,6 +72,10 @@ import {
   restoreAccount,
   archivedAccounts,
   describeArchive,
+  accountStatus,
+  setMirror,
+  clearMirror,
+  readMirrorState,
   renderInfographic,
   requireNetwork,
   resolveTargets,
@@ -201,6 +205,8 @@ export function parseFlags(argv: string[]): { positional: string[]; flags: Flags
       "refresh", "generate",
       // account archive --banned, accounts --archived
       "banned", "archived",
+      // account mirror --like --restore
+      "like", "restore",
     ]);
     if (BOOLS.has(name)) {
       flags[name === "noThread" ? "thread" : name] = name !== "noThread";
@@ -210,6 +216,12 @@ export function parseFlags(argv: string[]): { positional: string[]; flags: Flags
     // --type`, so it is a switch when nothing follows it.
     if (name === "type" && inlineValue === undefined && (argv[i + 1] === undefined || argv[i + 1].startsWith("--"))) {
       flags.type = true;
+      continue;
+    }
+    // `--repost` takes a gap on `pace --repost 7d` and stands alone on
+    // `account mirror <id> --from <src> --repost`.
+    if (name === "repost" && inlineValue === undefined && (argv[i + 1] === undefined || argv[i + 1].startsWith("--"))) {
+      flags.repost = true;
       continue;
     }
     // `--rotate` is a switch (round-robin); `--rotate=random` or
@@ -489,7 +501,7 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
           id: account.id,
           name: account.displayName ?? "",
           network: getNetwork(account.network)?.name ?? account.network,
-          status: account.archived ? `${account.archived.banned ? "banned" : "archived"} ${account.archived.at.slice(0, 10)}` : "active",
+          status: accountStatus(account),
         })),
         [
           { key: "id", title: "ACCOUNT" },
@@ -511,9 +523,12 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
       // myna account archive <id> [--banned] [--note "why"]
       // myna account restore <id>
       // myna account show <id>
+      // myna account mirror <id> --from <source> [--like] [--repost] [--restore] | --off
       await ensureUnlocked();
       const [action, id] = positional;
-      const usage = 'Usage: myna account archive <account> [--banned] [--note "why"] | myna account restore <account> | myna account show <account>';
+      const usage =
+        'Usage: myna account archive <account> [--banned] [--note "why"] | myna account restore <account> | myna account show <account>\n' +
+        "       myna account mirror <account> --from <source> [--like] [--repost] [--restore] | myna account mirror <account> --off";
       if (!action || !id) throw new Error(usage);
       const account = getAccount(id) ?? listAccounts({ includeArchived: true }).find((entry) => entry.handle === id);
       if (!account) throw new Error(`No account "${id}". Run: myna accounts`);
@@ -550,14 +565,70 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
         case "restore":
         case "unarchive": {
           const restored = restoreAccount(account.id);
-          out(restored ? `Restored ${account.id}. It is a posting target again (cancelled queue entries stay cancelled).` : `${account.id} was not archived.`);
+          out(restored
+            ? restored.mirror
+              ? `Restored ${account.id}. It is a mirror of ${restored.mirror.from} again (never a posting target).`
+              : `Restored ${account.id}. It is a posting target again (cancelled queue entries stay cancelled).`
+            : `${account.id} was not archived.`);
+          return 0;
+        }
+        case "mirror": {
+          if (flags.off) {
+            const cleared = clearMirror(account.id);
+            out(cleared ? `${account.id} is no longer a mirror. It is a normal posting target again.` : `${account.id} was not a mirror.`);
+            return 0;
+          }
+          if (typeof flags.from !== "string") {
+            // No --from: show what the mirror is doing.
+            if (!account.mirror) {
+              out(`${account.id} is not a mirror. Make it one: myna account mirror ${account.id} --from <source>`);
+              return 0;
+            }
+            const state = readMirrorState().accounts[account.id] ?? { pending: [], done: [] };
+            if (flags.json) {
+              out(JSON.stringify({ account: account.id, mirror: account.mirror, ...state }, null, 2));
+              return 0;
+            }
+            out(describeArchive(account));
+            out(`last read ${state.polledAt ?? "never"}; ${state.pending.length} pending, ${state.done.length} done`);
+            for (const entry of state.pending) out(`pending ${entry.dueAt}  ${entry.url ?? entry.postId}${entry.lastError ? `  (${entry.lastError})` : ""}`);
+            for (const entry of state.done.slice(-10)) {
+              const did = [entry.reposted ? "reposted" : "", entry.liked ? "liked" : "", entry.already ? "already" : ""].filter(Boolean).join("+");
+              out(`done    ${entry.at}  ${did}  ${entry.url ?? entry.postId}${entry.error ? `  (${entry.error})` : ""}`);
+            }
+            return 0;
+          }
+          // Neither switch means both; naming one means only that one.
+          const picked = flags.like === true || flags.repost === true;
+          const mirrored = setMirror(account.id, {
+            from: flags.from,
+            like: picked ? flags.like === true : true,
+            repost: picked ? flags.repost === true : true,
+            restore: Boolean(flags.restore),
+          });
+          // Nothing original goes out from a mirror: its queue goes now.
+          const reason = describeArchive(mirrored);
+          const dropped = dropQueuedFor(account.id, reason);
+          const hooks: HookOutcome[] = [];
+          for (const entry of dropped.cancelled) hooks.push(...(await runAfterCancel(entry.id)));
+          if (flags.json) {
+            out(JSON.stringify({ account: account.id, mirror: mirrored.mirror, cancelled: dropped.cancelled.map((e) => e.id), trimmed: dropped.trimmed.map((e) => e.id) }, null, 2));
+            return 0;
+          }
+          out(reason);
+          out(`Posts by ${mirrored.mirror!.from} since ${mirrored.mirror!.since} are mirrored by the daemon (myna run), paced a few minutes apart.`);
+          if (dropped.cancelled.length || dropped.trimmed.length) {
+            out(`${dropped.cancelled.length} queued post${dropped.cancelled.length === 1 ? "" : "s"} cancelled, ${dropped.trimmed.length} shared entr${dropped.trimmed.length === 1 ? "y" : "ies"} trimmed.`);
+          }
+          printHooks(hooks);
+          out(`Undo with: myna account mirror ${account.id} --off`);
           return 0;
         }
         case "show": {
           const { creds, ...rest } = account;
           void creds;
           if (flags.json) out(JSON.stringify(rest, null, 2));
-          else out(account.archived ? describeArchive(account) : `${account.id} is active`);
+          else out(describeArchive(account));
           return 0;
         }
         default:

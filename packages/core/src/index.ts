@@ -5,6 +5,7 @@ export { VERSION } from "./version.ts";
 export type {
   Account,
   AccountArchive,
+  AccountMirror,
   AuthKind,
   CredentialField,
   LoginContext,
@@ -43,6 +44,12 @@ export {
   removeAccount,
   resolveTargets,
   isArchived,
+  isMirror,
+  isOffLimits,
+  accountStatus,
+  mirrorAccounts,
+  setMirror,
+  clearMirror,
   describeArchive,
   ArchivedAccountError,
   refuseArchived,
@@ -251,6 +258,7 @@ export {
 } from "./core/post-types.ts";
 export { parseSkill, serializeSkill, typeSkillPath, listTypeSlugs, TYPES_DIR, type TypeFrontmatter, skillsDir, networkSkillPath, accountSkillPath, accountSkillDir, listSkillNetworks, listSkillAccountDirs, SKILLS_DIR, type SkillSource } from "./store/skills.ts";
 export { runEvergreen, pickEvergreen, evergreenText, lastEvergreen, DEFAULT_EVERGREEN, EVERGREEN_MARK, type EvergreenSettings, type EvergreenRun, type EvergreenPick } from "./core/evergreen.ts";
+export { runMirrors, selectOriginals, describeMirrorTurn, readMirrorState, mirrorActor, MIRROR_FILE, MIRROR_POLL_MS, type MirrorTurn, type MirrorAction, type MirrorFile } from "./core/mirror.ts";
 export {
   buildRecap,
   renderRecapText,

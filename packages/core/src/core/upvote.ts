@@ -26,7 +26,7 @@
  * but a run refuses to act on them unless a person names the network.
  */
 import { getNetwork } from "../net/registry.ts";
-import { describeArchive, getAccount, listAccounts } from "../store/accounts.ts";
+import { describeArchive, getAccount, isOffLimits, listAccounts } from "../store/accounts.ts";
 import { listHistory, recordHistory, type HistoryEntry } from "../store/history.ts";
 import { loadSettings, type UpvoteSettings } from "../store/settings.ts";
 import {
@@ -457,7 +457,7 @@ export async function runUpvotes(options: UpvoteRunOptions = {}): Promise<Upvote
     if (!account || !network) {
       item.status = "skipped";
       const stored = getAccount(item.accountId);
-      item.reason = stored?.archived ? describeArchive(stored) : "account is gone";
+      item.reason = isOffLimits(stored) && stored ? describeArchive(stored) : "account is gone";
       continue;
     }
     if (manual.has(item.network.toLowerCase()) && !asked.has(item.network.toLowerCase())) {

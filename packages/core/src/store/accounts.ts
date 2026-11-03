@@ -11,7 +11,7 @@
  * invisible to it, and the next session refresh it saved wrote the old list
  * back over the new one, deleting the account.
  */
-import type { Account, AccountArchive } from "../net/types.ts";
+import type { Account, AccountArchive, AccountMirror } from "../net/types.ts";
 import type { DirectoryAccount } from "../directories/types.ts";
 import { statSync } from "node:fs";
 import { readVault, writeVault, vaultExists, vaultMode, sessionStatus, onVaultLock } from "../util/crypto/vault.ts";
@@ -94,29 +94,59 @@ export function isArchived(account: Pick<Account, "archived"> | undefined): bool
   return Boolean(account?.archived);
 }
 
-/** "archived" or "banned", plus the date and the note: the line every refusal prints. */
-export function describeArchive(account: Pick<Account, "id" | "archived">): string {
+/** True when the account is a mirror: it only reposts/likes another account and never posts its own. */
+export function isMirror(account: Pick<Account, "mirror"> | undefined): boolean {
+  return Boolean(account?.mirror);
+}
+
+/**
+ * True when nothing original may be posted from the account: it is archived
+ * or a mirror. Every posting gate uses this, so a mirror is shut out of
+ * `all`, network names, rotation, the drip, newsletters, evergreen and engage
+ * exactly the way an archived account is.
+ */
+export function isOffLimits(account: Pick<Account, "archived" | "mirror"> | undefined): boolean {
+  return isArchived(account) || isMirror(account);
+}
+
+/** "mirror of <source>", "archived" or "banned": the short status `myna accounts` prints. */
+export function accountStatus(account: Pick<Account, "archived" | "mirror">): string {
+  if (account.archived) return `${account.archived.banned ? "banned" : "archived"} ${account.archived.at.slice(0, 10)}`;
+  if (account.mirror) return `mirror of ${account.mirror.from}`;
+  return "active";
+}
+
+/** "archived" or "banned", plus the date and the note, or the mirror's source: the line every refusal prints. */
+export function describeArchive(account: Pick<Account, "id" | "archived" | "mirror">): string {
   const archive = account.archived;
-  if (!archive) return `${account.id} is active`;
+  if (!archive) {
+    const mirror = account.mirror;
+    if (mirror) {
+      const what = [mirror.repost ? "reposts" : "", mirror.like ? "likes" : ""].filter(Boolean).join(" and ") || "mirrors";
+      return `${account.id} is a mirror of ${mirror.from} (since ${mirror.at.slice(0, 10)}): it only ${what} ${mirror.from}'s posts and never posts its own`;
+    }
+    return `${account.id} is active`;
+  }
   const label = archive.banned ? "banned" : "archived";
   return `${account.id} is ${label} (since ${archive.at.slice(0, 10)})${archive.note ? `: ${archive.note}` : ""}`;
 }
 
-/** Thrown when an archived account is named as a posting target. */
+/** Thrown when an archived or mirror account is named as a posting target. */
 export class ArchivedAccountError extends Error {
   constructor(public readonly accounts: Account[]) {
-    super(
-      `${accounts.map(describeArchive).join("\n")}\n` +
-        `An archived account is never posted to. Restore it first: myna account restore ${accounts[0]?.id ?? "<account>"}`,
-    );
+    const first = accounts[0];
+    const fix = first && !first.archived && first.mirror
+      ? `A mirror account never posts on its own. Turn the mirror off first: myna account mirror ${first.id} --off`
+      : `An archived account is never posted to. Restore it first: myna account restore ${first?.id ?? "<account>"}`;
+    super(`${accounts.map(describeArchive).join("\n")}\n${fix}`);
     this.name = "ArchivedAccountError";
   }
 }
 
-/** Refuse to go any further when an archived account is among the targets. */
+/** Refuse to go any further when an archived or mirror account is among the targets. */
 export function refuseArchived(accounts: Account[]): void {
-  const archived = accounts.filter(isArchived);
-  if (archived.length) throw new ArchivedAccountError(archived);
+  const blocked = accounts.filter(isOffLimits);
+  if (blocked.length) throw new ArchivedAccountError(blocked);
 }
 
 /**
@@ -126,8 +156,10 @@ export function refuseArchived(accounts: Account[]): void {
  * where the archived ones belong in the answer (the accounts list, a backup).
  */
 export function listAccounts(options: { includeArchived?: boolean } = {}): Account[] {
+  // A mirror is left out with the archived ones: it acts only through the
+  // mirror job, never through engage/follow/upvote or anything else.
   return [...load().accounts]
-    .filter((account) => options.includeArchived || !isArchived(account))
+    .filter((account) => options.includeArchived || !isOffLimits(account))
     .sort((a, b) => a.id.localeCompare(b.id));
 }
 
@@ -153,6 +185,65 @@ export function archiveAccount(id: string, details: { banned?: boolean; note?: s
   return account;
 }
 
+/** Accounts set up as mirrors and not archived: what the mirror job walks. */
+export function mirrorAccounts(): Account[] {
+  return listAccounts({ includeArchived: true }).filter((account) => isMirror(account) && !isArchived(account));
+}
+
+/**
+ * Make an account a mirror of `from`: from now on it never posts its own and
+ * the daemon reposts and/or likes each new original post by `from`.
+ *
+ * An archived account is refused unless `restore` is set, in which case the
+ * archive is lifted and the mirror set in ONE vault write, so there is never
+ * a moment where the account is a plain, fully active posting target.
+ */
+export function setMirror(
+  id: string,
+  config: { from: string; like?: boolean; repost?: boolean; at?: string; since?: string; restore?: boolean },
+): Account {
+  const payload = load();
+  const account = payload.accounts.find((entry) => entry.id === id);
+  if (!account) throw new Error(`No account "${id}". Run: myna accounts`);
+  const from = config.from.trim();
+  if (!from) throw new Error("A mirror needs a source: --from <account>");
+  const source = payload.accounts.find((entry) => entry.id === from || (entry.network === account.network && entry.handle === from));
+  if (source && source.id === account.id) throw new Error("An account cannot mirror itself.");
+  if (source && source.network !== account.network) {
+    throw new Error(`${account.id} and ${source.id} are on different networks; a mirror reposts on its own network.`);
+  }
+  if (account.archived && !config.restore) {
+    throw new Error(`${describeArchive(account)}\nPass --restore to lift the archive and make it a mirror in one step.`);
+  }
+  const like = config.like ?? true;
+  const repost = config.repost ?? true;
+  if (!like && !repost) throw new Error("A mirror has to like, repost, or both.");
+  const at = config.at ?? new Date().toISOString();
+  const mirror: AccountMirror = {
+    from: source?.id ?? from,
+    like,
+    repost,
+    at,
+    // First enable: only the last day, never the whole history.
+    since: config.since ?? new Date(Date.parse(at) - 24 * 3_600_000).toISOString(),
+  };
+  account.mirror = mirror;
+  if (config.restore) delete account.archived;
+  save(payload);
+  return account;
+}
+
+/** Stop mirroring. Returns undefined when the account was not a mirror. It goes back to being a normal account. */
+export function clearMirror(id: string): Account | undefined {
+  const payload = load();
+  const account = payload.accounts.find((entry) => entry.id === id);
+  if (!account) throw new Error(`No account "${id}". Run: myna accounts`);
+  if (!account.mirror) return undefined;
+  delete account.mirror;
+  save(payload);
+  return account;
+}
+
 /** Put an archived account back into rotation. Returns undefined when it was not archived. */
 export function restoreAccount(id: string): Account | undefined {
   const payload = load();
@@ -169,7 +260,7 @@ export function getAccount(id: string): Account | undefined {
 }
 
 export function accountsFor(network: string): Account[] {
-  return load().accounts.filter((account) => account.network === network && !isArchived(account));
+  return load().accounts.filter((account) => account.network === network && !isOffLimits(account));
 }
 
 /**
@@ -182,8 +273,13 @@ export function saveAccount(account: Account): void {
   const payload = load();
   const index = payload.accounts.findIndex((existing) => existing.id === account.id);
   if (index >= 0) {
-    const kept = payload.accounts[index].archived;
-    payload.accounts[index] = kept && !("archived" in account) ? { ...account, archived: kept } : account;
+    // The archive and the mirror are ours, not the adapter's: a re-login or a
+    // token refresh keeps both unless the saved account says otherwise.
+    const existing = payload.accounts[index];
+    const next: Account = { ...account };
+    if (existing.archived && !("archived" in account)) next.archived = existing.archived;
+    if (existing.mirror && !("mirror" in account)) next.mirror = existing.mirror;
+    payload.accounts[index] = next;
   } else payload.accounts.push(account);
   save(payload);
 }
@@ -248,7 +344,7 @@ export function resolveTargets(spec: string): Account[] {
   // not one: a post there is a page and a commit, so it has to be named.
   // Neither is an archived account, which is never a target at all.
   if (!wanted.length || wanted.includes("all") || wanted.includes("*")) {
-    return accounts.filter((account) => !isArchived(account) && !getNetwork(account.network)?.caps.explicitTarget);
+    return accounts.filter((account) => !isOffLimits(account) && !getNetwork(account.network)?.caps.explicitTarget);
   }
 
   const seen = new Set<string>();
@@ -257,10 +353,10 @@ export function resolveTargets(spec: string): Account[] {
     const named = accounts.filter((account) => account.id === token || account.handle === token);
     // Naming an archived account is refused outright, with the reason, so a
     // post meant for it never quietly goes nowhere (or somewhere else).
-    if (named.some(isArchived)) throw new ArchivedAccountError(named.filter(isArchived));
+    if (named.some(isOffLimits)) throw new ArchivedAccountError(named.filter(isOffLimits));
     const all = accounts.filter((account) => account.id === token || account.network === token || account.handle === token);
     // A network name means its live accounts; the archived ones are skipped.
-    const matches = all.filter((account) => !isArchived(account));
+    const matches = all.filter((account) => !isOffLimits(account));
     if (!matches.length && all.length) throw new ArchivedAccountError(all);
     if (!matches.length) throw new Error(`No connected account matches "${token}". Run /accounts to see what is connected.`);
     for (const match of matches) {

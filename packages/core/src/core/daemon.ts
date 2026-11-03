@@ -16,6 +16,7 @@ import { effectiveLinks, effectiveRecap, loadSettings } from "../store/settings.
 import { pluginTasks, seedProviders } from "../plugins/loader.ts";
 import { pluginContext } from "../plugins/context.ts";
 import { runEvergreen } from "./evergreen.ts";
+import { describeMirrorTurn, runMirrors } from "./mirror.ts";
 import { runAutopilot } from "./autopilot.ts";
 import { runRecap } from "./recap.ts";
 import { runLinks } from "./links.ts";
@@ -135,6 +136,18 @@ export function builtinJobs(log: (line: string) => void, tickMs: number): Daemon
       },
     },
   ];
+
+  // Mirror accounts (`myna account mirror`): always registered, and a no-op
+  // with none set up, so turning one on needs no daemon restart. The source
+  // is read every five minutes (runMirrors owns that); each turn sends at
+  // most one repost/like per mirror account.
+  jobs.push({
+    id: "mirror",
+    everyMs: Math.max(tickMs, 60_000),
+    async run() {
+      return describeMirrorTurn(await runMirrors({ log }));
+    },
+  });
 
   jobs.push({
     id: "newsletter",
