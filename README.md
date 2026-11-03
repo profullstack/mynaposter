@@ -513,6 +513,8 @@ myna plan [generate|draft|queue]  myna atomize <url|file>
 myna autopilot [on|off|now|set]   myna accounts --archived
 myna account archive <account> [--banned] [--note "why"]
 myna account restore <account>
+myna account mirror <account> --from <source> [--like] [--repost] [--restore]
+myna account mirror <account> [--off]
 ```
 
 `myna account archive` retires an account without deleting it: the credentials
@@ -522,6 +524,17 @@ left out of `all` and `--rotate`, naming it as a target is refused with the
 note, its pending queue entries are cancelled with the note as the reason (the
 daemon does the same for anything that slips through), and engage, follow and
 upvote tasks skip it. `myna account restore` puts it back.
+
+`myna account mirror` turns an account into a repost-only mirror of another:
+it never posts anything of its own again (shut out of every posting path the
+way an archived account is), and the daemon reads the source's profile every
+five minutes and reposts and likes (`--like` or `--repost` for just one) each
+new original post, never replies or reposts, exactly once, 1-10 minutes after
+it went up and one at a time. On first enable it reaches back 24 hours, not
+the whole history. `--restore` lifts an archive and sets the mirror in one
+write. `myna accounts` shows it as `mirror of <source>`; `myna account mirror
+<account>` shows what it did; `--off` makes it a normal account again. Bluesky
+only for now (any network whose adapter has `authorFeed`).
 
 Flags: `--to`, `--title`, `--media`, `--style`, `--json`, `--dry-run`,
 `--no-thread`, `--limit`, `--force`, `--allow-duplicate`, `--type`. Any other `--flag value` is handed to the

@@ -212,6 +212,35 @@ export const bluesky: Network = {
     }));
   },
 
+  async authorFeed(account, actor, limit) {
+    // Read through this account's own service (its AppView proxy), so the
+    // viewer flags are this account's: what it has already reposted or liked.
+    const base = service(account);
+    const { accessJwt } = await session(account);
+    const feed = await getJson<{ feed: { post: Record<string, any>; reason?: Record<string, any>; reply?: unknown }[] }>(
+      `${base}/xrpc/app.bsky.feed.getAuthorFeed?actor=${encodeURIComponent(actor)}&limit=${Math.min(100, Math.max(1, limit))}&filter=posts_no_replies`,
+      { headers: auth(accessJwt) },
+    );
+    return (feed.feed ?? []).map(({ post, reason, reply }): TimelineItem => ({
+      id: `${post.uri}|${post.cid}`,
+      author: post.author?.displayName || post.author?.handle || "",
+      handle: post.author?.handle ?? "",
+      authorId: post.author?.did ?? "",
+      text: post.record?.text ?? "",
+      createdAt: post.record?.createdAt ?? post.indexedAt ?? "",
+      url: `https://bsky.app/profile/${post.author?.handle}/post/${String(post.uri).split("/").pop()}`,
+      likes: post.likeCount,
+      reposts: post.repostCount,
+      replies: post.replyCount,
+      isReply: Boolean(post.record?.reply || reply),
+      // A `reason` means the item is in the feed for some other reason than
+      // being their post: a repost of someone else's. A pinned post is still theirs.
+      isRepost: Boolean(reason) && !String(reason?.$type ?? "").includes("reasonPin"),
+      viewerReposted: Boolean(post.viewer?.repost),
+      viewerLiked: Boolean(post.viewer?.like),
+    }));
+  },
+
   async notifications(account, limit) {
     const base = service(account);
     const { accessJwt } = await session(account);

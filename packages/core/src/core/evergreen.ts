@@ -10,7 +10,7 @@
  * twice in a week; this job's own rotation is what stops the same page being
  * chosen twice in a row.
  */
-import { describeArchive, getAccount } from "../store/accounts.ts";
+import { describeArchive, getAccount, isOffLimits } from "../store/accounts.ts";
 import { requireNetwork } from "../net/registry.ts";
 import { listQueue, type QueuedPost } from "../store/queue.ts";
 import { listHistory } from "../store/history.ts";
@@ -112,7 +112,7 @@ export async function runEvergreen(options: { now?: number; log?: (line: string)
 
   const account = getAccount(cfg.from);
   if (!account) return { idle: `${cfg.from} is not a connected account` };
-  if (account.archived) return { idle: describeArchive(account) };
+  if (isOffLimits(account)) return { idle: describeArchive(account) };
   const network = requireNetwork(account.network);
   if (!network.timeline) return { idle: `${account.network} cannot list its own pages` };
 

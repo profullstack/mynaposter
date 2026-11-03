@@ -16,7 +16,7 @@
  * publication's own subscribers as if it were news.
  */
 import { postToAll } from "./poster.ts";
-import { describeArchive, getAccount } from "../store/accounts.ts";
+import { describeArchive, getAccount, isOffLimits } from "../store/accounts.ts";
 import { loadSettings } from "../store/settings.ts";
 import { readNewsletters, writeNewsletters, type Newsletter, type NewslettersFile, type PublishedCopy } from "../store/newsletters.ts";
 
@@ -99,7 +99,7 @@ export async function publishNewsletter(id: string, options: PublishOptions = {}
       results.push({ account: accountId, ok: false, error: `no account ${accountId}; myna accounts lists them` });
       continue;
     }
-    if (account.archived) {
+    if (isOffLimits(account)) {
       results.push({ account: accountId, ok: false, error: describeArchive(account) });
       continue;
     }

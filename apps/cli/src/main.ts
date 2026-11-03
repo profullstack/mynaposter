@@ -29,6 +29,11 @@ Accounts:
   account archive <account> [--banned] [--note "why"]
                                     Keep the credentials but never post to it again; drops its queued posts
   account restore <account>         Put an archived account back
+  account mirror <account> --from <source> [--like] [--repost] [--restore]
+                                    Never post its own again; the daemon reposts and likes
+                                    (default: both) each new original post by <source>.
+                                    --restore lifts an archive in the same step
+  account mirror <account> [--off]  Show what the mirror did, or turn it off
   networks                          List all supported networks
 
 Keeping myna current:

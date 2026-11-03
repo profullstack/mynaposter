@@ -6,7 +6,7 @@
  * the next tick.
  */
 import { duePosts, enqueue, listQueue, updateQueued, type QueuedPost } from "../store/queue.ts";
-import { describeArchive, getAccount, isArchived } from "../store/accounts.ts";
+import { describeArchive, getAccount, isOffLimits } from "../store/accounts.ts";
 import { requireNetwork } from "../net/registry.ts";
 import { postToAll, type TargetResult } from "./poster.ts";
 import { loadAllMedia } from "./media.ts";
@@ -34,8 +34,8 @@ export async function runDuePosts(now = new Date()): Promise<RunResult[]> {
     // An archived account is never posted to. An entry for nothing else is
     // cancelled with the archive note as its reason; one it shares with
     // live accounts just loses it.
-    const archived = existing.filter(isArchived);
-    const targeted = existing.filter((account) => !isArchived(account));
+    const archived = existing.filter(isOffLimits);
+    const targeted = existing.filter((account) => !isOffLimits(account));
     if (!targeted.length) {
       updateQueued(post.id, { status: "cancelled", lastError: archived.map(describeArchive).join("; ") });
       continue;
