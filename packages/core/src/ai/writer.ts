@@ -10,6 +10,7 @@ import { getNetwork, requireNetwork } from "../net/registry.ts";
 import { fetchPage, type PageSummary } from "./extract.ts";
 import { writerContext } from "../core/brand.ts";
 import { complete as completeAnthropic, hasCredentials as hasAnthropic } from "./anthropic.ts";
+import { completeC0mpute } from "./c0mpute.ts";
 import { completeGemini, completeOpenAI, completeOllama } from "./openai.ts";
 
 export interface Draft {
@@ -80,25 +81,31 @@ export function worthFallingBackFrom(error: Error): boolean {
 }
 
 /**
- * One completion from the configured provider, falling back to OpenAI.
+ * One completion from the configured provider.
  *
- * The house Anthropic key is shared across the fleet and carries a spend cap,
- * so "the writer is down" is a routine Tuesday rather than an emergency: it
- * comes back as a 400 saying the limit is reached, or a 401 when a key has
- * been rotated out from under us. Neither is a reason to stop writing when
- * there is a second key that works, so Claude is tried first and OpenAI picks
- * up whatever it drops.
+ * c0mpute is the default and goes first: it is our own peer network, so a
+ * draft costs a fraction of a cent against what our nodes earned rather than
+ * a frontier bill, and it needs no key. @profullstack/ai-providers handles the
+ * rest — OpenAI and Anthropic are tried only when a paid key is set, in
+ * alternating order so neither bill takes all the overflow, and a provider
+ * that answers "no credit" is parked instead of retried.
  *
- * Only the configured provider falls back, and only to OpenAI. Ollama is a
- * deliberate choice to keep the text on this machine, and quietly shipping it
- * to a third party because the local model was busy would be a betrayal of
- * the reason somebody picked it.
+ * That fallback is currently theoretical: as of 2026-11-05 the shared OpenAI
+ * key is invalid and the Anthropic one is out of credit, which is precisely
+ * why the default moved. Treat c0mpute as the provider, not the cheap option.
+ *
+ * `anthropic` and `openai` stay selectable and still go straight to that
+ * vendor, for when there is credit and the extra quality is worth it. Ollama
+ * is a deliberate choice to keep the text on this machine, and quietly
+ * shipping it to a third party because the local model was busy would be a
+ * betrayal of the reason somebody picked it — so it never falls back.
  */
 export async function providerComplete(system: string, prompt: string, maxTokens = 4000): Promise<string> {
   const { ai } = loadSettings();
 
   if (ai.provider === "ollama") return completeOllama({ system, prompt, model: ai.model, maxTokens });
   if (ai.provider === "openai") return completeOpenAI({ system, prompt, model: ai.model, maxTokens });
+  if (ai.provider === "c0mpute") return completeC0mpute({ system, prompt, maxTokens });
 
   try {
     if (!hasAnthropic()) throw new Error("ANTHROPIC_API_KEY is not set.");
@@ -117,18 +124,26 @@ export async function providerComplete(system: string, prompt: string, maxTokens
         if (!worthFallingBackFrom(reason)) throw reason;
       }
     }
-    if (!hasGemini()) throw reason;
-    return completeGemini({ system, prompt, maxTokens });
+    if (hasGemini()) {
+      try {
+        return await completeGemini({ system, prompt, maxTokens });
+      } catch (geminiError) {
+        reason = geminiError as Error;
+        if (!worthFallingBackFrom(reason)) throw reason;
+      }
+    }
+    // Every paid key is spent or dead. c0mpute still answers.
+    return completeC0mpute({ system, prompt, maxTokens });
   }
 }
 
 /**
  * True when the writer can run at all.
  *
- * "At all" is the question, not "on the configured provider": with a fallback
- * in place, a missing Anthropic key is not the end of writing when an OpenAI
- * key is sitting right there. Saying otherwise turns off every feature that
- * checks this first, which is how link drops stayed silently dead.
+ * "At all" is the question, not "on the configured provider": a missing
+ * Anthropic key is not the end of writing when c0mpute needs no key. Saying
+ * otherwise turns off every feature that checks this first, which is how link
+ * drops stayed silently dead.
  */
 export function writerAvailable(): { ok: boolean; reason?: string } {
   const { ai } = loadSettings();
@@ -136,11 +151,9 @@ export function writerAvailable(): { ok: boolean; reason?: string } {
   if (ai.provider === "openai") {
     return hasOpenAI() ? { ok: true } : { ok: false, reason: "OPENAI_API_KEY is not set." };
   }
-  if (hasAnthropic() || hasOpenAI() || hasGemini()) return { ok: true };
-  return {
-    ok: false,
-    reason: "Neither ANTHROPIC_API_KEY nor OPENAI_API_KEY is set. Run `myna config ai.provider ollama` to use a local model instead.",
-  };
+  // c0mpute needs no key, and it is the last resort for every other provider,
+  // so the writer can always run.
+  return { ok: true };
 }
 
 /**

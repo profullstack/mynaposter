@@ -10,7 +10,8 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.123.0",
-    "@profullstack/synconfig": "workspace:*",
-    "@profullstack/email-queue": "workspace:*"
+    "@profullstack/ai-providers": "0.1.0",
+    "@profullstack/email-queue": "workspace:*",
+    "@profullstack/synconfig": "workspace:*"
   }
 }
