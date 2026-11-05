@@ -18,7 +18,7 @@ export interface Settings {
   /** Split over-limit text into a reply chain instead of truncating. */
   threadByDefault: boolean;
   ai: {
-    provider: "anthropic" | "openai" | "ollama";
+    provider: "c0mpute" | "anthropic" | "openai" | "ollama";
     model: string;
     /** Voice instructions handed to the writer on every draft. */
     voice: string;
@@ -575,7 +575,8 @@ export const DEFAULT_SETTINGS: Settings = {
   theme: "dark",
   threadByDefault: true,
   ai: {
-    provider: "anthropic",
+    // c0mpute, our own peer network: no key, a fraction of a cent a draft.
+    provider: "c0mpute",
     model: "claude-opus-5",
     voice: "Plain, specific, no hype. Never open with a hook cliché.",
     maxHashtags: 3,
@@ -627,7 +628,8 @@ export const DEFAULT_SETTINGS: Settings = {
 function aiFromEnv(): Partial<Settings["ai"]> {
   const out: Partial<Settings["ai"]> = {};
   const provider = process.env.MYNA_AI_PROVIDER;
-  if (provider === "anthropic" || provider === "openai" || provider === "ollama") out.provider = provider;
+  if (provider === "c0mpute" || provider === "anthropic" || provider === "openai" || provider === "ollama")
+    out.provider = provider;
   if (process.env.MYNA_AI_MODEL) out.model = process.env.MYNA_AI_MODEL;
   return out;
 }

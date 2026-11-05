@@ -63,6 +63,7 @@
       "version": "0.54.0",
       "dependencies": {
         "@anthropic-ai/sdk": "^0.123.0",
+        "@profullstack/ai-providers": "0.1.0",
         "@profullstack/email-queue": "workspace:*",
         "@profullstack/synconfig": "workspace:*",
       },
@@ -254,6 +255,8 @@
     "@npmcli/move-file": ["@npmcli/move-file@2.0.1", "", { "dependencies": { "mkdirp": "^1.0.4", "rimraf": "^3.0.2" } }, "sha512-mJd2Z5TjYWq/ttPLLGqArdtnC74J6bOzg4rMDnN+p1xTacZ2yPRCk2y0oSWQtygLR9YVQXgOcONrwtnk3JupxQ=="],
 
     "@pkgjs/parseargs": ["@pkgjs/parseargs@0.11.0", "", {}, "sha512-+1VkjdD0QBLPodGrJUeqarH8VAIvQODIbwh9XpP5Syisf7YoQgsJKPNFoqqLQlu+VQ/tVSshMR6loPMn8U+dPg=="],
+
+    "@profullstack/ai-providers": ["@profullstack/ai-providers@0.1.0", "", { "bin": { "ai-providers": "src/cli.js" } }, "sha512-vc7aFjozyiwIhREWLhB3xWpUPeGggM348ng5W6j4IA+gxYF3S7TNLoGWrF/ax2NttsK40C801CRkD9JSVA4aOg=="],
 
     "@profullstack/email-queue": ["@profullstack/email-queue@workspace:packages/email-queue"],
 

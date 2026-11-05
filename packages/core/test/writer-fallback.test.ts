@@ -15,7 +15,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { worthFallingBackFrom, hasOpenAI, writerAvailable, providerComplete, FALLBACK_MODEL } from "../src/ai/writer.ts";
-import { loadSettings, saveSettings } from "../src/store/settings.ts";
+import { loadSettings, saveSettings, DEFAULT_SETTINGS } from "../src/store/settings.ts";
 
 let dir = "";
 let anthropic: string | undefined;
@@ -61,23 +61,37 @@ test("a refusal is never laundered through the other provider", () => {
   expect(worthFallingBackFrom(new Error("Cannot read properties of undefined"))).toBe(false);
 });
 
-test("the writer is available when either key would work", () => {
+test("the writer is available with no paid key at all, because c0mpute needs none", () => {
   const settings = loadSettings();
   settings.ai.provider = "anthropic";
   saveSettings(settings);
 
-  // Neither: genuinely unavailable, and the reason names both.
-  expect(writerAvailable().ok).toBe(false);
-  expect(writerAvailable().reason).toContain("OPENAI_API_KEY");
+  // No keys. This used to be "genuinely unavailable", which turned off every
+  // feature that checks first. c0mpute is the last resort for every provider
+  // but ollama, so there is always somewhere to send a draft.
+  expect(writerAvailable().ok).toBe(true);
 
-  // Only the understudy: still available, which is the whole point.
+  // A paid key changes which provider answers, never whether one can.
   process.env.OPENAI_API_KEY = "sk-test";
   expect(hasOpenAI()).toBe(true);
   expect(writerAvailable().ok).toBe(true);
 
-  // Only the first choice: also available.
   delete process.env.OPENAI_API_KEY;
   process.env.ANTHROPIC_API_KEY = "sk-ant-test";
+  expect(writerAvailable().ok).toBe(true);
+});
+
+test("c0mpute is the default provider and needs no key", () => {
+  // The shipped default: a draft costs a fraction of a cent on our own nodes
+  // instead of a frontier bill, and no key has to be set for it to work.
+  expect(DEFAULT_SETTINGS.ai.provider).toBe("c0mpute");
+
+  const settings = loadSettings();
+  settings.ai.provider = "c0mpute";
+  saveSettings(settings);
+  delete process.env.ANTHROPIC_API_KEY;
+  delete process.env.OPENAI_API_KEY;
+  delete process.env.GEMINI_API_KEY;
   expect(writerAvailable().ok).toBe(true);
 });
 
