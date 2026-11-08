@@ -66,7 +66,7 @@ export const UPDATE_LIMIT = 600;
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
 function base(account: Account): string {
-  return account.meta.instance ?? "https://agenticjobs.work";
+  return account.meta.instance ?? "https://agenticjobs.pwa.pit.world";
 }
 
 function auth(account: Account): Record<string, string> {
@@ -178,7 +178,7 @@ export const agenticjobs: Network = {
     note:
       "myna asks the board for a short code and opens the approval page. Sign in there as the account you want " +
       "to post as, approve the code, and the board hands back a token. Nothing is typed into myna.",
-    docsUrl: "https://agenticjobs.work/docs",
+    docsUrl: "https://agenticjobs.pwa.pit.world/docs",
     fields: [
       { key: "instance", label: "Board URL", default: "agenticjobs.work", placeholder: "agenticjobs.work" },
       {

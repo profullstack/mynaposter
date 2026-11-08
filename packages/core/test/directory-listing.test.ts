@@ -115,7 +115,7 @@ test("SaaSRow is sent snake_case fields, and only the ones that have a value", a
           content: [
             {
               type: "text",
-              text: JSON.stringify({ id: "uuid", name: "Widget", website: "https://widget.test", status: "pending", saasrow_url: "https://saasrow.com/software/uuid" }),
+              text: JSON.stringify({ id: "uuid", name: "Widget", website: "https://widget.test", status: "pending", saasrow_url: "https://saasrow.pwa.pit.world/software/uuid" }),
             },
           ],
         },
@@ -129,7 +129,7 @@ test("SaaSRow is sent snake_case fields, and only the ones that have a value", a
     handle: "you@example.com",
     addedAt: new Date().toISOString(),
     creds: { key: "sr_key" },
-    meta: { site: "https://saasrow.com" },
+    meta: { site: "https://saasrow.pwa.pit.world" },
   };
 
   const listing = await saasrow.submit(account, {
@@ -150,7 +150,7 @@ test("SaaSRow is sent snake_case fields, and only the ones that have a value", a
   expect(sent[0]).not.toHaveProperty("tags");
   expect(listing.id).toBe("uuid");
   expect(listing.status).toBe("pending");
-  expect(listing.url).toBe("https://saasrow.com/software/uuid");
+  expect(listing.url).toBe("https://saasrow.pwa.pit.world/software/uuid");
 });
 
 test("submitting without a key says which command fixes it", async () => {

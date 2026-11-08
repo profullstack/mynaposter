@@ -37,7 +37,7 @@ const saasrowAccount = {
   handle: "you@example.com",
   addedAt: new Date().toISOString(),
   creds: { key: "sr_correct_horse_battery_staple" },
-  meta: { site: "https://saasrow.com", keyPrefix: "sr_correct" },
+  meta: { site: "https://saasrow.pwa.pit.world", keyPrefix: "sr_correct" },
 };
 
 test("a directory credential survives a save and reload", async () => {

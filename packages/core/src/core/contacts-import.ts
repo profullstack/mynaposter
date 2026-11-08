@@ -49,7 +49,7 @@ const PHONE = /^\+?[\d\s().-]{7,}$/;
 /** Read published contacts from the board the account is logged in to. */
 export async function importFromAgenticjobs(account: Account, options: ImportOptions = {}): Promise<ImportResult> {
   const fetcher = options.fetch ?? fetch;
-  const instance = (account.meta.instance ?? "https://agenticjobs.work").replace(/\/+$/, "");
+  const instance = (account.meta.instance ?? "https://agenticjobs.pwa.pit.world").replace(/\/+$/, "");
   const headers = { authorization: `Bearer ${account.creds.token}`, accept: "application/json" };
   const log = options.log ?? (() => {});
   const result: ImportResult = { read: 0, imported: [], skipped: [] };
