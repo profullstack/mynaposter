@@ -244,7 +244,7 @@ and a done button.
 
 ### The job board
 
-[agenticjobs](https://agenticjobs.work) holds two different things and myna
+[agenticjobs](https://agenticjobs.pwa.pit.world) holds two different things and myna
 treats them as two different things.
 
 A **job opening** is a publication, and stays where it was: `myna jobs post
@@ -712,7 +712,7 @@ marks required and myna could not work out fails before the call rather than
 after it. What a custom directory cannot do is sign you in: there is no MCP
 method for that, so it takes a key you already have.
 
-[SaaSRow](https://saasrow.com) has a written adapter for one reason: its sign-in
+[SaaSRow](https://saasrow.pwa.pit.world) has a written adapter for one reason: its sign-in
 is an emailed code, which is a conversation with a person rather than a tool
 call. A plugin can add a directory too, with `directories: [...]`, exactly as it
 adds a network.

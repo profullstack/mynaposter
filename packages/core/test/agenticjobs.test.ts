@@ -40,9 +40,9 @@ test("the board's own limit is the limit, and long text is cut rather than threa
 test("a trailing link moves into the board's own link field", () => {
   // The board renders the link under the body, so leaving it in the text as
   // well prints it twice.
-  const split = splitLink("Resume downloads shipped today. https://agenticjobs.work/changelog");
+  const split = splitLink("Resume downloads shipped today. https://agenticjobs.pwa.pit.world/changelog");
   expect(split.body).toBe("Resume downloads shipped today.");
-  expect(split.link).toBe("https://agenticjobs.work/changelog");
+  expect(split.link).toBe("https://agenticjobs.pwa.pit.world/changelog");
 });
 
 test("a link inside a sentence is part of the sentence", () => {
@@ -71,11 +71,11 @@ test("following an employer is the default, and a person has to be named", () =>
   expect(followTarget("org:acme")).toEqual({ kind: "orgs", slug: "acme" });
 
   // A pasted page URL is what you have to hand when you are looking at one.
-  expect(followTarget("https://agenticjobs.work/employers/acme")).toEqual({
+  expect(followTarget("https://agenticjobs.pwa.pit.world/employers/acme")).toEqual({
     kind: "orgs",
     slug: "acme",
   });
-  expect(followTarget("https://agenticjobs.work/candidates/ada")).toEqual({
+  expect(followTarget("https://agenticjobs.pwa.pit.world/candidates/ada")).toEqual({
     kind: "candidates",
     slug: "ada",
   });

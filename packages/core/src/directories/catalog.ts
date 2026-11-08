@@ -32,10 +32,10 @@ export const CATALOG: CatalogEntry[] = [
   {
     id: "saasrow",
     name: "SaaSRow",
-    url: "https://saasrow.com/api/mcp",
-    homepage: "https://saasrow.com",
+    url: "https://saasrow.pwa.pit.world/api/mcp",
+    homepage: "https://saasrow.pwa.pit.world",
     blurb: "A software directory that publishes each listing to search, AI assistants, an API and MCP",
-    keysAt: "https://saasrow.com/developers",
+    keysAt: "https://saasrow.pwa.pit.world/developers",
     builtIn: true,
   },
 ];

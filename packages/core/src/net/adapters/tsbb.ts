@@ -141,7 +141,7 @@ export const tsbb: Network = {
     note:
       "myna asks the board for a short code and opens the approval page. Sign in there as the member you want " +
       "to post as, approve the code, and the board hands back a token. Nothing is typed into myna.",
-    docsUrl: "https://tsbb.dev",
+    docsUrl: "https://tsbb.pwa.pit.world",
     fields: [
       { key: "instance", label: "Board URL", placeholder: "tsbb.dev" },
       {

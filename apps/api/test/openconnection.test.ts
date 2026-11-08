@@ -76,8 +76,8 @@ test("forums come from nichedb's forums collection, one per board and forum, and
     return new Response(
       JSON.stringify({
         items: [
-          { data: { board: "https://tsbb.dev", forum: "announcements", forumName: "Announcements" } },
-          { data: { board: "https://tsbb.dev", forum: "announcements", forumName: "Announcements" } },
+          { data: { board: "https://tsbb.pwa.pit.world", forum: "announcements", forumName: "Announcements" } },
+          { data: { board: "https://tsbb.pwa.pit.world", forum: "announcements", forumName: "Announcements" } },
           { data: { board: "https://bbs.hqtui.com/", forum: "news", forumName: "News" } },
           { data: { board: "ftp://x", forum: "y" } },
           { data: {} },
@@ -87,7 +87,7 @@ test("forums come from nichedb's forums collection, one per board and forum, and
     );
   }) as unknown as typeof fetch;
   expect(await forumsFor(["self hosting", "podcast"], fake)).toEqual([
-    { name: "Announcements on tsbb.dev", url: "https://tsbb.dev/f/announcements" },
+    { name: "Announcements on tsbb.dev", url: "https://tsbb.pwa.pit.world/f/announcements" },
     { name: "News on bbs.hqtui.com", url: "https://bbs.hqtui.com/f/news" },
   ]);
   expect(await forumsFor([], fake)).toEqual([]);

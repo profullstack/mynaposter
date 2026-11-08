@@ -21,7 +21,7 @@ import type {
   Vocabulary,
 } from "../types.ts";
 
-const DEFAULT_SITE = "https://saasrow.com";
+const DEFAULT_SITE = "https://saasrow.pwa.pit.world";
 
 /** The site to talk to. Overridable so a staging deploy can be pointed at. */
 function siteFor(account?: DirectoryAccount): string {
@@ -177,7 +177,7 @@ export const saasrow: Directory = {
       },
     ],
     note: "Signing in emails a one-time code, then stores the API key it returns. Listings are then submitted over SaaSRow's MCP server.",
-    docsUrl: "https://saasrow.com/developers",
+    docsUrl: "https://saasrow.pwa.pit.world/developers",
   },
   caps: { update: true, delete: true, categories: true, vocabulary: true, review: true },
 

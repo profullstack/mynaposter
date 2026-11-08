@@ -2,7 +2,7 @@
 
 OpenProfile.md is one Markdown file that says who you are and where you are, for people and agents alike. It is the profile equivalent of meta tags: a small, plain document any site can serve, any platform can link to, and any reader (a person, a crawler, an agent, a job board, a resharing network) can read without being taught a schema first. It is maintained by Profullstack, Inc. as part of the LogicSRC open-standards surface.
 
-Status: **0.1**. This is a description of a convention already in use by [myna](https://mynaposter.com) and [agenticjobs](https://agenticjobs.work), published so others can serve and read the same file.
+Status: **0.1**. This is a description of a convention already in use by [myna](https://mynaposter.com) and [agenticjobs](https://agenticjobs.pwa.pit.world), published so others can serve and read the same file.
 
 Slug: `openprofile`
 
@@ -23,7 +23,7 @@ The pieces already exist. `rel="me"` proves two pages belong to the same person.
 - **Email**: ada@example.com
 - **Avatar**: https://ada.example/ada.png
 - **Pay**: eip155:8453:0x7E5F4552091A69125d5DfCb7b8C2659029395Bdf
-- **Resume**: https://agenticjobs.work/candidates/ada/resume.md
+- **Resume**: https://agenticjobs.pwa.pit.world/candidates/ada/resume.md
 
 Writes about machines that do not exist yet.
 
@@ -79,7 +79,7 @@ There are eight, and every one of them degrades rather than fails.
 - `Email`, `Location`, `Pronouns`, `Timezone`, `Languages`: kept as written.
 - `Avatar`: an image URL.
 - `Pay`: where money for you goes. A [CAIP-10](https://github.com/ChainAgnostic/CAIPs/blob/main/CAIPs/caip-10.md) account (`eip155:8453:0x...`), a bare address, a Lightning address, or a payment page URL. Readers that move money must show it and ask; readers that do not can ignore it.
-- `Resume`: the URL of an [OpenResume.md](https://agenticjobs.work/docs/openresume) file. The resume says what you have done; this file says who and where you are. Each may link to the other.
+- `Resume`: the URL of an [OpenResume.md](https://agenticjobs.pwa.pit.world/docs/openresume) file. The resume says what you have done; this file says who and where you are. Each may link to the other.
 
 Values that look like an email address or a URL become links; anything else stays text. Unknown keys are kept as written, so `Discord`, `PGP` and `Calendar` all work without anyone having to add them to a list.
 
@@ -121,7 +121,7 @@ A home page points at its owner. A platform that hosts many people points each p
 Link: <https://ada.example/.well-known/openprofile.md>; rel="openprofile"
 ```
 
-**3. A conventional path on a platform.** A platform serving profiles for its users serves `openprofile.md` next to the profile page: `https://agenticjobs.work/candidates/ada/openprofile.md`. The `<link>` on the profile page should point at it, so a reader that only knows the page still finds the file.
+**3. A conventional path on a platform.** A platform serving profiles for its users serves `openprofile.md` next to the profile page: `https://agenticjobs.pwa.pit.world/candidates/ada/openprofile.md`. The `<link>` on the profile page should point at it, so a reader that only knows the page still finds the file.
 
 Serve it as `text/markdown; charset=utf-8`. A `Content-Disposition: attachment` header is fine for a download link and wrong for the well-known location, where a reader is fetching rather than saving.
 
