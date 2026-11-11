@@ -17,6 +17,14 @@ test("site paths map onto API paths", () => {
   expect(apiPath("/api/api/mcp")).toBe("/api/mcp");
 });
 
+test("OAuth discovery at the origin goes to the API unchanged", () => {
+  for (const p of ["/.well-known/oauth-protected-resource", "/.well-known/oauth-protected-resource/api/mcp", "/.well-known/oauth-authorization-server", "/.well-known/oauth-authorization-server/api", "/.well-known/openid-configuration"]) {
+    expect(apiPath(p), p).toBe(p);
+  }
+  expect(apiPath("/.well-known/openmcp.json")).toBeNull();
+  expect(apiPath("/.well-known/oauth-protected-resourcex")).toBeNull();
+});
+
 test("OAuth callback pages under /api are the site's, never the API's", () => {
   // Registered on the providers' apps with these exact URLs. The API answered
   // them 401, so Google sign-ins landed on {"error":"Unauthorized"}.

@@ -6,13 +6,14 @@ import { db, hasDatabase } from "./db/index.ts";
 import * as cloud from "./cloud.ts";
 import { hashToken, newToken } from "./credentials.ts";
 import { readCookie } from "./session.ts";
+import { getClient, isMcpClientId, issuer, redirectUriMatches, registerClient, RegistrationError, resourceMatches, resourceUrl, SCOPE, CORS_HEADERS, type McpClient } from "./mcp-oauth.ts";
 
 export const CLI_CLIENT_ID = "myna-cli";
 export const ACCESS_TOKEN_SECONDS = 15 * 60;
 export const DEVICE_CODE_SECONDS = 15 * 60;
 export const DEVICE_POLL_SECONDS = 5;
 
-type TokenReply = { access_token: string; token_type: "Bearer"; expires_in: number; refresh_token: string; email: string };
+type TokenReply = { access_token: string; token_type: "Bearer"; expires_in: number; refresh_token: string; email?: string; scope?: string };
 type AuthRequest = {
   id: string;
   csrf_hash: string;
@@ -72,17 +73,45 @@ async function page(context: { header(name: string, value: string): unknown; htm
 <body><main class="card"><h1>${escapeHtml(title)}</h1>${content}</main></body></html>`, status);
 }
 
-function authorizeMarkup(id: string, csrf: string, prefix: string, loginHint: string, email?: string, error?: string): string {
+/** The consent copy for one client: the CLI, or an MCP connector that registered itself. */
+function consentFor(client: McpClient | null, redirectUri: string): { title: string; who: string; scope: string; button: string } {
+  if (!client) {
+    return {
+      title: "Authorize myna CLI",
+      who: "this CLI",
+      scope: "myna CLI will be able to use your cloud account, including backups and newsletter unsubscribe sync.",
+      button: "Authorize myna CLI",
+    };
+  }
+  const name = escapeHtml(client.client_name);
+  const host = escapeHtml(new URL(redirectUri).host);
+  return {
+    title: `Connect ${client.client_name}`,
+    who: `<strong>${name}</strong>`,
+    scope: `<strong>${name}</strong> (returns to ${host}) is asking to use the myna MCP server at ${escapeHtml(resourceUrl())} as you. It gets no other access to your account, and you can sign out of it from the app at any time.`,
+    button: `Allow ${name}`,
+  };
+}
+
+function authorizeMarkup(id: string, csrf: string, prefix: string, loginHint: string, consent: ReturnType<typeof consentFor>, email?: string, error?: string): string {
   const message = error ? `<p class="error">${escapeHtml(error)}</p>` : "";
   const identity = email
-    ? `<p>Continue as <strong>${escapeHtml(email)}</strong> to sign in to myna on this device.</p>`
-    : `<p>Sign in to myna cloud to authorize this CLI. Your password is sent only to mynaposter.com over HTTPS.</p>
+    ? `<p>Continue as <strong>${escapeHtml(email)}</strong> to authorize ${consent.who}.</p>`
+    : `<p>Sign in to myna cloud to authorize ${consent.who}. Your password is sent only to mynaposter.com over HTTPS.</p>
 <label for="email">Email</label><input id="email" name="email" type="email" autocomplete="username" required value="${escapeHtml(loginHint)}">
 <label for="password">Password</label><input id="password" name="password" type="password" autocomplete="current-password" required>`;
   return `${message}<form method="post" action="${prefix}/v1/oauth/authorize">
 <input type="hidden" name="request" value="${escapeHtml(id)}"><input type="hidden" name="csrf" value="${escapeHtml(csrf)}">
-${identity}<p class="muted">myna CLI will be able to use your cloud account, including backups and newsletter unsubscribe sync. Access tokens expire after 15 minutes; refresh tokens rotate automatically.</p>
-<button name="decision" value="approve">Authorize myna CLI</button><button class="quiet" name="decision" value="deny" formnovalidate>Cancel</button></form>`;
+${identity}<p class="muted">${consent.scope} Access tokens expire after 15 minutes; refresh tokens rotate automatically.</p>
+<button name="decision" value="approve">${consent.button}</button><button class="quiet" name="decision" value="deny" formnovalidate>Cancel</button></form>`;
+}
+
+/** RFC 9207: say who issued the response, so a client talking to two servers cannot be mixed up. */
+function finishRedirect(redirectUri: string, params: Record<string, string>): string {
+  const url = new URL(redirectUri);
+  for (const [key, value] of Object.entries(params)) if (value) url.searchParams.set(key, value);
+  url.searchParams.set("iss", issuer());
+  return url.toString();
 }
 
 async function authRequest(id: string): Promise<AuthRequest | undefined> {
@@ -104,27 +133,53 @@ function validRedirectUri(value: string): boolean {
   }
 }
 
+const invalidRequest = "<p class=\"error\">This sign-in request is invalid or has expired. Return to the app and start again.</p>";
+/** An MCP client's state is opaque to us: anything printable, echoed back as given. */
+const isClientState = (value: string): boolean => value.length <= 1024 && !/[\u0000-\u001f\u007f]/.test(value);
+
 oauthRoutes.get("/authorize", async (context) => {
   const query = context.req.query();
-  const redirectUri = query.redirect_uri ?? "";
+  const clientId = query.client_id ?? "";
   const challenge = query.code_challenge ?? "";
   const state = query.state ?? "";
   const loginHint = (query.login_hint ?? "").trim().slice(0, 254);
-  if (query.client_id !== CLI_CLIENT_ID || query.response_type !== "code" || query.code_challenge_method !== "S256" ||
-      !validRedirectUri(redirectUri) || !isChallenge(challenge) || !isState(state)) {
-    return page(context, "Can't authorize myna", "<p class=\"error\">This sign-in request is invalid or has expired. Return to the terminal and start again.</p>", 400);
+  let client: McpClient | null = null;
+  let redirectUri = query.redirect_uri ?? "";
+
+  if (clientId === CLI_CLIENT_ID) {
+    if (query.response_type !== "code" || query.code_challenge_method !== "S256" ||
+        !validRedirectUri(redirectUri) || !isChallenge(challenge) || !isState(state)) {
+      return page(context, "Can't authorize myna", invalidRequest, 400);
+    }
+  } else {
+    // An unknown client or redirect is shown, never followed (RFC 6749 §4.1.2.1).
+    client = await getClient(clientId);
+    if (!client) return page(context, "Can't authorize myna", "<p class=\"error\">Unknown client_id. Remove the connector and add it again.</p>", 400);
+    if (!redirectUri && client.redirect_uris.length === 1) redirectUri = client.redirect_uris[0]!;
+    if (!redirectUri || !redirectUriMatches(client.redirect_uris, redirectUri)) {
+      return page(context, "Can't authorize myna", "<p class=\"error\">redirect_uri is not registered for this client.</p>", 400);
+    }
+    // The redirect is trusted from here on: a bad request goes back to the client.
+    const back = (error: string, description: string) =>
+      context.redirect(finishRedirect(redirectUri, { error, error_description: description, state: isClientState(state) ? state : "" }));
+    if (query.response_type !== "code") return back("unsupported_response_type", "response_type must be code");
+    if (!isChallenge(challenge) || query.code_challenge_method !== "S256") return back("invalid_request", "PKCE is required: code_challenge with code_challenge_method S256");
+    if (!isClientState(state)) return back("invalid_request", "state is too long or not printable");
+    if (query.scope && !query.scope.split(/\s+/).filter(Boolean).every((s) => s === SCOPE)) return back("invalid_scope", `The only scope is ${SCOPE}`);
+    if (query.resource && !resourceMatches(query.resource)) return back("invalid_target", `resource must be ${resourceUrl()}`);
   }
 
   const id = randomUUID();
   const csrf = randomBytes(32).toString("base64url");
   await db()`
     insert into oauth_authorization_requests (id, csrf_hash, client_id, redirect_uri, code_challenge, state, login_hint, expires_at)
-    values (${id}, ${hashToken(csrf)}, ${CLI_CLIENT_ID}, ${redirectUri}, ${challenge}, ${state}, ${loginHint}, now() + interval '5 minutes')
+    values (${id}, ${hashToken(csrf)}, ${clientId}, ${redirectUri}, ${challenge}, ${state}, ${loginHint}, now() + interval '5 minutes')
   `;
   const existing = await cloud.whoami(readCookie(context.req.header("cookie")));
   const prefix = apiPrefix(context.req.url, context.req.header("x-forwarded-prefix"));
+  const consent = consentFor(client, redirectUri);
   context.header("set-cookie", flowCookie(id, csrf, prefix));
-  return page(context, "Authorize myna CLI", authorizeMarkup(id, csrf, prefix, loginHint, existing?.email));
+  return page(context, consent.title, authorizeMarkup(id, csrf, prefix, loginHint, consent, existing?.email));
 });
 
 oauthRoutes.post("/authorize", async (context) => {
@@ -138,13 +193,14 @@ oauthRoutes.post("/authorize", async (context) => {
     return page(context, "Sign-in expired", "<p class=\"error\">This sign-in request expired. Return to the terminal and start again.</p>", 400);
   }
 
-  const redirect = new URL(request.redirect_uri);
+  const client = request.client_id === CLI_CLIENT_ID ? null : await getClient(request.client_id);
+  if (request.client_id !== CLI_CLIENT_ID && !client) {
+    return page(context, "Can't authorize myna", "<p class=\"error\">This app is no longer registered. Remove the connector and add it again.</p>", 400);
+  }
   if (decision !== "approve") {
     await db()`delete from oauth_authorization_requests where id = ${id}`;
-    redirect.searchParams.set("error", "access_denied");
-    redirect.searchParams.set("state", request.state);
     context.header("set-cookie", `${flowCookieName(id)}=; Path=${apiPrefix(context.req.url, context.req.header("x-forwarded-prefix"))}/v1/oauth; Max-Age=0; HttpOnly; Secure; SameSite=Strict`);
-    return context.redirect(redirect.toString());
+    return context.redirect(finishRedirect(request.redirect_uri, { error: "access_denied", state: request.state }));
   }
 
   let user = await cloud.whoami(readCookie(context.req.header("cookie")));
@@ -152,7 +208,8 @@ oauthRoutes.post("/authorize", async (context) => {
     try {
       user = await cloud.authenticatePassword(form.get("email") ?? "", form.get("password") ?? "");
     } catch (error) {
-      return page(context, "Authorize myna CLI", authorizeMarkup(id, csrf, apiPrefix(context.req.url, context.req.header("x-forwarded-prefix")), form.get("email") ?? request.login_hint, undefined, (error as Error).message), 401);
+      const consent = consentFor(client, request.redirect_uri);
+      return page(context, consent.title, authorizeMarkup(id, csrf, apiPrefix(context.req.url, context.req.header("x-forwarded-prefix")), form.get("email") ?? request.login_hint, consent, undefined, (error as Error).message), 401);
     }
   }
 
@@ -171,10 +228,8 @@ oauthRoutes.post("/authorize", async (context) => {
     return true;
   });
   if (!saved) return page(context, "Sign-in expired", "<p class=\"error\">This sign-in request has already been used. Return to the terminal and start again.</p>", 400);
-  redirect.searchParams.set("code", code);
-  redirect.searchParams.set("state", request.state);
   context.header("set-cookie", `${flowCookieName(id)}=; Path=${apiPrefix(context.req.url, context.req.header("x-forwarded-prefix"))}/v1/oauth; Max-Age=0; HttpOnly; Secure; SameSite=Strict`);
-  return context.redirect(redirect.toString());
+  return context.redirect(finishRedirect(request.redirect_uri, { code, state: request.state }));
 });
 
 function tokenJson(context: { header(name: string, value: string): unknown; json(body: unknown): Response }, reply: TokenReply): Response {
@@ -189,6 +244,13 @@ function oauthError(context: { header(name: string, value: string): unknown; jso
   return context.json({ error, ...(interval ? { interval } : {}) }, status);
 }
 
+/** The api_tokens name a client's access tokens carry; a connector's says which one it is. */
+const tokenName = (clientId: string): string => (clientId === CLI_CLIENT_ID ? "myna-cli" : `mcp:${clientId}`);
+
+/** What a token reply says beyond the tokens: the CLI shows the email, a connector gets the scope. */
+const replyExtras = (clientId: string, email: string): Pick<TokenReply, "email" | "scope"> =>
+  clientId === CLI_CLIENT_ID ? { email } : { scope: SCOPE };
+
 async function makeTokenSet(sql: postgres.TransactionSql, userId: string, clientId: string, sessionId = randomUUID()): Promise<TokenReply> {
   const users = await sql`select email from users where id = ${userId}`;
   const email = (users[0] as { email: string } | undefined)?.email;
@@ -201,19 +263,39 @@ async function makeTokenSet(sql: postgres.TransactionSql, userId: string, client
   `;
   await sql`
     insert into api_tokens (user_id, token_hash, name, expires_at, oauth_session_id)
-    values (${userId}, ${hashToken(accessToken)}, 'myna-cli', now() + make_interval(secs => ${ACCESS_TOKEN_SECONDS}), ${sessionId})
+    values (${userId}, ${hashToken(accessToken)}, ${tokenName(clientId)}, now() + make_interval(secs => ${ACCESS_TOKEN_SECONDS}), ${sessionId})
   `;
   await sql`
     insert into oauth_refresh_tokens (id, session_id, token_hash, expires_at)
     values (${randomUUID()}, ${sessionId}, ${hashToken(refreshToken)}, now() + interval '30 days')
   `;
-  return { access_token: accessToken, token_type: "Bearer", expires_in: ACCESS_TOKEN_SECONDS, refresh_token: refreshToken, email };
+  return { access_token: accessToken, token_type: "Bearer", expires_in: ACCESS_TOKEN_SECONDS, refresh_token: refreshToken, ...replyExtras(clientId, email) };
+}
+
+/** RFC 6749 says form-encoded; a few clients send JSON, so that is read too. */
+async function formOf(context: { req: { text(): Promise<string>; header(name: string): string | undefined } }): Promise<URLSearchParams> {
+  const text = await context.req.text();
+  if ((context.req.header("content-type") ?? "").includes("application/json")) {
+    try {
+      const body = JSON.parse(text) as Record<string, unknown>;
+      return new URLSearchParams(Object.entries(body ?? {}).filter(([, v]) => typeof v === "string") as [string, string][]);
+    } catch {
+      return new URLSearchParams();
+    }
+  }
+  return new URLSearchParams(text);
 }
 
 oauthRoutes.post("/token", async (context) => {
-  const form = new URLSearchParams(await context.req.text());
-  if (form.get("client_id") !== CLI_CLIENT_ID) return oauthError(context, "invalid_client");
+  for (const [key, value] of Object.entries(CORS_HEADERS)) context.header(key, value);
+  const form = await formOf(context);
   const grant = form.get("grant_type");
+  // A public client identifies itself by client_id alone. The CLI always sends
+  // it; a connector may leave it to the code or refresh token, which are bound
+  // to the client they were issued to and checked against it below.
+  const asked = form.get("client_id") ?? "";
+  if (asked && asked !== CLI_CLIENT_ID && !(await getClient(asked))) return oauthError(context, "invalid_client", 401);
+  if (!asked && grant !== "authorization_code" && grant !== "refresh_token") return oauthError(context, "invalid_client", 401);
 
   if (grant === "authorization_code") {
     const code = form.get("code") ?? "";
@@ -226,14 +308,15 @@ oauthRoutes.post("/token", async (context) => {
         from oauth_authorization_codes where code_hash = ${hashToken(code)} for update
       `) as unknown as { id: string; user_id: string; client_id: string; redirect_uri: string; code_challenge: string; expires_at: Date; used_at: Date | null }[];
       const row = rows[0];
-      if (!row || row.used_at || new Date(row.expires_at).getTime() <= Date.now() || row.client_id !== CLI_CLIENT_ID ||
+      if (!row || row.used_at || new Date(row.expires_at).getTime() <= Date.now() || (asked && row.client_id !== asked) ||
           row.redirect_uri !== redirectUri || base64urlHash(verifier) !== row.code_challenge) return null;
       const spent = await sql`update oauth_authorization_codes set used_at = now() where id = ${row.id} and used_at is null returning user_id`;
       if (!spent.length) return null;
-      return row.user_id;
+      return { userId: row.user_id, clientId: row.client_id };
     });
     if (!result) return oauthError(context, "invalid_grant");
-    const reply = await db().begin((sql) => makeTokenSet(sql, result, CLI_CLIENT_ID));
+    if (isMcpClientId(result.clientId)) await db()`update oauth_clients set last_used_at = now() where client_id = ${result.clientId}`;
+    const reply = await db().begin((sql) => makeTokenSet(sql, result.userId, result.clientId));
     return tokenJson(context, reply as TokenReply);
   }
 
@@ -251,7 +334,7 @@ oauthRoutes.post("/token", async (context) => {
         await sql`update oauth_sessions set revoked_at = coalesce(revoked_at, now()) where id = ${row.session_id}`;
         return null;
       }
-      if (row.revoked_at || new Date(row.expires_at).getTime() <= Date.now() || new Date(row.session_expires_at).getTime() <= Date.now() || row.client_id !== CLI_CLIENT_ID) {
+      if (row.revoked_at || new Date(row.expires_at).getTime() <= Date.now() || new Date(row.session_expires_at).getTime() <= Date.now() || (asked && row.client_id !== asked)) {
         await sql`update oauth_sessions set revoked_at = coalesce(revoked_at, now()) where id = ${row.session_id}`;
         return null;
       }
@@ -265,19 +348,20 @@ oauthRoutes.post("/token", async (context) => {
       const nextRefreshToken = newToken();
       await sql`
         insert into api_tokens (user_id, token_hash, name, expires_at, oauth_session_id)
-        values (${row.user_id}, ${hashToken(accessToken)}, 'myna-cli', now() + make_interval(secs => ${ACCESS_TOKEN_SECONDS}), ${row.session_id})
+        values (${row.user_id}, ${hashToken(accessToken)}, ${tokenName(row.client_id)}, now() + make_interval(secs => ${ACCESS_TOKEN_SECONDS}), ${row.session_id})
       `;
       await sql`
         insert into oauth_refresh_tokens (id, session_id, token_hash, expires_at)
         values (${randomUUID()}, ${row.session_id}, ${hashToken(nextRefreshToken)}, now() + interval '30 days')
       `;
-      return { access_token: accessToken, token_type: "Bearer" as const, expires_in: ACCESS_TOKEN_SECONDS, refresh_token: nextRefreshToken, email: row.email };
+      return { access_token: accessToken, token_type: "Bearer" as const, expires_in: ACCESS_TOKEN_SECONDS, refresh_token: nextRefreshToken, ...replyExtras(row.client_id, row.email) };
     });
     if (!rotated) return oauthError(context, "invalid_grant");
     return tokenJson(context, rotated as TokenReply);
   }
 
   if (grant === "urn:ietf:params:oauth:grant-type:device_code") {
+    if (asked !== CLI_CLIENT_ID) return oauthError(context, "unauthorized_client");
     const deviceCode = form.get("device_code") ?? "";
     const result = await db().begin(async (sql) => {
       const rows = (await sql`
@@ -308,10 +392,37 @@ oauthRoutes.post("/token", async (context) => {
 });
 
 oauthRoutes.post("/revoke", async (context) => {
-  const form = new URLSearchParams(await context.req.text());
-  if (form.get("client_id") === CLI_CLIENT_ID) await cloud.logout(form.get("token") ?? "");
+  for (const [key, value] of Object.entries(CORS_HEADERS)) context.header(key, value);
+  const form = await formOf(context);
+  const clientId = form.get("client_id") ?? "";
+  // RFC 7009: holding the token is the right to revoke it; always 200.
+  if (clientId === CLI_CLIENT_ID || clientId === "" || isMcpClientId(clientId)) await cloud.logout(form.get("token") ?? "");
   context.header("cache-control", "no-store");
   return context.body(null, 200);
+});
+
+/** RFC 7591 dynamic client registration, for MCP connectors. Public clients only. */
+oauthRoutes.post("/register", async (context) => {
+  for (const [key, value] of Object.entries(CORS_HEADERS)) context.header(key, value);
+  let body: Record<string, unknown>;
+  try {
+    body = (await context.req.json()) as Record<string, unknown>;
+    if (!body || typeof body !== "object" || Array.isArray(body)) throw new Error();
+  } catch {
+    return context.json({ error: "invalid_client_metadata", error_description: "Send the client metadata as a JSON object" }, 400);
+  }
+  try {
+    return context.json(await registerClient(body), 201);
+  } catch (error) {
+    if (error instanceof RegistrationError) return context.json(error.body(), error.status as 400);
+    console.error(`[oauth] register failed: ${(error as Error).message}`);
+    return context.json({ error: "server_error" }, 500);
+  }
+});
+
+oauthRoutes.options("/:endpoint{(register|token|revoke)}", (context) => {
+  for (const [key, value] of Object.entries(CORS_HEADERS)) context.header(key, value);
+  return context.body(null, 204);
 });
 
 const DEVICE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";

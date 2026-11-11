@@ -22,7 +22,16 @@ export const DEFAULT_UPSTREAM = "http://mynaposter-api.railway.internal:8787";
  */
 const SITE_CALLBACK = /^\/api\/(v1\/[a-z0-9-]+\/oauth\/callback|linkedin\/callback)(\.html)?\/?$/;
 
+/**
+ * OAuth discovery at the origin, which is where MCP connectors look for it
+ * (RFC 9728 protected-resource metadata, RFC 8414 authorization-server
+ * metadata, OpenID discovery), including the path-suffixed forms. The API
+ * owns the documents, so these go to it with the path unchanged.
+ */
+const OAUTH_DISCOVERY = /^\/\.well-known\/(oauth-protected-resource|oauth-authorization-server|openid-configuration)(\/.*)?$/;
+
 export function apiPath(pathname: string): string | null {
+  if (OAUTH_DISCOVERY.test(pathname)) return pathname;
   if (pathname !== "/api" && !pathname.startsWith("/api/")) return null;
   if (SITE_CALLBACK.test(pathname)) return null;
   const rest = pathname.slice("/api".length) || "/";

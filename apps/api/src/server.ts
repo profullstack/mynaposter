@@ -29,6 +29,7 @@ import { handleMcpBody } from "./mcp.ts";
 import * as cloud from "./cloud.ts";
 import { sessionRoutes, sessionCookie, tokenFrom } from "./session.ts";
 import { oauthRoutes, CLI_CLIENT_ID, ACCESS_TOKEN_SECONDS, DEVICE_POLL_SECONDS } from "./oauth.ts";
+import { authorizationServerMetadata, CORS_HEADERS, isOperator, openidConfiguration, protectedResourceMetadata, wwwAuthenticate } from "./mcp-oauth.ts";
 import * as passwordReset from "./password-reset.ts";
 import * as reshare from "./reshare.ts";
 import * as atproto from "./atproto.ts";
@@ -104,20 +105,38 @@ const guard =
  * Always authenticated, unlike the read routes below. tools/call can publish,
  * so an open MCP endpoint would be an open posting endpoint, and the fact that
  * the caller has to name a tool first is not a security boundary.
+ *
+ * Two credentials work: the operator's MYNA_API_TOKEN, as before, and an OAuth
+ * access token from a connector (claude.ai, ChatGPT, Claude Code) that signed
+ * in through /v1/oauth (mcp-oauth.ts). Anything else is HTTP 401 with
+ * WWW-Authenticate pointing at the protected-resource metadata, which is how a
+ * connector knows to start OAuth. An OAuth user who is not one of the
+ * instance's operators can list the tools but not run them.
  */
-app.post("/api/mcp", async (context) => {
-  const expected = process.env.MYNA_API_TOKEN;
-  if (!expected) {
-    return context.json(
-      { jsonrpc: "2.0", id: null, error: { code: -32000, message: "This server has no MYNA_API_TOKEN set, so MCP is disabled." } },
-      503,
-    );
-  }
+app.options("/api/mcp", (context) => {
+  for (const [key, value] of Object.entries(CORS_HEADERS)) context.header(key, value);
+  return context.body(null, 204);
+});
 
+app.post("/api/mcp", async (context) => {
+  for (const [key, value] of Object.entries(CORS_HEADERS)) context.header(key, value);
+  const expected = process.env.MYNA_API_TOKEN;
   const header = context.req.header("authorization") ?? "";
-  const supplied = header.startsWith("Bearer ") ? header.slice(7) : "";
-  if (!supplied || !sameToken(supplied, expected)) {
-    return context.json({ jsonrpc: "2.0", id: null, error: { code: -32001, message: "Unauthorized" } }, 401);
+  const supplied = header.startsWith("Bearer ") ? header.slice(7).trim() : "";
+  const challenge = (error?: "invalid_token") => {
+    context.header("www-authenticate", wwwAuthenticate(error));
+    context.header("cache-control", "no-store");
+    return context.json({ jsonrpc: "2.0", id: null, error: { code: -32001, message: error ? "Unauthorized: the access token is invalid or expired" : "Unauthorized: sign in with OAuth, or send the operator token as a Bearer" } }, 401);
+  };
+  if (!supplied) return challenge();
+
+  let canCall: boolean;
+  if (expected && sameToken(supplied, expected)) {
+    canCall = true;
+  } else {
+    const user = hasDatabase() ? await cloud.whoami(supplied, { mcp: true }) : null;
+    if (!user) return challenge("invalid_token");
+    canCall = isOperator(user.id);
   }
 
   let body: unknown;
@@ -127,7 +146,7 @@ app.post("/api/mcp", async (context) => {
     return context.json({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error" } }, 400);
   }
 
-  const reply = await handleMcpBody(body);
+  const reply = await handleMcpBody(body, { canCall });
   // A notification gets no body at all, which is what 202 is for.
   return reply === null ? context.body(null, 202) : context.json(reply);
 });
@@ -602,21 +621,34 @@ cloudRoutes.route("/session", sessionRoutes);
 
 app.route("/v1/cloud", cloudRoutes);
 
-app.get("/.well-known/oauth-authorization-server", (context) => context.json({
-  issuer: "https://mynaposter.com/api",
-  authorization_endpoint: "https://mynaposter.com/api/v1/oauth/authorize",
-  token_endpoint: "https://mynaposter.com/api/v1/oauth/token",
-  revocation_endpoint: "https://mynaposter.com/api/v1/oauth/revoke",
-  device_authorization_endpoint: "https://mynaposter.com/api/v1/oauth/device_authorization",
-  response_types_supported: ["code"],
-  grant_types_supported: ["authorization_code", "refresh_token", "urn:ietf:params:oauth:grant-type:device_code"],
-  code_challenge_methods_supported: ["S256"],
-  token_endpoint_auth_methods_supported: ["none"],
-  service_documentation: "https://mynaposter.com",
+/**
+ * Discovery. The site forwards its own /.well-known/oauth-* and
+ * openid-configuration here unchanged (apps/web/src/proxy.ts), and the old
+ * mynaposter.com/api/.well-known/oauth-authorization-server still answers.
+ * The path-suffixed forms (…/oauth-protected-resource/api/mcp, RFC 9728 §3.1,
+ * and …/oauth-authorization-server/api, the old issuer) answer the same.
+ */
+const discovery = (body: () => object) => (context: { header(name: string, value: string): void; json(body: unknown): Response }) => {
+  for (const [key, value] of Object.entries(CORS_HEADERS)) context.header(key, value);
+  context.header("cache-control", "public, max-age=3600");
+  return context.json(body());
+};
+const asMetadata = () => ({
+  ...authorizationServerMetadata(),
   cli_client_id: CLI_CLIENT_ID,
   access_token_lifetime: ACCESS_TOKEN_SECONDS,
   device_poll_interval: DEVICE_POLL_SECONDS,
-}));
+});
+app.get("/.well-known/oauth-authorization-server", discovery(asMetadata));
+app.get("/.well-known/oauth-authorization-server/*", discovery(asMetadata));
+app.get("/.well-known/openid-configuration", discovery(openidConfiguration));
+app.get("/.well-known/openid-configuration/*", discovery(openidConfiguration));
+app.get("/.well-known/oauth-protected-resource", discovery(protectedResourceMetadata));
+app.get("/.well-known/oauth-protected-resource/*", discovery(protectedResourceMetadata));
+app.options("/.well-known/*", (context) => {
+  for (const [key, value] of Object.entries(CORS_HEADERS)) context.header(key, value);
+  return context.body(null, 204);
+});
 
 app.route("/v1/oauth", oauthRoutes);
 

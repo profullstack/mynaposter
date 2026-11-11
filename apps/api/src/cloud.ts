@@ -92,8 +92,14 @@ export async function authenticatePassword(email: string, password: string): Pro
   return { id: row.id, email: row.email };
 }
 
-/** Resolve a bearer token to its owner, or null. */
-export async function whoami(token: string): Promise<CloudUser | null> {
+/**
+ * Resolve a bearer token to its owner, or null.
+ *
+ * A token issued to an MCP connector (its OAuth session's client_id starts
+ * with mcpc_, see mcp-oauth.ts) only resolves when `mcp` is set, which only
+ * the /api/mcp route does: a connector's token is not a key to the whole API.
+ */
+export async function whoami(token: string, { mcp = false }: { mcp?: boolean } = {}): Promise<CloudUser | null> {
   if (!token) return null;
   const rows = await db()`
     update api_tokens set last_used_at = now()
@@ -102,6 +108,7 @@ export async function whoami(token: string): Promise<CloudUser | null> {
       and (oauth_session_id is null or exists (
         select 1 from oauth_sessions s
         where s.id = api_tokens.oauth_session_id and s.revoked_at is null and s.expires_at > now()
+          and (${mcp}::boolean or left(s.client_id, 5) <> 'mcpc_')
       ))
     returning user_id
   `;

@@ -30,11 +30,21 @@ const fail = (id: JsonRpcRequest["id"], code: number, message: string) => ({
   error: { code, message },
 });
 
+/** What the caller may do. canCall is false for a signed-in user who is not this instance's operator. */
+export interface McpCaller {
+  canCall: boolean;
+}
+
+const NOT_OPERATOR =
+  "This myna server posts as its operator's connected accounts, so only its operators can run tools. " +
+  "Your myna account is signed in and can list the tools; to post as yourself, run your own myna " +
+  "(https://github.com/profullstack/mynaposter) and connect its MCP server instead.";
+
 /**
  * Handle one JSON-RPC message.
  * Returns null for a notification, which by the spec gets no reply at all.
  */
-export async function handleMcp(message: JsonRpcRequest): Promise<object | null> {
+export async function handleMcp(message: JsonRpcRequest, caller: McpCaller = { canCall: true }): Promise<object | null> {
   const { id = null, method, params = {} } = message ?? ({} as JsonRpcRequest);
 
   switch (method) {
@@ -62,11 +72,13 @@ export async function handleMcp(message: JsonRpcRequest): Promise<object | null>
       return ok(id, {});
 
     case "tools/list":
-      return ok(id, { tools: TOOLS });
+      // resultType, ttlMs and cacheScope: Claude Code's client rejects a list without all three.
+      return ok(id, { tools: TOOLS, resultType: "complete", ttlMs: 300_000, cacheScope: "public" });
 
     case "tools/call": {
       const name = String(params.name ?? "");
       if (!name) return fail(id, -32602, "tools/call needs a tool name");
+      if (!caller.canCall) return ok(id, { content: [{ type: "text", text: NOT_OPERATOR }], isError: true });
       const args = (params.arguments ?? {}) as Record<string, unknown>;
       return ok(id, await callTool(name, args));
     }
@@ -77,11 +89,11 @@ export async function handleMcp(message: JsonRpcRequest): Promise<object | null>
 }
 
 /** A whole POST body, which may be one message or a batch. */
-export async function handleMcpBody(body: unknown): Promise<object | object[] | null> {
+export async function handleMcpBody(body: unknown, caller: McpCaller = { canCall: true }): Promise<object | object[] | null> {
   if (Array.isArray(body)) {
-    const replies = await Promise.all(body.map((message) => handleMcp(message as JsonRpcRequest)));
+    const replies = await Promise.all(body.map((message) => handleMcp(message as JsonRpcRequest, caller)));
     const answered = replies.filter((reply): reply is object => reply !== null);
     return answered.length ? answered : null;
   }
-  return handleMcp(body as JsonRpcRequest);
+  return handleMcp(body as JsonRpcRequest, caller);
 }
