@@ -1583,6 +1583,17 @@ cannot be undone on every network, which its description says plainly;
 `myna_preview` is there to check the targets and the per-network tailoring
 first, and `myna_directory_preview` does the same for a listing.
 
+**Hosted, with OAuth.** The same tools answer at `https://mynaposter.com/api/mcp`
+for clients that only have a URL (claude.ai connectors, ChatGPT apps, Claude
+Code's `/mcp`). Add the URL and the client signs in with OAuth 2.1: an
+unauthenticated request gets 401 with `WWW-Authenticate: Bearer resource_metadata=…`,
+the client registers itself (RFC 7591, public, PKCE S256), you sign in to myna
+cloud on the consent page, and it gets a 15-minute access token with a rotating
+refresh token. That token works on `/api/mcp` and nowhere else in the API. The
+tools act on the instance's connected accounts, so a signed-in account can list
+them but only the users in `MYNA_MCP_OPERATORS` (comma-separated `users.id`) can
+run them; the operator's `MYNA_API_TOKEN` still works as a Bearer, as before.
+
 ### Deploying
 
 `.railway/railway.ts` defines the two deployable services. One thing to know

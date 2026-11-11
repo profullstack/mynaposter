@@ -95,6 +95,19 @@ create table if not exists oauth_device_codes (
 
 create index if not exists oauth_device_codes_expiry_idx on oauth_device_codes(expires_at);
 
+-- MCP connectors (claude.ai, ChatGPT, Claude Code) register themselves here by
+-- RFC 7591 dynamic registration. Public clients only, so there is no secret.
+-- client_id starts with mcpc_; their oauth_sessions carry the same id, which
+-- is how cloud.whoami keeps those tokens to /api/mcp.
+create table if not exists oauth_clients (
+  client_id     text primary key,
+  client_name   text not null,
+  redirect_uris text[] not null,
+  client_uri    text,
+  created_at    timestamptz not null default now(),
+  last_used_at  timestamptz
+);
+
 create table if not exists accounts (
   id           text primary key,
   user_id      uuid not null references users(id) on delete cascade,
