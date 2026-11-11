@@ -101,7 +101,7 @@ const TARGET_DESCRIPTION =
   '("bluesky:alice.bsky.social"), or several separated by commas. Defaults to the ' +
   "configured default, which is usually every connected account.";
 
-export const TOOLS = [
+const TOOL_DEFS = [
   {
     name: "myna_brand",
     description:
@@ -990,6 +990,99 @@ export const TOOLS = [
     },
   },
 ];
+
+/**
+ * A human title and behaviour hints for every tool, as MCP tool annotations.
+ *
+ * Connector directories (Claude's among them) require both on every tool, and a
+ * client uses the hints to decide what needs the person's confirmation. The
+ * rules: reads are readOnly and never destructive; anything that deletes,
+ * overwrites, publishes or sends where it cannot be quietly taken back
+ * (a post, an email, a directory submission) is destructive; openWorld means
+ * the tool reaches beyond this machine (a network, a site, the writer, a hook).
+ */
+interface ToolHints {
+  title: string;
+  readOnlyHint: boolean;
+  destructiveHint: boolean;
+  idempotentHint: boolean;
+  openWorldHint: boolean;
+}
+
+const HINTS: Record<string, ToolHints> = {
+  myna_brand: { title: "Read brand", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  myna_brain: { title: "Read brain repo", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  myna_brain_pull: { title: "Pull brain repo", readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+  myna_brand_learn: { title: "Learn brand from posts", readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
+  myna_plan: { title: "List content plan", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  myna_plan_generate: { title: "Generate content plan", readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+  myna_atomize: { title: "Atomize source into plan", readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+  myna_plan_draft: { title: "Draft planned post", readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+  myna_plan_queue: { title: "Queue planned post", readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+  myna_plan_drop: { title: "Drop plan item", readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+  myna_autopilot: { title: "Autopilot status / run", readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+  myna_accounts: { title: "List connected accounts", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  myna_skills: { title: "List skills", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  myna_skill: { title: "Read posting skill", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  myna_networks: { title: "List supported networks", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  myna_preview: { title: "Preview post", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  myna_post: { title: "Publish post", readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
+  myna_schedule: { title: "Schedule post", readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+  myna_search: { title: "Search network posts", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+  myna_queue: { title: "List scheduled posts", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  myna_cancel: { title: "Cancel scheduled post", readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
+  myna_history: { title: "Post history", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  myna_draft: { title: "Draft post text", readOnlyHint: true, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+  myna_timeline: { title: "Read home timeline", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+  myna_directories: { title: "List software directories", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  myna_directory_preview: { title: "Preview directory listing", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+  myna_update: { title: "Post agenticjobs update", readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
+  myna_directory_submit: { title: "Submit to directory", readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
+  myna_directory_listings: { title: "List directory listings", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+  myna_newsletters: { title: "List newsletters", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  myna_newsletter: { title: "Read newsletter", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  myna_newsletter_create: { title: "Create newsletter", readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+  myna_newsletter_edit: { title: "Edit newsletter", readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+  myna_newsletter_delete: { title: "Delete newsletter", readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+  myna_newsletter_send: { title: "Send newsletter", readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
+  myna_newsletter_subscribe: { title: "Add newsletter subscribers", readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  myna_newsletter_unsubscribe: { title: "Unsubscribe from newsletter", readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+  myna_newsletter_track_connect: { title: "Connect newsletter tracking", readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+  myna_newsletter_subscribers: { title: "List newsletter subscribers", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  myna_upvote_queue: { title: "Upvote queue", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  myna_upvote_topics: { title: "Upvoter topics", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  myna_upvote_scan: { title: "Scan for posts to upvote", readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+  myna_upvote_send: { title: "Cast due upvotes", readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
+  myna_asks: { title: "Reddit asks", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  myna_asks_ideas: { title: "Ranked ask ideas", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  myna_asks_scan: { title: "Scan subreddits for asks", readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+  myna_asks_reply: { title: "Draft ask reply card", readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+  myna_asks_stats: { title: "Ask reply stats", readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+  myna_asks_set: { title: "Update asks settings", readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+  myna_asks_phrases: { title: "Product pain phrases", readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
+  myna_hubs: { title: "List hubs and drafts", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  myna_hubs_import: { title: "Import hubs", readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+  myna_hubs_scan: { title: "Scan hubs for replies", readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+  myna_hubs_decide: { title: "Decide hub reply draft", readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
+  myna_upvote_set: { title: "Configure upvoter", readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
+  myna_webhooks: { title: "List webhooks", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+  create_webhook: { title: "Create webhook", readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+  update_webhook: { title: "Update webhook", readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
+  delete_webhook: { title: "Delete webhook", readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true },
+  test_webhook: { title: "Send test webhook", readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+  rotate_webhook_secret: { title: "Rotate webhook secret", readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
+  myna_webhook_secret: { title: "Show webhook secret", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+  myna_webhook_deliveries: { title: "Webhook deliveries", readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+};
+
+export const TOOLS = TOOL_DEFS.map((tool) => {
+  const { title, ...annotations } = HINTS[tool.name] ?? missingHints(tool.name);
+  return { ...tool, title, annotations: { title, ...annotations } };
+});
+
+function missingHints(name: string): never {
+  throw new Error(`myna MCP tool ${name} has no title/annotations in HINTS`);
+}
 
 /**
  * Run one tool.
