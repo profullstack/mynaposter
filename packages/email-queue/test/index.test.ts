@@ -20,6 +20,7 @@ import {
   resumeEmailQueue,
   sendWithThrottleRecovery,
   senderLimits,
+  operatorDailyCeiling,
   startEmailWorker,
   type DeliveryTransport,
   type EmailAuditEvent,
@@ -45,6 +46,26 @@ describe("email queue policy", () => {
       maxPer24Hours: 10_000,
       minGapMs: 1,
     })).toEqual({ google: false, maxPer24Hours: 1000, minGapMs: 1000 });
+  });
+
+  it("lets the operator raise the non-Google ceiling via EMAIL_QUEUE_MAX_PER_24H, never Gmail's", () => {
+    const before = process.env.EMAIL_QUEUE_MAX_PER_24H;
+    try {
+      process.env.EMAIL_QUEUE_MAX_PER_24H = "10000";
+      expect(operatorDailyCeiling()).toBe(10000);
+      expect(senderLimits({ type: "resend", from: "owner@example.com" }).maxPer24Hours).toBe(10000);
+      // per-call overrides still only lower it
+      expect(senderLimits({ type: "resend", from: "owner@example.com" }, "", { maxPer24Hours: 50_000 }).maxPer24Hours).toBe(10000);
+      expect(senderLimits({ type: "resend", from: "owner@example.com" }, "", { maxPer24Hours: 500 }).maxPer24Hours).toBe(500);
+      // Google stays at 100 whatever the operator says
+      expect(senderLimits({ type: "smtp", from: "owner@gmail.com" }, "smtp.gmail.com").maxPer24Hours).toBe(100);
+      process.env.EMAIL_QUEUE_MAX_PER_24H = "nonsense";
+      expect(operatorDailyCeiling()).toBeNull();
+      expect(senderLimits({ type: "resend", from: "owner@example.com" }).maxPer24Hours).toBe(1000);
+    } finally {
+      if (before === undefined) delete process.env.EMAIL_QUEUE_MAX_PER_24H;
+      else process.env.EMAIL_QUEUE_MAX_PER_24H = before;
+    }
   });
 
   it("uses Fibonacci backoff for three definite throttling failures, then stops", async () => {

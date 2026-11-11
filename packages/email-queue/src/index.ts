@@ -172,9 +172,22 @@ export function isGoogleSender(sender: Pick<DeliveryTransport, "type" | "from"> 
   return (sender.type === "smtp" && /(^|\.)smtp\.gmail\.com$|(^|\.)gmail\.com$|(^|\.)googlemail\.com$/i.test(host)) ||
     /@(gmail|googlemail)\.com$/i.test(addressOf(sender.from ?? ""));
 }
+/**
+ * Operator ceiling for non-Google senders, from EMAIL_QUEUE_MAX_PER_24H.
+ * The built-in 1,000/24h is a safe default for a fresh sender; an operator
+ * whose provider account carries more (a Resend plan sending a 5,000-person
+ * opt-in list) raises it here, in the process environment, not per call.
+ * Google senders stay at 100: Google enforces that itself.
+ */
+export function operatorDailyCeiling(env: Record<string, string | undefined> = process.env): number | null {
+  const raw = env.EMAIL_QUEUE_MAX_PER_24H;
+  if (!raw) return null;
+  const n = Math.floor(Number(raw));
+  return Number.isFinite(n) && n >= 1 ? n : null;
+}
 export function senderLimits(sender: Pick<DeliveryTransport, "type" | "from">, smtpHost = "", overrides: Partial<Limits> = {}): Limits {
   const google = isGoogleSender(sender, smtpHost);
-  const daily = google ? 100 : 1000;
+  const daily = google ? 100 : (operatorDailyCeiling() ?? 1000);
   const gap = google ? 10 * 60_000 : 1000;
   return {
     google,
