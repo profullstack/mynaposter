@@ -245,7 +245,7 @@ export function parseFlags(argv: string[]): { positional: string[]; flags: Flags
 const OWN_FLAGS = new Set([
   "to", "title", "media", "json", "yes", "style", "at", "thread", "dryRun", "limit", "output",
   "keepSvg", "server", "overwrite", "settings", "once", "interval", "refresh", "theme", "force", "weight", "source", "network",
-  "now", "gap", "drip", "repost", "every", "cooldown", "off", "on", "port", "open", "noOpen",
+  "now", "gap", "drip", "repost", "horizon", "every", "cooldown", "off", "on", "port", "open", "noOpen",
   "days", "send", "command", "check", "version", "allowDuplicate", "from", "type", "rotate",
 ]);
 
@@ -937,7 +937,7 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
             error: result.error,
           })),
           queued: paced.queued.map((entry) => ({ id: entry.id, account: entry.targets[0], at: entry.scheduledFor })),
-          skipped: paced.skipped.map((entry) => ({ account: entry.account.id, reason: entry.reason })),
+          skipped: paced.skipped.map((entry) => ({ account: entry.account.id, reason: entry.reason, full: entry.full || undefined })),
           reflowed: paced.reflowed.map((move) => ({ id: move.id, from: new Date(move.from).toISOString(), to: new Date(move.to).toISOString() })),
           hooks: [...results.hooks, ...paced.scheduleHooks],
         }, null, 2));
@@ -959,7 +959,10 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
         printHooks([...results.hooks, ...paced.scheduleHooks]);
         const line = [results.length ? summarize(results) : "nothing sent yet"];
         if (paced.queued.length) line.push(`${paced.queued.length} queued for the daemon (myna queue)`);
-        if (paced.skipped.length) line.push(`${paced.skipped.length} skipped as a repeat`);
+        const full = paced.skipped.filter((entry) => entry.full).length;
+        const repeats = paced.skipped.length - full;
+        if (repeats) line.push(`${repeats} skipped as a repeat`);
+        if (full) line.push(`${full} refused, the queue is full for ${settings.pacing.horizon}`);
         out(`\n${line.join(" — ")}`);
         if (paced.queued.length && !flags.now) {
           const window = flags.front || flags.skipQueue ? settings.pacing.minGap : settings.pacing.drip;
@@ -969,6 +972,9 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
           if (!flags.front && !flags.skipQueue) out(`Pass --front to take the next free slot ahead of the queue, or --now to send everything at once.`);
         }
       }
+      // A post the full queue turned away entirely did not happen: say so in
+      // the exit code, so a feeder keeps it and tries again later.
+      if (!results.length && !paced.queued.length && paced.skipped.some((entry) => entry.full)) return 1;
       return results.every((result) => result.ok) ? 0 : 1;
     }
 
@@ -1007,6 +1013,13 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
       // myna pace --gap 4h --drip 48h --repost 7d
       const next = { ...settings.pacing };
       let changed = false;
+      if (typeof flags.horizon === "string") {
+        // --horizon off lifts the limit; a duration sets it.
+        if (["off", "none", "0"].includes(flags.horizon)) delete next.horizon;
+        else if (parseDurationOr(flags.horizon, "") === undefined) throw new Error(`--horizon wants a duration like 24h, or off, not "${flags.horizon}".`);
+        else next.horizon = flags.horizon;
+        changed = true;
+      }
       for (const key of ["gap", "drip", "repost"] as const) {
         const value = flags[key];
         if (typeof value !== "string") continue;
@@ -1019,6 +1032,7 @@ export async function runHeadless(command: string, argv: string[]): Promise<numb
       out(`gap     ${next.minGap}   least time between two posts on the same network`);
       out(`drip    ${next.drip}  a post to several accounts is spread over this window`);
       out(`repost  ${next.repostGap}   the same text to the same account waits this long`);
+      out(`horizon ${next.horizon ?? "off"}  the queue reaches no further ahead than this (--horizon 24h | off)`);
       if (!changed) {
         out("\nChange one: myna pace --gap 2h --drip 48h --repost 7d.");
         out("Jump the queue but keep the gaps: myna post --front. Skip the gates outright: myna post --now.");

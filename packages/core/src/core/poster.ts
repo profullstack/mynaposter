@@ -272,7 +272,7 @@ export interface PacedOutcome {
   results: PostOutcome;
   /** One queued post per account whose turn is later. */
   queued: QueuedPost[];
-  skipped: Array<{ account: Account; reason: string }>;
+  skipped: Array<{ account: Account; reason: string; full?: boolean }>;
   plan: Plan;
   /** What plugins said about the queued ones (a calendar entry, say). */
   scheduleHooks: HookOutcome[];

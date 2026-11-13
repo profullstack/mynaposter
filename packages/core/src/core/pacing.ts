@@ -38,6 +38,12 @@ export interface PacingSettings {
   drip: string;
   /** Same text to the same account again waits this long. "7d". */
   repostGap: string;
+  /**
+   * How far ahead the queue may reach. "24h": a paced post whose slot would
+   * land further out than this is refused instead of queued, so a feeder that
+   * never stops cannot stretch the queue over months. Unset: no limit.
+   */
+  horizon?: string;
 }
 
 export const DEFAULT_PACING: PacingSettings = { minGap: "2h", drip: "48h", repostGap: "7d" };
@@ -46,6 +52,8 @@ export interface PacingRules {
   minGapMs: number;
   dripMs: number;
   repostGapMs: number;
+  /** Unset: the queue may reach any distance ahead. */
+  horizonMs?: number;
 }
 
 export function pacingRules(settings: PacingSettings): PacingRules {
@@ -54,6 +62,7 @@ export function pacingRules(settings: PacingSettings): PacingRules {
     minGapMs: read(settings.minGap, DEFAULT_PACING.minGap),
     dripMs: read(settings.drip, DEFAULT_PACING.drip),
     repostGapMs: read(settings.repostGap, DEFAULT_PACING.repostGap),
+    horizonMs: (settings.horizon && parseDuration(settings.horizon)) || undefined,
   };
 }
 
@@ -279,8 +288,11 @@ export interface PlannedTarget {
 export interface Plan {
   now: Account[];
   later: PlannedTarget[];
-  /** Targets refused outright: the same text went to that account too recently. */
-  skipped: Array<{ account: Account; reason: string }>;
+  /**
+   * Targets refused outright: the same text went to that account too
+   * recently, or (`full`) its slot would land past the queue's horizon.
+   */
+  skipped: Array<{ account: Account; reason: string; full?: boolean }>;
   /**
    * Every slot this plan claimed, now and later alike. A front-of-line plan
    * hands these to `reflowQueue` so what it jumped ahead of gets pushed back
@@ -449,6 +461,17 @@ export function planTargets(input: PlanInput): Plan {
         if (clear === at) break;
         at = clear;
       }
+    }
+    // The queue holds no more than the horizon. A post dated by hand (--at)
+    // is the person's own choice of day and is not measured against it.
+    const horizonMs = input.rules.horizonMs;
+    if (horizonMs && from <= now && at > now + horizonMs) {
+      plan.skipped.push({
+        account,
+        full: true,
+        reason: `${account.network} is booked for the next ${describeMs(horizonMs)}, and the queue holds no more than that`,
+      });
+      return;
     }
     // Book it so the next account on the same network is pushed past it.
     const list = booked.get(account.network);
