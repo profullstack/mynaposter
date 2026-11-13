@@ -63,7 +63,7 @@
       "version": "0.55.1",
       "dependencies": {
         "@anthropic-ai/sdk": "^0.123.0",
-        "@profullstack/ai-providers": "0.1.0",
+        "@profullstack/ai-providers": "^0.3.1",
         "@profullstack/email-queue": "workspace:*",
         "@profullstack/synconfig": "workspace:*",
       },
@@ -256,7 +256,7 @@
 
     "@pkgjs/parseargs": ["@pkgjs/parseargs@0.11.0", "", {}, "sha512-+1VkjdD0QBLPodGrJUeqarH8VAIvQODIbwh9XpP5Syisf7YoQgsJKPNFoqqLQlu+VQ/tVSshMR6loPMn8U+dPg=="],
 
-    "@profullstack/ai-providers": ["@profullstack/ai-providers@0.1.0", "", { "bin": { "ai-providers": "src/cli.js" } }, "sha512-vc7aFjozyiwIhREWLhB3xWpUPeGggM348ng5W6j4IA+gxYF3S7TNLoGWrF/ax2NttsK40C801CRkD9JSVA4aOg=="],
+    "@profullstack/ai-providers": ["@profullstack/ai-providers@0.3.1", "", { "bin": { "ai-providers": "src/cli.js" } }, "sha512-mihwPJnGfBW52GRloG74bhmSokAdXBrMj/wDqOSxCcoj55n6nhe1c2/498BRuq/D0CyXXdVPe1VmHviWd4jMoA=="],
 
     "@profullstack/email-queue": ["@profullstack/email-queue@workspace:packages/email-queue"],
 
