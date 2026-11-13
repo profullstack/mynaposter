@@ -6,4 +6,4 @@
  * binary reporting the wrong version, and nothing would fail. A test asserts
  * this matches the package.json it is published under.
  */
-export const VERSION = "0.55.1";
+export const VERSION = "0.56.0";
