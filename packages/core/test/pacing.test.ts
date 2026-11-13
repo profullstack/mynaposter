@@ -337,3 +337,28 @@ test("a skill's wider gap widens the network gap for that account, and a narrowe
   const narrow = planTargets({ accounts: [bsky], text: "hi", now: NOW, history, queue: [], rules, accountNetwork, order: stable, limitsFor: () => ({ minGapMs: 1 * H }) });
   expect(narrow.later[0].at).toBe(NOW + 3 * H);
 });
+
+test("horizon: a slot past it is refused, not queued; inside it queues as before", () => {
+  const capped = { ...rules, horizonMs: 24 * H };
+  const queued = (at: number): QueuedPost => ({ id: `q${at}`, scheduledFor: new Date(at).toISOString(), targets: [li.id], text: `t${at}`, createdAt: "", status: "pending" });
+  // LinkedIn is booked every 4h through the next 24h: the next slot is 28h out.
+  const fullQueue = [0, 4, 8, 12, 16, 20, 24].map((h) => queued(NOW + h * H));
+  const refused = planTargets({ accounts: [li], text: "new", now: NOW, history: [], queue: fullQueue, rules: capped, accountNetwork, order: stable });
+  expect(refused.later).toEqual([]);
+  expect(refused.now).toEqual([]);
+  expect(refused.skipped).toHaveLength(1);
+  expect(refused.skipped[0].full).toBe(true);
+  expect(refused.taken).toEqual([]);
+  // Room inside the horizon: queued at the next free slot.
+  const room = planTargets({ accounts: [li], text: "new", now: NOW, history: [], queue: fullQueue.slice(0, 3), rules: capped, accountNetwork, order: stable });
+  expect(room.later.map((t) => t.at)).toEqual([NOW + 12 * H]);
+  expect(room.skipped).toEqual([]);
+  // No horizon set: the old behaviour, however far out.
+  const open = planTargets({ accounts: [li], text: "new", now: NOW, history: [], queue: fullQueue, rules, accountNetwork, order: stable });
+  expect(open.later.map((t) => t.at)).toEqual([NOW + 28 * H]);
+  // A post dated by hand is not measured against it.
+  const dated = planTargets({ accounts: [li], text: "new", now: NOW, from: NOW + 90 * 24 * H, history: [], queue: [], rules: capped, accountNetwork, order: stable });
+  expect(dated.later.map((t) => t.at)).toEqual([NOW + 90 * 24 * H]);
+  expect(pacingRules({ ...DEFAULT_PACING, horizon: "24h" }).horizonMs).toBe(24 * H);
+  expect(pacingRules(DEFAULT_PACING).horizonMs).toBeUndefined();
+});

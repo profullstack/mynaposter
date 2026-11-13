@@ -59,7 +59,9 @@ Posting:
   schedule <when> [text]            Queue a post: "in 2h", "tomorrow 9am"
   pace [--gap 2h] [--drip 48h]      The pacing rules: one post per network
        [--repost 7d]                per gap, several accounts spread over
-                                    the drip, a repeat waits out the repost gap
+       [--horizon 24h|off]          the drip, a repeat waits out the repost gap.
+                                    With a horizon the queue reaches no further
+                                    ahead: a post past it is refused, exit 1
   utm [--add example.com]           Campaign tags on the links you post, so
       [--exclude host] [--off]      the site can see which network sent the
                                     visit. Sites your accounts publish to are
