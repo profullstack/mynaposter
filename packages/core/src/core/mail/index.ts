@@ -126,9 +126,13 @@ export function emailQueueStartupProblems(env: Record<string, string | undefined
 let warnedSmtpDirect = false;
 
 /**
- * Every Resend and Gmail send goes through the account-scoped BullMQ queue,
- * including newsletters, one-off CLI sends and other callers of resolveSender.
- * Missing Redis fails closed; never silently fall back to direct delivery.
+ * Every Gmail send goes through the account-scoped BullMQ queue, including
+ * newsletters, one-off CLI sends and other callers of resolveSender. Missing
+ * Redis fails closed for Gmail; never silently fall back to direct delivery.
+ *
+ * Resend joins the queue only when EMAIL_QUEUE_REDIS_URL is set. Without it,
+ * Resend sends directly through its API, as it did before the queue existed:
+ * an install with no queue worker deployed can still send.
  *
  * Non-Google SMTP senders (e.g. Forward Email mailboxes) join the queue only
  * when BOTH EMAIL_QUEUE_REDIS_URL and EMAIL_QUEUE_ENCRYPTION_KEY are set, so a
@@ -138,7 +142,9 @@ let warnedSmtpDirect = false;
  */
 function queueGuard(sender: MailSender, smtpHost = ""): MailSender {
   const google = isGoogleSender(sender, smtpHost);
-  const mustQueue = sender.type === "resend" || google;
+  const resendQueued = sender.type === "resend" && Boolean(process.env.EMAIL_QUEUE_REDIS_URL?.trim());
+  const mustQueue = resendQueued || google;
+  if (sender.type === "resend" && !resendQueued) return sender;
   if (!mustQueue) {
     if (sender.type !== "smtp") return sender;
     const ready = Boolean(process.env.EMAIL_QUEUE_REDIS_URL?.trim() && process.env.EMAIL_QUEUE_ENCRYPTION_KEY?.trim());
@@ -155,7 +161,7 @@ function queueGuard(sender: MailSender, smtpHost = ""): MailSender {
     batchSize: 1,
     send: async (message, context) => {
       const url = process.env.EMAIL_QUEUE_REDIS_URL ?? (mustQueue ? process.env.REDIS_URL : undefined) ?? "";
-      if (!url) return { ok: false, retryable: true, status: 429, error: "Email queue requires EMAIL_QUEUE_REDIS_URL (Redis); Gmail/Resend direct sending is disabled." };
+      if (!url) return { ok: false, retryable: true, status: 429, error: "Email queue requires EMAIL_QUEUE_REDIS_URL (Redis); Gmail direct sending is disabled." };
       const problems = emailQueueStartupProblems({ ...process.env, EMAIL_QUEUE_REDIS_URL: url });
       if (problems.length) {
         // Same shape as "queue unavailable": a newsletter stops at the first one instead of burning the list.

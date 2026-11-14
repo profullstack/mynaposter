@@ -205,6 +205,27 @@ test("non-Google SMTP stays direct without the queue env and joins the queue whe
   }
 }, 20_000);
 
+test("Resend sends directly without EMAIL_QUEUE_REDIS_URL and joins the queue when it is set", async () => {
+  const saved = { url: process.env.EMAIL_QUEUE_REDIS_URL, key: process.env.EMAIL_QUEUE_ENCRYPTION_KEY };
+  try {
+    delete process.env.EMAIL_QUEUE_REDIS_URL;
+    delete process.env.EMAIL_QUEUE_ENCRYPTION_KEY;
+    saveMailProvider({ id: "rs", type: "resend", from: "News <news@example.com>" }, "re_supersecret");
+    const direct = resolveSender("rs");
+    expect("google" in direct).toBe(false); // the plain Resend provider, no queue wrapper
+    expect(direct.type).toBe("resend");
+    process.env.EMAIL_QUEUE_REDIS_URL = "redis://127.0.0.1:1";
+    const queued = resolveSender("rs");
+    expect("google" in queued).toBe(true);
+    const result = await queued.send({ to: "a@example.net", subject: "s", text: "t" });
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain("no direct send attempted");
+  } finally {
+    if (saved.url === undefined) delete process.env.EMAIL_QUEUE_REDIS_URL; else process.env.EMAIL_QUEUE_REDIS_URL = saved.url;
+    if (saved.key === undefined) delete process.env.EMAIL_QUEUE_ENCRYPTION_KEY; else process.env.EMAIL_QUEUE_ENCRYPTION_KEY = saved.key;
+  }
+}, 20_000);
+
 test("a queue without EMAIL_QUEUE_ENCRYPTION_KEY is reported at startup", () => {
   expect(emailQueueStartupProblems({})).toEqual([]);
   expect(emailQueueStartupProblems({ EMAIL_QUEUE_REDIS_URL: "redis://x" }).join(" ")).toContain("EMAIL_QUEUE_ENCRYPTION_KEY is not set");
