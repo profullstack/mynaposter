@@ -63,8 +63,25 @@ const flowCookie = (id: string, secret: string, prefix: string): string =>
   `${flowCookieName(id)}=${encodeURIComponent(secret)}; Path=${prefix}/v1/oauth; Max-Age=300; HttpOnly; Secure; SameSite=Strict`;
 const sameSecret = (a: string, b: string): boolean => a.length === b.length && a === b;
 
-async function page(context: { header(name: string, value: string): unknown; html(body: string, status?: number): Response | Promise<Response> }, title: string, content: string, status = 200): Promise<Response> {
-  context.header("content-security-policy", "default-src 'none'; style-src 'unsafe-inline'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'");
+/**
+ * The origin a form on this page may end up at. Chrome applies CSP form-action to
+ * the redirect that follows a form POST, so the consent form's 302 to the client's
+ * redirect_uri (https://claude.ai/api/mcp/auth_callback, ChatGPT's, a CLI loopback)
+ * is blocked under form-action 'self' and the sign-in silently goes nowhere.
+ */
+export function formActionFor(redirectUri?: string | null): string {
+  if (!redirectUri) return "'self'";
+  try {
+    const u = new URL(redirectUri);
+    if (u.protocol !== "https:" && u.protocol !== "http:") return "'self'";
+    return `'self' ${u.origin}`;
+  } catch {
+    return "'self'";
+  }
+}
+
+async function page(context: { header(name: string, value: string): unknown; html(body: string, status?: number): Response | Promise<Response> }, title: string, content: string, status = 200, redirectUri?: string | null): Promise<Response> {
+  context.header("content-security-policy", `default-src 'none'; style-src 'unsafe-inline'; form-action ${formActionFor(redirectUri)}; base-uri 'none'; frame-ancestors 'none'`);
   context.header("x-frame-options", "DENY");
   context.header("referrer-policy", "no-referrer");
   context.header("x-content-type-options", "nosniff");
@@ -179,7 +196,7 @@ oauthRoutes.get("/authorize", async (context) => {
   const prefix = apiPrefix(context.req.url, context.req.header("x-forwarded-prefix"));
   const consent = consentFor(client, redirectUri);
   context.header("set-cookie", flowCookie(id, csrf, prefix));
-  return page(context, consent.title, authorizeMarkup(id, csrf, prefix, loginHint, consent, existing?.email));
+  return page(context, consent.title, authorizeMarkup(id, csrf, prefix, loginHint, consent, existing?.email), 200, redirectUri);
 });
 
 oauthRoutes.post("/authorize", async (context) => {
@@ -209,7 +226,7 @@ oauthRoutes.post("/authorize", async (context) => {
       user = await cloud.authenticatePassword(form.get("email") ?? "", form.get("password") ?? "");
     } catch (error) {
       const consent = consentFor(client, request.redirect_uri);
-      return page(context, consent.title, authorizeMarkup(id, csrf, apiPrefix(context.req.url, context.req.header("x-forwarded-prefix")), form.get("email") ?? request.login_hint, consent, undefined, (error as Error).message), 401);
+      return page(context, consent.title, authorizeMarkup(id, csrf, apiPrefix(context.req.url, context.req.header("x-forwarded-prefix")), form.get("email") ?? request.login_hint, consent, undefined, (error as Error).message), 401, request.redirect_uri);
     }
   }
 
