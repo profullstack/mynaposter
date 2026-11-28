@@ -91,7 +91,7 @@ export const HOSTED_TOOLS: HostedTool[] = [
     name: "myna_account",
     title: "Account and credits",
     description:
-      "Your myna account: email, credits left this month, the free monthly allowance, what each tool costs, and how to buy more. Call this first when the user asks about limits or billing.",
+      "The signed-in myna account: email, credits left, the free monthly allowance, the credit cost of each tool, and the credit packs on sale.",
     inputSchema: { type: "object", properties: {} },
     hints: READ,
     cost: 0,
@@ -112,7 +112,7 @@ export const HOSTED_TOOLS: HostedTool[] = [
     name: "myna_analyze_site",
     title: "Read a website",
     description:
-      "Read a product's website (its page, llms.txt and OpenProfile when present) and return a project brief: name, one-line pitch, description, audience and key points. Feed the result to myna_write_posts. Costs 1 credit.",
+      "Reads a product's website (its page, llms.txt and OpenProfile when present) and returns a project brief: name, one-line pitch, description, audience and key points. Costs 1 credit.",
     inputSchema: { type: "object", properties: { url: { type: "string", description: "The site to read, e.g. https://example.com" } }, required: ["url"] },
     hints: READ_WEB,
     cost: 1,
@@ -128,7 +128,7 @@ export const HOSTED_TOOLS: HostedTool[] = [
     name: "myna_write_posts",
     title: "Write social posts",
     description:
-      "Write ready-to-post variations of a social post (or a reply comment) about a project, shaped for one network's length and style. Nothing is posted: show them to the user, then save the chosen one with myna_save_handoff or post it from their own myna. Costs 1 credit.",
+      "Writes ready-to-post variations of a social post (or a reply comment) about a project, shaped for one network's length and style. Returns text only; nothing is posted. Costs 1 credit.",
     inputSchema: {
       type: "object",
       properties: {
@@ -168,7 +168,7 @@ export const HOSTED_TOOLS: HostedTool[] = [
     name: "myna_suggest_places",
     title: "Suggest where to post",
     description:
-      "Suggest where a project should be posted: networks, communities and keywords, plus forums and directories that fit. Costs 1 credit.",
+      "Suggests where a project could be posted: networks, communities and keywords, plus forums and directories that fit. Costs 1 credit.",
     inputSchema: { type: "object", properties: { project }, required: ["project"] },
     hints: AI,
     cost: 1,
@@ -184,7 +184,7 @@ export const HOSTED_TOOLS: HostedTool[] = [
     name: "myna_save_handoff",
     title: "Save a post as a hand-off card",
     description:
-      "Save a ready-to-post draft as a hand-off card: a private link (myna.../handoff/<id>) the user opens on any device to copy the text, open the network and mark it done. Use it after the user picks a post. Returns the card and its link. Free.",
+      "Saves a ready-to-post draft as a hand-off card: a private link (mynaposter.com/handoff/<id>) that opens on any device to copy the text, open the network and mark it done. Returns the card and its link. Free.",
     inputSchema: {
       type: "object",
       properties: {
@@ -215,7 +215,7 @@ export const HOSTED_TOOLS: HostedTool[] = [
   {
     name: "myna_list_handoffs",
     title: "List hand-off cards",
-    description: "The user's hand-off cards, newest first: open ones by default, or all with all=true. Free.",
+    description: "Lists the account's hand-off cards, newest first: open ones by default, or all with all=true. Free.",
     inputSchema: { type: "object", properties: { all: { type: "boolean", description: "Include cards already marked done." } } },
     hints: READ,
     cost: 0,
@@ -227,7 +227,7 @@ export const HOSTED_TOOLS: HostedTool[] = [
   {
     name: "myna_mark_handoff_done",
     title: "Mark a hand-off card done",
-    description: "Mark one of the user's hand-off cards done (or not done again with done=false), e.g. after they posted it. Free.",
+    description: "Marks one of the account's hand-off cards done, or not done again with done=false. Free.",
     inputSchema: { type: "object", properties: { id: { type: "string" }, done: { type: "boolean" } }, required: ["id"] },
     hints: UPDATE,
     cost: 0,
@@ -241,7 +241,7 @@ export const HOSTED_TOOLS: HostedTool[] = [
   {
     name: "myna_delete_handoff",
     title: "Delete a hand-off card",
-    description: "Delete one of the user's hand-off cards. Its link stops working. Free.",
+    description: "Deletes one of the account's hand-off cards. Its link stops working. Free.",
     inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"] },
     hints: DELETE,
     cost: 0,
@@ -255,13 +255,13 @@ export const HOSTED_TOOLS: HostedTool[] = [
     name: "myna_buy_credits",
     title: "Buy credits",
     description:
-      "Make a CoinPay checkout link to buy credits (1 credit = 1 US cent; packs of 5, 20 or 50 USD, any amount from 5 to 500). Pay with crypto or PayPal; credits land as soon as the payment confirms and never expire. Give the link to the user; nothing is charged until they pay.",
+      "Creates a CoinPay checkout link for buying credits (1 credit = 1 US cent; packs of 5, 20 or 50 USD, any amount from 5 to 500). Payment is by crypto or PayPal on CoinPay's page; credits are added when the payment confirms and never expire. Nothing is charged by this call.",
     inputSchema: { type: "object", properties: { usd: { type: "number", minimum: 5, maximum: 500, description: "Amount in USD (default 5)." } } },
     hints: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     cost: 0,
     async run(user, args) {
       const out = await credits.startTopup(user, Number(args.usd) || 5);
-      return { checkout_url: out.checkoutUrl, usd: out.usd, credits: out.credits, note: "Open the link to pay. Credits appear after the payment confirms; check with myna_account." };
+      return { checkout_url: out.checkoutUrl, usd: out.usd, credits: out.credits, note: "Credits are added after the payment confirms." };
     },
   },
 ];
