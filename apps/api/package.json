@@ -11,6 +11,8 @@
   "dependencies": {
     "@profullstack/myna-core": "workspace:*",
     "@profullstack/myna-mcp": "workspace:*",
+    "@profullstack/redeem-credits": "0.2.0",
+    "@profullstack/stack": "0.6.2",
     "@profullstack/synconfig": "workspace:*",
     "@profullstack/webhooks": "0.2.1",
     "hono": "^4.13.5",

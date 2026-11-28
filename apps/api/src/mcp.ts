@@ -12,6 +12,7 @@
  */
 import { VERSION } from "@profullstack/myna-core";
 import { TOOLS, callTool } from "@profullstack/myna-mcp/tools";
+import { callHostedTool, hostedToolList, type HostedUser } from "./hosted-mcp.ts";
 
 const PROTOCOL_VERSION = "2025-06-18";
 
@@ -30,15 +31,23 @@ const fail = (id: JsonRpcRequest["id"], code: number, message: string) => ({
   error: { code, message },
 });
 
-/** What the caller may do. canCall is false for a signed-in user who is not this instance's operator. */
+/**
+ * Who is calling. canCall: an operator (the instance's own posting tools).
+ * Anyone else signed in (`user`) gets the hosted tools for their own account
+ * (hosted-mcp.ts); with neither, tools/call is refused.
+ */
 export interface McpCaller {
   canCall: boolean;
+  user?: HostedUser | null;
 }
 
-const NOT_OPERATOR =
-  "This myna server posts as its operator's connected accounts, so only its operators can run tools. " +
-  "Your myna account is signed in and can list the tools; to post as yourself, run your own myna " +
-  "(https://github.com/profullstack/mynaposter) and connect its MCP server instead.";
+const HOSTED_INSTRUCTIONS =
+  "myna helps you promote things on social networks. myna_analyze_site reads a product's website into a brief; " +
+  "myna_write_posts writes ready-to-post variations shaped for a network; myna_suggest_places says where to post. " +
+  "Nothing is posted from here: show the drafts to the user, and save the one they pick with myna_save_handoff, " +
+  "which returns a private link they open on any device to copy, open the network and mark it done. " +
+  "The three AI tools cost 1 credit each (free credits every month; myna_account shows the balance, myna_buy_credits " +
+  "makes a CoinPay link for more). To post automatically, the user runs their own myna (https://mynaposter.com).";
 
 /**
  * Handle one JSON-RPC message.
@@ -53,7 +62,7 @@ export async function handleMcp(message: JsonRpcRequest, caller: McpCaller = { c
         protocolVersion: PROTOCOL_VERSION,
         capabilities: { tools: {} },
         serverInfo: { name: "myna", version: VERSION },
-        instructions:
+        instructions: !caller.canCall && caller.user ? HOSTED_INSTRUCTIONS :
           "myna posts to social networks. Call myna_accounts first to see what is connected; " +
           "posting to an account that is not connected will fail. myna_post publishes immediately " +
           "and several networks cannot delete afterwards, so confirm wording with the user and use " +
@@ -73,13 +82,17 @@ export async function handleMcp(message: JsonRpcRequest, caller: McpCaller = { c
 
     case "tools/list":
       // resultType, ttlMs and cacheScope: Claude Code's client rejects a list without all three.
+      if (!caller.canCall && caller.user) return ok(id, { tools: hostedToolList(), resultType: "complete", ttlMs: 300_000, cacheScope: "public" });
       return ok(id, { tools: TOOLS, resultType: "complete", ttlMs: 300_000, cacheScope: "public" });
 
     case "tools/call": {
       const name = String(params.name ?? "");
       if (!name) return fail(id, -32602, "tools/call needs a tool name");
-      if (!caller.canCall) return ok(id, { content: [{ type: "text", text: NOT_OPERATOR }], isError: true });
       const args = (params.arguments ?? {}) as Record<string, unknown>;
+      if (!caller.canCall) {
+        if (caller.user) return ok(id, await callHostedTool(caller.user, name, args));
+        return ok(id, { content: [{ type: "text", text: "Sign in to use myna's tools." }], isError: true });
+      }
       return ok(id, await callTool(name, args));
     }
 
