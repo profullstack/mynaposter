@@ -42,12 +42,11 @@ export interface McpCaller {
 }
 
 const HOSTED_INSTRUCTIONS =
-  "myna helps you promote things on social networks. myna_analyze_site reads a product's website into a brief; " +
-  "myna_write_posts writes ready-to-post variations shaped for a network; myna_suggest_places says where to post. " +
-  "Nothing is posted from here: show the drafts to the user, and save the one they pick with myna_save_handoff, " +
-  "which returns a private link they open on any device to copy, open the network and mark it done. " +
-  "The three AI tools cost 1 credit each (free credits every month; myna_account shows the balance, myna_buy_credits " +
-  "makes a CoinPay link for more). To post automatically, the user runs their own myna (https://mynaposter.com).";
+  "myna writes social media posts. myna_analyze_site reads a product's website into a brief; myna_write_posts " +
+  "writes ready-to-post variations shaped for a network; myna_suggest_places lists places a project could be posted; " +
+  "myna_save_handoff saves a draft as a hand-off card (a private link to copy the text, open the network and mark it done). " +
+  "Nothing is posted from this server. The three AI tools cost 1 credit each; myna_account shows the balance and " +
+  "myna_buy_credits creates a CoinPay checkout link for more.";
 
 /**
  * Handle one JSON-RPC message.
