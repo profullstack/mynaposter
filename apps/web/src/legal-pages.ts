@@ -7,9 +7,9 @@
  * section in step with SCOPES in packages/plugin-calendar/src/index.ts.
  */
 
-const UPDATED = "September 24, 2026";
+const UPDATED = "November 28, 2026";
 
-function shell(title: string, description: string, canonical: string, body: string): string {
+export function shell(title: string, description: string, canonical: string, body: string): string {
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -24,7 +24,7 @@ function shell(title: string, description: string, canonical: string, body: stri
 <body>
 <header class="top">
   <a class="wordmark" href="/"><img src="/brand/myna-mark.svg" alt="" width="28" height="28">myna</a>
-  <nav><a href="/">Home</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></nav>
+  <nav><a href="/">Home</a><a href="/pricing">Pricing</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a></nav>
 </header>
 <main class="legal">
 <section class="hero"><h1>${title}</h1><p class="fineprint">myna, by Profullstack, Inc. Last updated ${UPDATED}.</p></section>
@@ -53,6 +53,8 @@ export function renderPrivacyPage(): string {
 <li><strong>Visiting the website.</strong> Our hosting provider records standard request logs (IP address, time, the page asked for, browser) for security and troubleshooting, and keeps them for a short time.</li>
 <li><strong>Sign-in pages.</strong> When you connect an account, the network sends your browser back to a page on mynaposter.com with a one-time authorization code. The page runs in your browser and hands the code straight to myna on your computer, which exchanges it for a token. The code is single use, expires within minutes, and cannot be used without credentials that stay on your machine. We do not store it.</li>
 <li><strong>myna cloud, only if you sign up.</strong> Your email address and a session. If you turn on settings sync, your myna settings, profile and skills (plain text you wrote; never your vault or tokens). If you run <code>myna cloud push</code>, a copy of your connected accounts sealed with a passphrase only you know; we cannot open it. Features you choose to use, such as hand-off cards, directory listings or newsletter subscriber lists, store what they need to work.</li>
+<li><strong>The hosted MCP (myna in Claude, ChatGPT and other assistants).</strong> When your assistant calls a myna tool, we receive what it sends for that call: a website address to read, or the project details and draft text to write or save. We keep the hand-off cards you save and a ledger of credits granted and spent; we do not keep the prompts or the drafts you do not save. The AI writing runs on the c0mpute network. Your social accounts and their tokens are never sent to the hosted MCP.</li>
+<li><strong>Buying credits.</strong> Payments are handled by CoinPay (crypto or PayPal). We receive the amount, the payment status and the checkout id; we never see a card or wallet secret.</li>
 <li><strong>Email from us.</strong> Sign-in links and messages you ask for, sent through an email delivery provider.</li>
 </ul>
 
@@ -110,6 +112,9 @@ export function renderTermsPage(): string {
 
 <h2>myna cloud</h2>
 <p>myna cloud is optional. You are responsible for keeping your sign-in and any passphrase safe; we cannot recover a sealed backup whose passphrase is lost. Paid features, if you buy any, are billed as described when you buy them.</p>
+
+<h2>Credits and payments</h2>
+<p>The hosted MCP's AI tools spend credits: a free allowance every calendar month (unused monthly credits do not carry over) and credits you buy with CoinPay at $0.01 each, which do not expire. A credit spent on a call that fails on our side is refunded automatically. Purchases are final once the payment confirms, except where the law requires otherwise. Prices and allowances are on <a href="/pricing">the pricing page</a> and may change for the future, never for credits you already bought. Drafts the AI writes may be wrong: read them before you post.</p>
 
 <h2>No warranty</h2>
 <p>myna and mynaposter.com are provided "as is", without warranties of any kind. We do not promise that posts will always be delivered, on time or at all, because delivery depends on networks we do not control.</p>

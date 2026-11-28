@@ -39,6 +39,7 @@ import * as hostedMail from "./mail.ts";
 import * as oc from "./openconnection.ts";
 import * as porkbunCallback from "./porkbun-callback.ts";
 import * as webhooks from "./webhooks.ts";
+import * as credits from "./credits.ts";
 import { store as synconfigStore } from "./synconfig.ts";
 import { handleGet as synconfigGet, handlePut as synconfigPut, handleRevisions as synconfigRevisions } from "@profullstack/synconfig/server";
 import { VERSION, emailQueueStartupProblems } from "@profullstack/myna-core";
@@ -70,6 +71,8 @@ app.use("/v1/*", async (context, next) => {
   // Porkbun cannot send the operator token (its webhook URLs refuse credentials);
   // its deliveries authenticate by HMAC in porkbun-callback.ts instead.
   if (context.req.method === "POST" && /^\/v1\/callbacks\/porkbun(\/[^/]+)?\/?$/.test(path)) return next();
+  // CoinPay deliveries authenticate by their own HMAC signature (credits.ts).
+  if (context.req.method === "POST" && path === "/v1/callbacks/coinpay") return next();
   if (path.startsWith("/v1/cloud") || path.startsWith("/v1/oauth") || path.startsWith("/v1/reshare") || path.startsWith("/v1/atproto") || path.startsWith("/v1/handoff") || path.startsWith("/v1/newsletter") || path.startsWith("/v1/mail") || path.startsWith("/v1/synconfig") || path.startsWith("/v1/syncfg") || path.startsWith("/v1/openconnection") || path.startsWith("/v1/webhooks") || path === "/v1/events") return next();
 
   const expected = process.env.MYNA_API_TOKEN;
@@ -131,12 +134,15 @@ app.post("/api/mcp", async (context) => {
   if (!supplied) return challenge();
 
   let canCall: boolean;
+  let hostedUser: { id: string; email: string } | null = null;
   if (expected && sameToken(supplied, expected)) {
     canCall = true;
   } else {
     const user = hasDatabase() ? await cloud.whoami(supplied, { mcp: true }) : null;
     if (!user) return challenge("invalid_token");
     canCall = isOperator(user.id);
+    // Everyone else gets the hosted tools for their own account (hosted-mcp.ts).
+    if (!canCall) hostedUser = { id: user.id, email: user.email };
   }
 
   let body: unknown;
@@ -146,7 +152,7 @@ app.post("/api/mcp", async (context) => {
     return context.json({ jsonrpc: "2.0", id: null, error: { code: -32700, message: "Parse error" } }, 400);
   }
 
-  const reply = await handleMcpBody(body, { canCall });
+  const reply = await handleMcpBody(body, { canCall, user: hostedUser });
   // A notification gets no body at all, which is what 202 is for.
   return reply === null ? context.body(null, 202) : context.json(reply);
 });
@@ -568,6 +574,38 @@ cloudRoutes.get("/me", async (context) => {
   if (!user) return context.json({ ok: false, error: "Unauthorized" }, 401);
   const status = await cloud.backupStatus(user.id);
   return context.json({ ok: true, email: user.email, backup: status });
+});
+
+// Credits for the hosted MCP's AI tools: free monthly, then CoinPay top-ups (credits.ts).
+cloudRoutes.get("/credits", async (context) => {
+  const user = await requireUser(context);
+  if (!user) return context.json({ ok: false, error: "Unauthorized" }, 401);
+  return context.json({
+    ok: true,
+    email: user.email,
+    credits: await credits.balance(user.id),
+    free_monthly: credits.freeMonthly(),
+    usd_per_credit: credits.USD_PER_CREDIT,
+    packs_usd: credits.PACKS_USD,
+    buying: credits.coinpayConfigured(),
+  });
+});
+
+cloudRoutes.post("/credits/topup", async (context) => {
+  // The pricing page posts with the session cookie. A cookie counts only when the browser
+  // itself says the request is same-origin (Sec-Fetch-Site cannot be set by a cross-site page).
+  const sameSite = context.req.header("sec-fetch-site") === "same-origin";
+  const user = sameSite
+    ? await cloud.whoami(tokenFrom({ method: "GET", header: (name: string) => context.req.header(name) }))
+    : await requireUser(context);
+  if (!user) return context.json({ ok: false, error: "Unauthorized" }, 401);
+  const input = (await context.req.json().catch(() => ({}))) as { usd?: unknown };
+  try {
+    const out = await credits.startTopup(user, Number(input.usd) || 5);
+    return context.json({ ok: true, checkout_url: out.checkoutUrl, usd: out.usd, credits: out.credits });
+  } catch (error) {
+    return context.json({ ok: false, error: (error as Error).message }, (Number((error as { status?: number }).status) || 502) as never);
+  }
 });
 
 cloudRoutes.put("/backup", async (context) => {
@@ -1067,6 +1105,17 @@ const porkbunHook = async (context: { req: { param: (k: string) => string | unde
   });
   return context.json(result.body, result.status as never);
 };
+app.post("/v1/callbacks/coinpay", async (context) => {
+  const raw = await context.req.text();
+  try {
+    const out = await credits.handleCoinPayWebhook(raw, context.req.header(credits.COINPAY_WEBHOOK_SIGNATURE_HEADER) ?? null);
+    if (out.status !== 200) console.warn(`[coinpay] webhook ${out.status}: ${out.result}`);
+    return context.json({ ok: out.status === 200, result: out.result }, out.status as never);
+  } catch (error) {
+    console.warn(`[coinpay] webhook failed: ${(error as Error).message}`);
+    return context.json({ ok: false, error: "temporary failure" }, 500);
+  }
+});
 app.post("/v1/callbacks/porkbun", porkbunHook as never);
 app.post("/v1/callbacks/porkbun/:route", porkbunHook as never);
 // Reading what arrived is the operator's, through the /v1 token check above.

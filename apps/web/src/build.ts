@@ -9,6 +9,7 @@
 import { mkdirSync, writeFileSync, copyFileSync, existsSync, readdirSync, readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { renderPrivacyPage, renderTermsPage } from "./legal-pages.ts";
+import { renderPricingPage } from "./pricing-page.ts";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { renderToHtml } from "@profullstack/hqtui";
@@ -116,6 +117,7 @@ const page = `<!doctype html>
     <a href="#cli">CLI</a>
     <a href="#writer">Writer</a>
     <a href="https://github.com/profullstack/mynaposter">GitHub</a>
+    <a href="/pricing">Pricing</a>
     <a href="/privacy">Privacy</a>
     <a href="/dashboard">Dashboard</a>
   </nav>
@@ -341,6 +343,7 @@ writeFileSync(join(out, ".well-known", "openwebring.json"), JSON.stringify(descr
 // Required by Google's OAuth verification (and by everyone else): linked from the home page.
 writeFileSync(join(out, "privacy.html"), renderPrivacyPage());
 writeFileSync(join(out, "terms.html"), renderTermsPage());
+writeFileSync(join(out, "pricing.html"), renderPricingPage());
 
 writeFileSync(
   join(out, "404.html"),
@@ -423,6 +426,7 @@ writeFileSync(
   `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url><loc>https://mynaposter.com/</loc><changefreq>weekly</changefreq><priority>1.0</priority></url>
+  <url><loc>https://mynaposter.com/pricing</loc><changefreq>monthly</changefreq><priority>0.8</priority></url>
 </urlset>
 `,
 );
@@ -501,6 +505,7 @@ for (const asset of [
   "dashboard.css",
   "connect.js",
   "connect.css",
+  "pricing.js",
   ...readdirSync(join(root, "assets", "icons")).map((name) => `icons/${name}`),
   "site.css", "site.js", "favicon.svg", "favicon.png", "apple-touch-icon.png", "og.png", "install.sh", "oauth-callback.js",
   ".well-known/openmcp.json",
